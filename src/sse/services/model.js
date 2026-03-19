@@ -19,21 +19,22 @@ export async function getModelInfo(modelStr) {
   const parsed = parseModel(modelStr);
 
   if (!parsed.isAlias) {
-    if (parsed.provider === parsed.providerAlias) {
-      // Check OpenAI Compatible nodes
-      const openaiNodes = await getProviderNodes({ type: "openai-compatible" });
-      const matchedOpenAI = openaiNodes.find((node) => node.prefix === parsed.providerAlias);
-      if (matchedOpenAI) {
-        return { provider: matchedOpenAI.id, model: parsed.model };
-      }
+    const providerPrefix = parsed.providerAlias || parsed.provider;
 
-      // Check Anthropic Compatible nodes
-      const anthropicNodes = await getProviderNodes({ type: "anthropic-compatible" });
-      const matchedAnthropic = anthropicNodes.find((node) => node.prefix === parsed.providerAlias);
-      if (matchedAnthropic) {
-        return { provider: matchedAnthropic.id, model: parsed.model };
-      }
+    // Check OpenAI Compatible nodes by prefix (e.g. oc-foo/model)
+    const openaiNodes = await getProviderNodes({ type: "openai-compatible" });
+    const matchedOpenAI = openaiNodes.find((node) => node.prefix === providerPrefix);
+    if (matchedOpenAI) {
+      return { provider: matchedOpenAI.id, model: parsed.model };
     }
+
+    // Check Anthropic Compatible nodes by prefix (e.g. zn/model, zunef/model)
+    const anthropicNodes = await getProviderNodes({ type: "anthropic-compatible" });
+    const matchedAnthropic = anthropicNodes.find((node) => node.prefix === providerPrefix);
+    if (matchedAnthropic) {
+      return { provider: matchedAnthropic.id, model: parsed.model };
+    }
+
     return {
       provider: parsed.provider,
       model: parsed.model
@@ -49,7 +50,20 @@ export async function getModelInfo(modelStr) {
     return { provider: null, model: parsed.model };
   }
 
-  return getModelInfoCore(modelStr, getModelAliases);
+  const aliases = await getModelAliases();
+  const resolved = resolveModelAliasFromMap(parsed.model, aliases);
+  if (resolved) {
+    return resolved;
+  }
+
+  if (parsed.model?.toLowerCase?.().startsWith("claude-")) {
+    const anthropicNodes = await getProviderNodes({ type: "anthropic-compatible" });
+    if (anthropicNodes.length > 0) {
+      return { provider: anthropicNodes[0].id, model: parsed.model };
+    }
+  }
+
+  return getModelInfoCore(modelStr, aliases);
 }
 
 /**

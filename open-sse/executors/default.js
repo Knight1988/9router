@@ -46,6 +46,14 @@ export class DefaultExecutor extends BaseExecutor {
       case "claude":
         credentials.apiKey ? headers["x-api-key"] = credentials.apiKey : headers["Authorization"] = `Bearer ${credentials.accessToken}`;
         break;
+      case "zunef":
+        if (credentials.apiKey) {
+          headers["Authorization"] = `Bearer ${credentials.apiKey}`;
+        } else if (credentials.accessToken) {
+          headers["Authorization"] = `Bearer ${credentials.accessToken}`;
+        }
+        headers["anthropic-version"] = headers["anthropic-version"] || "2023-06-01";
+        break;
       case "glm":
       case "kimi":
       case "minimax":

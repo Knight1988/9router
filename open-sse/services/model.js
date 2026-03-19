@@ -17,6 +17,8 @@ const ALIAS_TO_PROVIDER_ID = {
   anthropic: "anthropic",
   gemini: "gemini",
   openrouter: "openrouter",
+  zunef: "zunef",
+  zn: "zunef",
   glm: "glm",
   kimi: "kimi",
   minimax: "minimax",

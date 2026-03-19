@@ -72,12 +72,23 @@ export async function POST(request) {
       }
 
       const modelsUrl = `${normalizedBase}/models`;
-      const res = await fetchWithTimeout(modelsUrl, {
+
+      const tryAnthropicRequest = async (url, options) => {
+        const res = await fetchWithTimeout(url, options);
+        if ((res.status === 401 || res.status === 403) && options.headers?.["x-api-key"]) {
+          const retryHeaders = { ...options.headers };
+          delete retryHeaders["x-api-key"];
+          retryHeaders.Authorization = `Bearer ${apiKey}`;
+          return fetchWithTimeout(url, { ...options, headers: retryHeaders });
+        }
+        return res;
+      };
+
+      const res = await tryAnthropicRequest(modelsUrl, {
         method: "GET",
         headers: {
           "x-api-key": apiKey,
           "anthropic-version": "2023-06-01",
-          "Authorization": `Bearer ${apiKey}`
         }
       });
 
@@ -90,10 +101,9 @@ export async function POST(request) {
 
       // Fallback: try chat/completions if modelId provided
       if (modelId) {
-        const chatRes = await fetchWithTimeout(`${normalizedBase}/chat/completions`, {
+        const chatRes = await tryAnthropicRequest(`${normalizedBase}/chat/completions`, {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${apiKey}`,
             "Content-Type": "application/json",
             "x-api-key": apiKey,
             "anthropic-version": "2023-06-01"

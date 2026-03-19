@@ -53,6 +53,7 @@ export const APIKEY_PROVIDERS = {
   "ollama-local": { id: "ollama-local", alias: "ollama-local", name: "Ollama Local", icon: "cloud", color: "#ffffffff", textIcon: "OL", website: "https://ollama.com" },
   vertex: { id: "vertex", alias: "vx", name: "Vertex AI", icon: "cloud", color: "#4285F4", textIcon: "VX", website: "https://cloud.google.com/vertex-ai" },
   "vertex-partner": { id: "vertex-partner", alias: "vxp", name: "Vertex Partner", icon: "cloud", color: "#34A853", textIcon: "VP", website: "https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/use-partner-models" },
+  zunef: { id: "zunef", alias: "zn", name: "Zunef", icon: "hub", color: "#0EA5E9", textIcon: "ZN", website: "https://claude.zunef.com" },
 };
 
 export const OPENAI_COMPATIBLE_PREFIX = "openai-compatible-";
