@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "20128:20128"
+    environment:
+      - NODE_ENV=production
+      - PORT=20128
+      - HOSTNAME=0.0.0.0
+      - JWT_SECRET=88084f2fbe5bea55fe057fb7c17dffa94af315f4161d0456792e52c8055d6a20
+      - INITIAL_PASSWORD=${INITIAL_PASSWORD:-123456}
+      - DATA_DIR=/var/lib/9router
+      - API_KEY_SECRET=a2adf9a4ca38d8a983c126d6883886b8661045b8fb293dd8fab99c4ed035741e
+      - MACHINE_ID_SALT=962b2d19cf9b3ccffa99b82d7a716ad37bfe34855d49a3a05b3cc046ab2a6eca
+      - ENABLE_REQUEST_LOGS=${ENABLE_REQUEST_LOGS:-false}
+      - OBSERVABILITY_ENABLED=${OBSERVABILITY_ENABLED:-true}
+      - AUTH_COOKIE_SECURE=${AUTH_COOKIE_SECURE:-false}
+      - REQUIRE_API_KEY=${REQUIRE_API_KEY:-false}
+      - BASE_URL=http://localhost:20128
+      - CLOUD_URL=${CLOUD_URL:-https://9router.com}
+      - NEXT_PUBLIC_BASE_URL=http://localhost:20128
+      - NEXT_PUBLIC_CLOUD_URL=${NEXT_PUBLIC_CLOUD_URL:-https://9router.com}
+    volumes:
+      - 9router_data:/var/lib/9router
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:20128/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  9router_data:
+    driver: local
+    name: 9router_data
