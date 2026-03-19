@@ -23,10 +23,10 @@ COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/open-sse ./open-sse
 
-RUN mkdir -p /app/data
+RUN mkdir -p /var/lib/9router
 
 # Fix permissions at runtime (handles mounted volumes)
-RUN printf '#!/bin/sh\nchown -R node:node /app/data 2>/dev/null; exec su-exec node "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+RUN printf '#!/bin/sh\nset -e\nDATA_DIR="${DATA_DIR:-/var/lib/9router}"\nmkdir -p "$DATA_DIR"\nchown -R node:node "$DATA_DIR" 2>/dev/null || true\nexec su-exec node "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
 RUN apk add --no-cache su-exec
 
 EXPOSE 20128
