@@ -160,8 +160,10 @@ export function hasValidUsage(usage) {
 
 /**
  * Extract usage from any format (Claude, OpenAI, Gemini, Responses API)
+ * @param {object} chunk - Response chunk with usage data
+ * @param {object} body - Request body for input token estimation fallback
  */
-export function extractUsage(chunk) {
+export function extractUsage(chunk, body = null) {
   if (!chunk || typeof chunk !== "object") return null;
 
   // Claude format (message_delta event)
@@ -199,16 +201,19 @@ export function extractUsage(chunk) {
   if (chunk.usage && typeof chunk.usage === "object" && (chunk.usage.input_tokens !== undefined || chunk.usage.output_tokens !== undefined)) {
     const inputTokens = chunk.usage.input_tokens || 0;
     const outputTokens = chunk.usage.output_tokens || 0;
-    // Fallback: if input_tokens is 0 but we have content, estimate it
-    let estimatedInput = 0;
-    if (inputTokens === 0 && chunk.content) {
-      try {
-        const contentStr = JSON.stringify(chunk.content);
-        estimatedInput = Math.floor(contentStr.length / 4);
-      } catch (e) {
-        // Ignore estimation errors
-      }
-    }
+ // Fallback: if input_tokens is 0, estimate from request body
+ let estimatedInput = 0;
+ if (inputTokens === 0 && body && typeof body === "object") {
+ estimatedInput = estimateInputTokens(body);
+ } else if (inputTokens === 0 && chunk.content) {
+ // Secondary fallback: estimate from chunk content if body not available
+ try {
+ const contentStr = JSON.stringify(chunk.content);
+ estimatedInput = Math.floor(contentStr.length / 4);
+ } catch (e) {
+ // Ignore estimation errors
+ }
+ }
     return normalizeUsage({
       prompt_tokens: inputTokens > 0 ? inputTokens : estimatedInput,
       completion_tokens: outputTokens,

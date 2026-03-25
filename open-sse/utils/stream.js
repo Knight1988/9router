@@ -122,7 +122,7 @@ export function createSSEStream(options = {}) {
                 accumulatedThinking += reasoning;
               }
 
-              const extracted = extractUsage(parsed);
+              const extracted = extractUsage(parsed, body);
               if (extracted) {
                 usage = extracted;
               }
@@ -212,7 +212,7 @@ export function createSSEStream(options = {}) {
         }
 
         // Extract usage
-        const extracted = extractUsage(parsed);
+        const extracted = extractUsage(parsed, body);
         if (extracted) state.usage = extracted; // Keep original usage for logging
 
         // Translate: targetFormat -> openai -> sourceFormat
