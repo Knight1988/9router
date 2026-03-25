@@ -1,4 +1,4 @@
-const { exec, spawn } = require("child_process");
+const { exec, spawn, execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
@@ -9,6 +9,7 @@ const TOOL_HOSTS = {
   antigravity: ["daily-cloudcode-pa.googleapis.com", "cloudcode-pa.googleapis.com"],
   copilot: ["api.individual.githubcopilot.com"],
   kiro: ["q.us-east-1.amazonaws.com", "codewhisperer.us-east-1.amazonaws.com"],
+  cursor: ["api2.cursor.sh"],
 };
 
 const IS_WIN = process.platform === "win32";
@@ -58,14 +59,27 @@ function executeElevatedPowerShell(psScriptPath, timeoutMs = 30000) {
   });
 }
 
+/** True when `sudo` exists (e.g. missing on minimal Docker images like Alpine). */
+function isSudoAvailable() {
+  if (IS_WIN) return false;
+  try {
+    execSync("command -v sudo", { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Execute command with sudo password via stdin (macOS/Linux only)
+ * Execute command with sudo password via stdin (macOS/Linux only).
+ * Without sudo in PATH (containers), runs via sh — same user, no elevation.
  */
 function execWithPassword(command, password) {
   return new Promise((resolve, reject) => {
-    const child = spawn("sudo", ["-S", "sh", "-c", command], {
-      stdio: ["pipe", "pipe", "pipe"]
-    });
+    const useSudo = isSudoAvailable();
+    const child = useSudo
+      ? spawn("sudo", ["-S", "sh", "-c", command], { stdio: ["pipe", "pipe", "pipe"] })
+      : spawn("sh", ["-c", command], { stdio: ["ignore", "pipe", "pipe"] });
 
     let stdout = "";
     let stderr = "";
@@ -77,8 +91,10 @@ function execWithPassword(command, password) {
       else reject(new Error(stderr || `Exit code ${code}`));
     });
 
-    child.stdin.write(`${password}\n`);
-    child.stdin.end();
+    if (useSudo) {
+      child.stdin.write(`${password}\n`);
+      child.stdin.end();
+    }
   });
 }
 
@@ -211,6 +227,7 @@ module.exports = {
   removeDNSEntry,
   removeAllDNSEntries,
   execWithPassword,
+  isSudoAvailable,
   executeElevatedPowerShell,
   checkDNSEntry,
   checkAllDNSStatus,

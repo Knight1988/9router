@@ -26,6 +26,7 @@ const handlers = {
   antigravity: loadHandler("antigravity"),
   copilot: loadHandler("copilot"),
   kiro: loadHandler("kiro"),
+  cursor: loadHandler("cursor"),
 };
 
 // ── SSL / SNI ─────────────────────────────────────────────────
@@ -62,14 +63,17 @@ try {
 // ── Helpers ───────────────────────────────────────────────────
 
 const cachedTargetIPs = {};
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
 async function resolveTargetIP(hostname) {
-  if (cachedTargetIPs[hostname]) return cachedTargetIPs[hostname];
+  const cached = cachedTargetIPs[hostname];
+  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.ip;
   const resolver = new dns.Resolver();
   resolver.setServers(["8.8.8.8"]);
   const resolve4 = promisify(resolver.resolve4.bind(resolver));
   const addresses = await resolve4(hostname);
-  cachedTargetIPs[hostname] = addresses[0];
-  return cachedTargetIPs[hostname];
+  cachedTargetIPs[hostname] = { ip: addresses[0], ts: Date.now() };
+  return cachedTargetIPs[hostname].ip;
 }
 
 function collectBodyRaw(req) {
@@ -118,7 +122,12 @@ function saveRequestLog(url, bodyBuffer) {
   } catch { /* ignore */ }
 }
 
-async function passthrough(req, res, bodyBuffer) {
+/**
+ * Forward request to real upstream.
+ * Optional onResponse(rawBuffer) callback — if provided, tees the response
+ * so it's both forwarded to client AND passed to the callback for inspection.
+ */
+async function passthrough(req, res, bodyBuffer, onResponse) {
   const targetHost = (req.headers.host || TARGET_HOSTS[0]).split(":")[0];
   const targetIP = await resolveTargetIP(targetHost);
 
@@ -132,7 +141,19 @@ async function passthrough(req, res, bodyBuffer) {
     rejectUnauthorized: false
   }, (forwardRes) => {
     res.writeHead(forwardRes.statusCode, forwardRes.headers);
-    forwardRes.pipe(res);
+
+    if (!onResponse) {
+      forwardRes.pipe(res);
+      return;
+    }
+
+    // Tee: forward to client AND buffer for callback
+    const chunks = [];
+    forwardRes.on("data", chunk => { chunks.push(chunk); res.write(chunk); });
+    forwardRes.on("end", () => {
+      res.end();
+      try { onResponse(Buffer.concat(chunks), forwardRes.headers); } catch { /* ignore */ }
+    });
   });
 
   forwardReq.on("error", (e) => {
@@ -171,6 +192,13 @@ const server = https.createServer(sslOptions, async (req, res) => {
     if (!isChat) return passthrough(req, res, bodyBuffer);
 
     log(`🔍 [${tool}] url=${req.url} | bodyLen=${bodyBuffer.length}`);
+
+    // Cursor uses binary proto — model extraction not possible at this layer.
+    // Delegate directly to handler which decodes proto internally.
+    if (tool === "cursor") {
+      log(`⚡ intercept | cursor | proto`);
+      return handlers[tool].intercept(req, res, bodyBuffer, null, passthrough);
+    }
 
     const model = extractModel(req.url, bodyBuffer);
     log(`🔍 [${tool}] model="${model}"`);

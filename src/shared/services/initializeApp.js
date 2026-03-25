@@ -1,5 +1,5 @@
 import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys } from "@/lib/localDb";
-import { enableTunnel } from "@/lib/tunnel/tunnelManager";
+import { enableTunnel, isTunnelManuallyDisabled, isTunnelReconnecting } from "@/lib/tunnel/tunnelManager";
 import { killCloudflared, isCloudflaredRunning, ensureCloudflared } from "@/lib/tunnel/cloudflared";
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks } from "@/mitm/manager";
 import { fileURLToPath } from "url";
@@ -42,6 +42,7 @@ const g = global.__appSingleton ??= {
   lastWatchdogTick: Date.now(),
   lastTunnelRestartAt: 0,
   tunnelRestartInProgress: false,
+  mitmStartInProgress: false,
 };
 
 const WATCHDOG_INTERVAL_MS = 60000;
@@ -100,6 +101,8 @@ export async function initializeApp() {
 
 /** Auto-start MITM if it was enabled before restart */
 async function autoStartMitm() {
+  if (g.mitmStartInProgress) return;
+  g.mitmStartInProgress = true;
   try {
     const settings = await getSettings();
     if (!settings.mitmEnabled) return;
@@ -118,10 +121,12 @@ async function autoStartMitm() {
     const activeKey = keys.find(k => k.isActive !== false);
 
     console.log("[InitApp] MITM was enabled, auto-starting...");
-    await startMitm(activeKey?.key || "sk_9router", password || "");
+    await startMitm(activeKey?.key || "sk_9router", password);
     console.log("[InitApp] MITM auto-started");
   } catch (err) {
     console.log("[InitApp] MITM auto-start failed:", err.message);
+  } finally {
+    g.mitmStartInProgress = false;
   }
 }
 
@@ -130,12 +135,20 @@ function startWatchdog() {
   if (g.watchdogInterval) return;
   g.watchdogInterval = setInterval(async () => {
     try {
+      if (isTunnelManuallyDisabled()) return;
+      if (isTunnelReconnecting()) return;
+      if (g.tunnelRestartInProgress) return;
       const settings = await getSettings();
       if (!settings.tunnelEnabled) return;
       if (isCloudflaredRunning()) return;
       console.log("[Watchdog] Tunnel process is down, attempting recovery...");
-      await enableTunnel();
-      console.log("[Watchdog] Tunnel recovered");
+      g.tunnelRestartInProgress = true;
+      try {
+        await enableTunnel();
+        console.log("[Watchdog] Tunnel recovered");
+      } finally {
+        g.tunnelRestartInProgress = false;
+      }
     } catch (err) {
       console.log("[Watchdog] Recovery failed:", err.message);
     }
@@ -168,6 +181,7 @@ function startNetworkMonitor() {
 
   g.networkMonitorInterval = setInterval(async () => {
     try {
+      if (isTunnelManuallyDisabled()) return;
       const settings = await getSettings();
       if (!settings.tunnelEnabled) return;
 
@@ -185,6 +199,7 @@ function startNetworkMonitor() {
 
       // Skip if restart already in progress or restarted recently
       if (g.tunnelRestartInProgress) return;
+      if (isTunnelReconnecting()) return;
       if (now - g.lastTunnelRestartAt < NETWORK_RESTART_COOLDOWN_MS) return;
 
       const reason = wasSleep && networkChanged ? "sleep/wake + network change"
