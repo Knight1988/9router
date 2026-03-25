@@ -195,6 +195,16 @@ export function extractUsage(chunk) {
     });
   }
 
+  // Claude format without message_delta type (e.g., Zunef returns usage directly in chunk.usage)
+  if (chunk.usage && typeof chunk.usage === "object" && (chunk.usage.input_tokens !== undefined || chunk.usage.output_tokens !== undefined)) {
+    return normalizeUsage({
+      prompt_tokens: chunk.usage.input_tokens || 0,
+      completion_tokens: chunk.usage.output_tokens || 0,
+      cache_read_input_tokens: chunk.usage.cache_read_input_tokens,
+      cache_creation_input_tokens: chunk.usage.cache_creation_input_tokens
+    });
+  }
+
   // Gemini format (Antigravity)
   // Antigravity wraps usageMetadata inside response: { response: { usageMetadata: {...} } }
   const usageMeta = chunk.usageMetadata || chunk.response?.usageMetadata;
