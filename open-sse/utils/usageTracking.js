@@ -197,9 +197,21 @@ export function extractUsage(chunk) {
 
   // Claude format without message_delta type (e.g., Zunef returns usage directly in chunk.usage)
   if (chunk.usage && typeof chunk.usage === "object" && (chunk.usage.input_tokens !== undefined || chunk.usage.output_tokens !== undefined)) {
+    const inputTokens = chunk.usage.input_tokens || 0;
+    const outputTokens = chunk.usage.output_tokens || 0;
+    // Fallback: if input_tokens is 0 but we have content, estimate it
+    let estimatedInput = 0;
+    if (inputTokens === 0 && chunk.content) {
+      try {
+        const contentStr = JSON.stringify(chunk.content);
+        estimatedInput = Math.floor(contentStr.length / 4);
+      } catch (e) {
+        // Ignore estimation errors
+      }
+    }
     return normalizeUsage({
-      prompt_tokens: chunk.usage.input_tokens || 0,
-      completion_tokens: chunk.usage.output_tokens || 0,
+      prompt_tokens: inputTokens > 0 ? inputTokens : estimatedInput,
+      completion_tokens: outputTokens,
       cache_read_input_tokens: chunk.usage.cache_read_input_tokens,
       cache_creation_input_tokens: chunk.usage.cache_creation_input_tokens
     });
