@@ -159,6 +159,29 @@ export function hasValidUsage(usage) {
 }
 
 /**
+ * Check if input tokens need estimation (are missing or zero)
+ * Used to determine if we should estimate from request body
+ */
+export function needsInputEstimation(usage) {
+ if (!usage || typeof usage !== "object") return true;
+ 
+ // Check OpenAI format
+ if (typeof usage.prompt_tokens === "number" && usage.prompt_tokens > 0) {
+   return false;
+ }
+ // Check Claude format  
+ if (typeof usage.input_tokens === "number" && usage.input_tokens > 0) {
+   return false;
+ }
+ // Check Gemini format
+ if (typeof usage.promptTokenCount === "number" && usage.promptTokenCount > 0) {
+   return false;
+ }
+ return true;
+}
+
+
+/**
  * Extract usage from any format (Claude, OpenAI, Gemini, Responses API)
  * @param {object} chunk - Response chunk with usage data
  * @param {object} body - Request body for input token estimation fallback
