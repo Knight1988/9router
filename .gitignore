@@ -16,7 +16,7 @@
 # next.js
 /.next/
 /out/
-
+product
 # production
 /build
 
@@ -66,5 +66,4 @@ package-lock.json
 README1.md
 deploy.sh
 ecosystem.config.*
-start.sh
 
