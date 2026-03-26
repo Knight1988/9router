@@ -221,7 +221,7 @@ export function extractUsage(chunk, body = null) {
   }
 
   // Claude format without message_delta type (e.g., Zunef returns usage directly in chunk.usage)
-  if (chunk.usage && typeof chunk.usage === "object" && (chunk.usage.input_tokens !== undefined || chunk.usage.output_tokens !== undefined)) {
+  if (chunk.usage && typeof chunk.usage === "object" && (chunk.usage.input_tokens !== undefined || chunk.usage.output_tokens !== undefined)) { console.log("[extractUsage] Claude format detected - chunk.usage:", JSON.stringify(chunk.usage), "body available:", !!body);
     const inputTokens = chunk.usage.input_tokens || 0;
     const outputTokens = chunk.usage.output_tokens || 0;
  // Fallback: if input_tokens is 0, estimate from request body
@@ -266,15 +266,21 @@ export function extractUsage(chunk, body = null) {
  * Calculate total body size for more accurate estimation
  */
 export function estimateInputTokens(body) {
-  if (!body || typeof body !== "object") return 0;
+ if (!body || typeof body !== "object") {
+ console.log("[estimateInputTokens] No body or invalid body type");
+ return 0;
+ }
 
-  try {
+ try {
+ console.log("[estimateInputTokens] Estimating from body...");
     // Calculate total body size (includes messages, tools, system, thinking config, etc.)
     const bodyStr = JSON.stringify(body);
     const totalChars = bodyStr.length;
 
     // Estimate: ~4 chars per token (rough average across all tokenizers)
-    return Math.ceil(totalChars / 4);
+ const estimated = Math.ceil(totalChars / 4);
+ console.log("[estimateInputTokens] Body size:", totalChars, "chars -> estimated tokens:", estimated);
+ return estimated;
   } catch (err) {
     // Fallback if stringify fails
     return 0;
