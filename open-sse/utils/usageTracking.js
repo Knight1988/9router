@@ -191,9 +191,24 @@ export function extractUsage(chunk, body = null) {
 
   // Claude format (message_delta event)
   if (chunk.type === "message_delta" && chunk.usage && typeof chunk.usage === "object") {
+    const inputTokens = chunk.usage.input_tokens || 0;
+    const outputTokens = chunk.usage.output_tokens || 0;
+    // Fallback: if input_tokens is 0, estimate from request body
+    let estimatedInput = 0;
+    if (inputTokens === 0 && body && typeof body === "object") {
+      estimatedInput = estimateInputTokens(body);
+    } else if (inputTokens === 0 && chunk.content) {
+      // Secondary fallback: estimate from chunk content if body not available
+      try {
+        const contentStr = JSON.stringify(chunk.content);
+        estimatedInput = Math.floor(contentStr.length / 4);
+      } catch (e) {
+        // Ignore estimation errors
+      }
+    }
     return normalizeUsage({
-      prompt_tokens: chunk.usage.input_tokens || 0,
-      completion_tokens: chunk.usage.output_tokens || 0,
+      prompt_tokens: inputTokens > 0 ? inputTokens : estimatedInput,
+      completion_tokens: outputTokens,
       cache_read_input_tokens: chunk.usage.cache_read_input_tokens,
       cache_creation_input_tokens: chunk.usage.cache_creation_input_tokens
     });
