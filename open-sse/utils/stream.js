@@ -214,7 +214,7 @@ export function createSSEStream(options = {}) {
 
         // Extract usage
         const extracted = extractUsage(parsed, body);
-        if (extracted) state.usage = extracted; // Keep original usage for logging
+        if (extracted) { console.log("[USAGE-TRANSLATE] Extracted from chunk:", JSON.stringify(extracted)); state.usage = extracted; } // Keep original usage for logging
 
         // Translate: targetFormat -> openai -> sourceFormat
         const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
@@ -340,12 +340,14 @@ export function createSSEStream(options = {}) {
         reqLogger?.appendConvertedChunk?.(doneOutput);
         controller.enqueue(sharedEncoder.encode(doneOutput));
 
-        if (!hasValidUsage(state?.usage) && totalContentLength > 0) {
-          state.usage = estimateUsage(body, totalContentLength, sourceFormat);
+        console.log("[USAGE-TRANSLATE] Before estimation check - state.usage:", state?.usage ? JSON.stringify(state.usage) : "null", "hasValidUsage:", hasValidUsage(state?.usage), "needsInputEstimation:", needsInputEstimation(state?.usage), "totalContentLength:", totalContentLength);
+        if ((!hasValidUsage(state?.usage) || needsInputEstimation(state?.usage)) && totalContentLength > 0) {
+          console.log("[USAGE-TRANSLATE] Estimating usage from body and contentLength"); state.usage = estimateUsage(body, totalContentLength, sourceFormat); console.log("[USAGE-TRANSLATE] Estimated usage:", JSON.stringify(state.usage));
         }
 
+        console.log("[USAGE-TRANSLATE] Final usage before logUsage:", state?.usage ? JSON.stringify(state.usage) : "null");
         if (hasValidUsage(state?.usage)) {
-          logUsage(state.provider || targetFormat, state.usage, model, connectionId, apiKey);
+          logUsage(state.provider || targetFormat, state.usage, model, connectionId, apiKey); else { console.log("[USAGE-TRANSLATE] No valid usage to log"); }
         } else {
           appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
         }
