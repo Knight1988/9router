@@ -347,8 +347,9 @@ export function createSSEStream(options = {}) {
 
         console.log("[USAGE-TRANSLATE] Final usage before logUsage:", state?.usage ? JSON.stringify(state.usage) : "null");
         if (hasValidUsage(state?.usage)) {
-          logUsage(state.provider || targetFormat, state.usage, model, connectionId, apiKey); else { console.log("[USAGE-TRANSLATE] No valid usage to log"); }
+          logUsage(state.provider || targetFormat, state.usage, model, connectionId, apiKey);
         } else {
+          console.log("[USAGE-TRANSLATE] No valid usage to log");
           appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
         }
         
