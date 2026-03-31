@@ -33,6 +33,7 @@ export const PROVIDERS = {
   claude: {
     baseUrl: "https://api.anthropic.com/v1/messages",
     format: "claude",
+    retry: { 429: 0 },
     headers: {
       "Anthropic-Version": "2023-06-01",
       "Anthropic-Beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05",
@@ -172,7 +173,8 @@ export const PROVIDERS = {
       "X-Initiator": "user",
       "Accept": "application/json",
       "Content-Type": "application/json"
-    }
+    },
+    clientId: "Iv1.b507a08c87ecfe98"
   },
   kiro: {
     baseUrl: "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse",
@@ -209,6 +211,11 @@ export const PROVIDERS = {
   },
   kilocode: {
     baseUrl: "https://api.kilo.ai/api/openrouter/chat/completions",
+    format: "openai",
+    headers: {}
+  },
+  opencode: {
+    baseUrl: "http://localhost:4096/v1/chat/completions",
     format: "openai",
     headers: {}
   },
@@ -307,12 +314,22 @@ export const PROVIDERS = {
   // baseUrl is not used; VertexExecutor.buildUrl() constructs it dynamically
   vertex: {
     baseUrl: "https://aiplatform.googleapis.com",
-    format: "gemini"
+    format: "vertex"
   },
   // Vertex AI - Partner models (Claude, Llama, Mistral, GLM) via SA JSON
   // Uses OpenAI-compatible global endpoint (or rawPredict for Anthropic)
   "vertex-partner": {
     baseUrl: "https://aiplatform.googleapis.com",
     format: "openai"
+  },
+  // GitLab Duo - OpenAI-compatible chat endpoint
+  gitlab: {
+    baseUrl: "https://gitlab.com/api/v4/chat/completions",
+    format: "openai",
+  },
+  // CodeBuddy (Tencent) - uses device_code polling auth, no chat completions baseUrl needed
+  codebuddy: {
+    baseUrl: "https://copilot.tencent.com/v1/chat/completions",
+    format: "openai",
   },
 };

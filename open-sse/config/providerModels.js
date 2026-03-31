@@ -144,6 +144,45 @@ export const PROVIDER_MODELS = {
     { id: "openai/gpt-5.3-codex", name: "GPT-5.3 Codex" },
     { id: "openai/gpt-5.4", name: "GPT-5.4" },
   ],
+
+  // API Key Providers (alias = id)
+  openai: [
+    // Flagship models
+    { id: "gpt-5.4", name: "GPT-5.4" },
+    { id: "gpt-5.4-mini", name: "GPT-5.4 Mini" },
+    { id: "gpt-5.4-nano", name: "GPT-5.4 Nano" },
+    { id: "gpt-5.2", name: "GPT-5.2" },
+    { id: "gpt-5.1", name: "GPT-5.1" },
+    { id: "gpt-5", name: "GPT-5" },
+    { id: "gpt-5-mini", name: "GPT-5 Mini" },
+    { id: "gpt-5-nano", name: "GPT-5 Nano" },
+    { id: "gpt-4o", name: "GPT-4o" },
+    { id: "gpt-4o-mini", name: "GPT-4o Mini" },
+    { id: "gpt-4-turbo", name: "GPT-4 Turbo" },
+    { id: "gpt-4.1", name: "GPT-4.1" },
+    { id: "gpt-4.1-mini", name: "GPT-4.1 Mini" },
+    { id: "gpt-4.1-nano", name: "GPT-4.1 Nano" },
+    // Reasoning models
+    { id: "o3", name: "O3" },
+    { id: "o3-mini", name: "O3 Mini" },
+    { id: "o3-pro", name: "O3 Pro" },
+    { id: "o4-mini", name: "O4 Mini" },
+    { id: "o1", name: "O1" },
+    { id: "o1-mini", name: "O1 Mini" },
+    // Embedding models
+    { id: "text-embedding-3-large", name: "Text Embedding 3 Large", type: "embedding" },
+    { id: "text-embedding-3-small", name: "Text Embedding 3 Small", type: "embedding" },
+    { id: "text-embedding-ada-002", name: "Text Embedding Ada 002", type: "embedding" },
+    // TTS models
+    { id: "tts-1", name: "TTS-1", type: "tts" },
+    { id: "tts-1-hd", name: "TTS-1 HD", type: "tts" },
+    { id: "gpt-4o-mini-tts", name: "GPT-4o Mini TTS", type: "tts" },
+  ],
+  anthropic: [
+    { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
+    { id: "claude-opus-4-20250514", name: "Claude Opus 4" },
+    { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet" },
+  ],
   zunef: [ // Zunef - API Key provider
     { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
     { id: "claude-opus-4-20250514", name: "Claude Opus 4" },
@@ -151,27 +190,36 @@ export const PROVIDER_MODELS = {
     { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet" },
   ],
   gemini: [
+    // Gemini 3.1 series
     { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview" },
     { id: "gemini-3.1-flash-lite-preview", name: "Gemini 3.1 Flash Lite Preview" },
-    { id: "gemini-3-pro-preview", name: "Gemini 3 Pro Preview" },
+    { id: "gemini-3.1-flash-image-preview", name: "Gemini 3.1 Flash Image Preview" },
+    // Gemini 3 series
     { id: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview" },
+    // Gemini 2.5 series
     { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
     { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
     { id: "gemini-2.5-flash-lite", name: "Gemini 2.5 Flash Lite" },
+    // Gemini 2.0 series (retiring June 1, 2026)
+    { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash" },
+    { id: "gemini-2.0-flash-lite", name: "Gemini 2.0 Flash Lite" },
     // Embedding models
+    { id: "gemini-embedding-2-preview", name: "Gemini Embedding 2 Preview", type: "embedding" },
     { id: "gemini-embedding-001", name: "Gemini Embedding 001", type: "embedding" },
     { id: "text-embedding-005", name: "Text Embedding 005", type: "embedding" },
     { id: "text-embedding-004", name: "Text Embedding 004 (Legacy)", type: "embedding" },
   ],
   openrouter: [
-    { id: "auto", name: "Auto (Best Available)" },
+    // { id: "openrouter/free", name: "Free Models (Auto)" },
   ],
   glm: [
+    { id: "glm-5.1", name: "GLM 5.1" },
     { id: "glm-5", name: "GLM 5" },
     { id: "glm-4.7", name: "GLM 4.7" },
     { id: "glm-4.6v", name: "GLM 4.6V (Vision)" },
   ],
   "glm-cn": [
+    { id: "glm-5.1", name: "GLM 5.1" },
     { id: "glm-5", name: "GLM 5" },
     { id: "glm-4.7", name: "GLM-4.7" },
     { id: "glm-4.6", name: "GLM-4.6" },
@@ -263,10 +311,6 @@ export const PROVIDER_MODELS = {
   nvidia: [
     { id: "moonshotai/kimi-k2.5", name: "Kimi K2.5" },
     { id: "z-ai/glm4.7", name: "GLM 4.7" },
-    { id: "deepseek-ai/deepseek-v3.2", name: "DeepSeek V3.2" },
-    { id: "nvidia/llama-3.3-70b-instruct", name: "Llama 3.3 70B" },
-    { id: "meta/llama-4-maverick-17b-128e-instruct", name: "Llama 4 Maverick" },
-    { id: "deepseek/deepseek-r1", name: "DeepSeek R1" },
   ],
   nebius: [
     { id: "meta-llama/Llama-3.3-70B-Instruct", name: "Llama 3.3 70B Instruct" },
