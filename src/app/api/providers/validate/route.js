@@ -99,12 +99,14 @@ export async function POST(request) {
           isValid = openrouterRes.ok;
           break;
 
-        case "zunef":
-          const zunefRes = await fetch("https://claude.zunef.com/v1/ai/v1/models", {
-            headers: { "Authorization": `Bearer ${apiKey}` },
-          });
+        case "zunef": {
+          const zunefRes = await fetch(
+            `https://claude.zunef.com/api/claude-code/${encodeURIComponent(apiKey)}/auth`,
+            { headers: { Accept: "text/plain" } }
+          );
           isValid = zunefRes.ok;
           break;
+        }
 
         case "glm":
         case "glm-cn":

@@ -379,8 +379,10 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "zunef": {
-        const res = await fetchWithConnectionProxy("https://claude.zunef.com/v1/ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
-        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+        const res = await fetchWithConnectionProxy(
+          `https://claude.zunef.com/api/claude-code/${encodeURIComponent(connection.apiKey)}/auth`,
+          { headers: { Accept: "text/plain" } }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid install token" };
       }
       case "glm": {
         const res = await fetchWithConnectionProxy("https://api.z.ai/api/anthropic/v1/messages", {

@@ -75,6 +75,11 @@ export class BaseExecutor {
     return body;
   }
 
+  // Override in subclass for async credential preparation before execute
+  async preExecute(credentials) {
+    return credentials;
+  }
+
   shouldRetry(status, urlIndex) {
     return status === HTTP_STATUS.RATE_LIMITED && urlIndex + 1 < this.getFallbackCount();
   }
@@ -99,9 +104,12 @@ export class BaseExecutor {
     let lastError = null;
     let lastStatus = 0;
     const retryAttemptsByUrl = {};
-    
+
     // Merge default retry config with provider-specific config
     const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
+
+    // Allow subclass to fetch/refresh credentials asynchronously before sending
+    credentials = await this.preExecute(credentials);
 
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
       const url = this.buildUrl(model, stream, urlIndex, credentials);

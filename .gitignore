@@ -67,3 +67,5 @@ README1.md
 deploy*.sh
 ecosystem.config.*
 
+.playwright-mcp/
+promt.txt

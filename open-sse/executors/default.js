@@ -3,10 +3,19 @@ import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/appConstants.js";
 import { buildClineHeaders } from "../../src/shared/utils/clineAuth.js";
 import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
+import { getZunefToken } from "../utils/zunefTokenCache.js";
 
 export class DefaultExecutor extends BaseExecutor {
   constructor(provider) {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
+  }
+
+  async preExecute(credentials) {
+    if (this.provider === "zunef" && credentials.apiKey) {
+      const token = await getZunefToken(credentials.apiKey);
+      return { ...credentials, _zunefToken: token };
+    }
+    return credentials;
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
@@ -80,12 +89,7 @@ export class DefaultExecutor extends BaseExecutor {
         break;
       }
       case "zunef":
-        if (credentials.apiKey) {
-          headers["Authorization"] = `Bearer ${credentials.apiKey}`;
-        } else if (credentials.accessToken) {
-          headers["Authorization"] = `Bearer ${credentials.accessToken}`;
-        }
-        headers["anthropic-version"] = headers["anthropic-version"] || "2023-06-01";
+        headers["x-api-key"] = credentials._zunefToken || credentials.apiKey;
         break;
       case "glm":
       case "kimi":
