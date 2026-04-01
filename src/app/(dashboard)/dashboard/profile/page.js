@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Card, Button, Toggle, Input } from "@/shared/components";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
@@ -13,6 +13,8 @@ export default function ProfilePage() {
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
   const [passStatus, setPassStatus] = useState({ type: "", message: "" });
   const [passLoading, setPassLoading] = useState(false);
+  const [passRemaining, setPassRemaining] = useState(null);
+  const [passRetryAfter, setPassRetryAfter] = useState(null);
   const [dbLoading, setDbLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState({ type: "", message: "" });
   const importFileRef = useRef(null);
@@ -24,6 +26,22 @@ export default function ProfilePage() {
   const [proxyStatus, setProxyStatus] = useState({ type: "", message: "" });
   const [proxyLoading, setProxyLoading] = useState(false);
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
+
+  // Countdown timer for password change lockout
+  useEffect(() => {
+    if (!passRetryAfter || passRetryAfter <= 0) return;
+    const timer = setInterval(() => {
+      setPassRetryAfter((prev) => {
+        if (prev <= 1) {
+          setPassStatus({ type: "", message: "" });
+          setPassRemaining(null);
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [passRetryAfter]);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -165,8 +183,19 @@ export default function ProfilePage() {
       if (res.ok) {
         setPassStatus({ type: "success", message: "Password updated successfully" });
         setPasswords({ current: "", new: "", confirm: "" });
+        setPassRemaining(null);
+        setPassRetryAfter(null);
+      } else if (res.status === 429) {
+        setPassRetryAfter(data.retryAfter);
+        setPassStatus({
+          type: "error",
+          message: `Too many failed attempts. Try again in ${Math.ceil(data.retryAfter / 60)} minutes.`,
+        });
+        setPassRemaining(0);
       } else {
         setPassStatus({ type: "error", message: data.error || "Failed to update password" });
+        setPassRemaining(data.remaining ?? null);
+        setPassRetryAfter(null);
       }
     } catch (err) {
       setPassStatus({ type: "error", message: "An error occurred" });
@@ -478,9 +507,14 @@ export default function ProfilePage() {
                     {passStatus.message}
                   </p>
                 )}
+                {passRemaining !== null && passRemaining > 0 && passRemaining <= 3 && (
+                  <p className="text-sm text-amber-500">
+                    {passRemaining} attempt{passRemaining !== 1 ? "s" : ""} remaining before lockout
+                  </p>
+                )}
 
                 <div className="pt-2">
-                  <Button type="submit" variant="primary" loading={passLoading}>
+                  <Button type="submit" variant="primary" loading={passLoading} disabled={!!passRetryAfter}>
                     {settings.hasPassword ? "Update Password" : "Set Password"}
                   </Button>
                 </div>

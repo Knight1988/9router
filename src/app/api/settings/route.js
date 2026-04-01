@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import bcrypt from "bcryptjs";
+import {
+  getClientIp,
+  checkRateLimit,
+  recordFailedAttempt,
+  resetAttempts,
+} from "@/lib/rateLimiter";
 
 export async function GET() {
   try {
@@ -29,6 +35,23 @@ export async function PATCH(request) {
 
     // If updating password, hash it
     if (body.newPassword) {
+      const ip = getClientIp(request);
+      const rateCheck = checkRateLimit(ip);
+      if (rateCheck.limited) {
+        const retryAfterSec = Math.ceil(rateCheck.retryAfterMs / 1000);
+        return NextResponse.json(
+          {
+            error: "Too many failed attempts. Please try again later.",
+            retryAfter: retryAfterSec,
+            remaining: 0,
+          },
+          {
+            status: 429,
+            headers: { "Retry-After": String(retryAfterSec) },
+          }
+        );
+      }
+
       const settings = await getSettings();
       const currentHash = settings.password;
 
@@ -39,16 +62,53 @@ export async function PATCH(request) {
         }
         const isValid = await bcrypt.compare(body.currentPassword, currentHash);
         if (!isValid) {
-          return NextResponse.json({ error: "Invalid current password" }, { status: 401 });
+          const result = recordFailedAttempt(ip);
+          if (result.locked) {
+            const retryAfterSec = Math.ceil(result.retryAfterMs / 1000);
+            return NextResponse.json(
+              {
+                error: "Too many failed attempts. Please try again later.",
+                retryAfter: retryAfterSec,
+                remaining: 0,
+              },
+              {
+                status: 429,
+                headers: { "Retry-After": String(retryAfterSec) },
+              }
+            );
+          }
+          return NextResponse.json(
+            { error: "Invalid current password", remaining: result.remaining },
+            { status: 401 }
+          );
         }
       } else {
         // First time setting password, no current password needed
         // Allow empty currentPassword or default "123456"
         if (body.currentPassword && body.currentPassword !== "123456") {
-           return NextResponse.json({ error: "Invalid current password" }, { status: 401 });
+          const result = recordFailedAttempt(ip);
+          if (result.locked) {
+            const retryAfterSec = Math.ceil(result.retryAfterMs / 1000);
+            return NextResponse.json(
+              {
+                error: "Too many failed attempts. Please try again later.",
+                retryAfter: retryAfterSec,
+                remaining: 0,
+              },
+              {
+                status: 429,
+                headers: { "Retry-After": String(retryAfterSec) },
+              }
+            );
+          }
+          return NextResponse.json(
+            { error: "Invalid current password", remaining: result.remaining },
+            { status: 401 }
+          );
         }
       }
 
+      resetAttempts(ip);
       const salt = await bcrypt.genSalt(10);
       body.password = await bcrypt.hash(body.newPassword, salt);
       delete body.newPassword;

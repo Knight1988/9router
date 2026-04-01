@@ -3,6 +3,12 @@ import { getSettings } from "@/lib/localDb";
 import bcrypt from "bcryptjs";
 import { SignJWT } from "jose";
 import { cookies } from "next/headers";
+import {
+  getClientIp,
+  checkRateLimit,
+  recordFailedAttempt,
+  resetAttempts,
+} from "@/lib/rateLimiter";
 
 const SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "9router-default-secret-change-me"
@@ -10,6 +16,23 @@ const SECRET = new TextEncoder().encode(
 
 export async function POST(request) {
   try {
+    const ip = getClientIp(request);
+    const rateCheck = checkRateLimit(ip);
+    if (rateCheck.limited) {
+      const retryAfterSec = Math.ceil(rateCheck.retryAfterMs / 1000);
+      return NextResponse.json(
+        {
+          error: "Too many failed attempts. Please try again later.",
+          retryAfter: retryAfterSec,
+          remaining: 0,
+        },
+        {
+          status: 429,
+          headers: { "Retry-After": String(retryAfterSec) },
+        }
+      );
+    }
+
     const { password } = await request.json();
     const settings = await getSettings();
 
@@ -44,10 +67,29 @@ export async function POST(request) {
         path: "/",
       });
 
+      resetAttempts(ip);
       return NextResponse.json({ success: true });
     }
 
-    return NextResponse.json({ error: "Invalid password" }, { status: 401 });
+    const result = recordFailedAttempt(ip);
+    if (result.locked) {
+      const retryAfterSec = Math.ceil(result.retryAfterMs / 1000);
+      return NextResponse.json(
+        {
+          error: "Too many failed attempts. Please try again later.",
+          retryAfter: retryAfterSec,
+          remaining: 0,
+        },
+        {
+          status: 429,
+          headers: { "Retry-After": String(retryAfterSec) },
+        }
+      );
+    }
+    return NextResponse.json(
+      { error: "Invalid password", remaining: result.remaining },
+      { status: 401 }
+    );
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

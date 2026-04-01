@@ -1,15 +1,39 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, Button, Input } from "@/shared/components";
 import { useRouter } from "next/navigation";
+
+function formatRetryTime(seconds) {
+  if (!seconds) return "";
+  const min = Math.ceil(seconds / 60);
+  return min === 1 ? "1 minute" : `${min} minutes`;
+}
 
 export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [hasPassword, setHasPassword] = useState(null);
+  const [remaining, setRemaining] = useState(null);
+  const [retryAfter, setRetryAfter] = useState(null);
   const router = useRouter();
+
+  // Countdown timer for lockout
+  useEffect(() => {
+    if (!retryAfter || retryAfter <= 0) return;
+    const timer = setInterval(() => {
+      setRetryAfter((prev) => {
+        if (prev <= 1) {
+          setError("");
+          setRemaining(null);
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [retryAfter]);
 
   useEffect(() => {
     async function checkAuth() {
@@ -60,7 +84,17 @@ export default function LoginPage() {
         router.refresh();
       } else {
         const data = await res.json();
-        setError(data.error || "Invalid password");
+        if (res.status === 429) {
+          setRetryAfter(data.retryAfter);
+          setError(
+            `Too many failed attempts. Try again in ${formatRetryTime(data.retryAfter)}.`
+          );
+          setRemaining(0);
+        } else {
+          setError(data.error || "Invalid password");
+          setRemaining(data.remaining ?? null);
+          setRetryAfter(null);
+        }
       }
     } catch (err) {
       setError("An error occurred. Please try again.");
@@ -102,6 +136,12 @@ export default function LoginPage() {
                 autoFocus
               />
               {error && <p className="text-xs text-red-500">{error}</p>}
+              {remaining !== null && remaining > 0 && remaining <= 3 && (
+                <p className="text-xs text-amber-500">
+                  {remaining} attempt{remaining !== 1 ? "s" : ""} remaining
+                  before lockout
+                </p>
+              )}
             </div>
 
             <Button
@@ -109,6 +149,7 @@ export default function LoginPage() {
               variant="primary"
               className="w-full"
               loading={loading}
+              disabled={!!retryAfter}
             >
               Login
             </Button>
