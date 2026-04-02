@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE="knight1988/9router:latest"
+TAG="${1:-latest}"
+IMAGE="knight1988/9router:${TAG}"
 
 echo "Building ${IMAGE}..."
 docker build -t "${IMAGE}" .
