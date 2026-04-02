@@ -2,7 +2,7 @@
  * server-https.js — Custom HTTPS-aware entry point for 9Router.
  *
  * When HTTPS_ENABLED=true and a valid certificate is found, this starts
- * Next.js with HTTPS using the selfSignedCertificate option of startServer().
+ * Next.js with HTTPS using a native https.createServer() + Next.js custom server.
  * Falls back to plain HTTP when HTTPS_ENABLED is not set or no cert is found.
  *
  * Certificate resolution order:
@@ -81,7 +81,8 @@ if (nextConfig) {
   process.env.__NEXT_PRIVATE_STANDALONE_CONFIG = JSON.stringify(nextConfig);
 }
 
-require("next");
+const https = require("https");
+const next = require("next");
 const { startServer } = require("next/dist/server/lib/start-server");
 
 const httpsEnabled = process.env.HTTPS_ENABLED === "true";
@@ -90,19 +91,38 @@ if (httpsEnabled) {
   const certs = resolveSSLCerts();
   if (certs) {
     console.log(`[https] Starting HTTPS server on port ${httpsPort}`);
-    startServer({
-      dir,
-      isDev: false,
-      config: nextConfig,
-      hostname,
-      port: httpsPort,
-      allowRetry: false,
-      keepAliveTimeout,
-      selfSignedCertificate: { key: certs.key, cert: certs.cert },
-    }).catch((err) => {
-      console.error("[https] Failed to start HTTPS server:", err);
-      process.exit(1);
-    });
+    (async () => {
+      try {
+        const httpsServer = https.createServer({
+          key: fs.readFileSync(certs.key),
+          cert: fs.readFileSync(certs.cert),
+        });
+
+        const app = next({
+          dev: false,
+          dir,
+          conf: nextConfig,
+          hostname,
+          port: httpsPort,
+          httpServer: httpsServer,
+        });
+        await app.prepare();
+
+        const handler = app.getRequestHandler();
+        httpsServer.on("request", handler);
+
+        if (keepAliveTimeout) {
+          httpsServer.keepAliveTimeout = keepAliveTimeout;
+        }
+
+        httpsServer.listen(httpsPort, hostname, () => {
+          console.log(`[https] Server ready on https://${hostname}:${httpsPort}`);
+        });
+      } catch (err) {
+        console.error("[https] Failed to start HTTPS server:", err);
+        process.exit(1);
+      }
+    })();
   } else {
     console.warn("[https] HTTPS_ENABLED=true but no certificate found — starting HTTP server");
     startServer({
