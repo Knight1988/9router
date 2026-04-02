@@ -235,7 +235,7 @@ export function extractUsage(chunk, body = null) {
     });
   }
 
-  // Claude format without message_delta type (e.g., Zunef returns usage directly in chunk.usage)
+  // Claude format without message_delta type (e.g., Zunef Unlimited returns usage directly in chunk.usage)
   if (chunk.usage && typeof chunk.usage === "object" && (chunk.usage.input_tokens !== undefined || chunk.usage.output_tokens !== undefined)) { console.log("[extractUsage] Claude format detected - chunk.usage:", JSON.stringify(chunk.usage), "body available:", !!body);
     const inputTokens = chunk.usage.input_tokens || 0;
     const outputTokens = chunk.usage.output_tokens || 0;

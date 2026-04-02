@@ -183,7 +183,7 @@ export const PROVIDER_MODELS = {
     { id: "claude-opus-4-20250514", name: "Claude Opus 4" },
     { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet" },
   ],
-  zunef: [ // Zunef - API Key provider
+  "zunef-unlimited": [ // Zunef Unlimited - API Key provider
     { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
     { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
     { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5" },

@@ -378,7 +378,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy("https://openrouter.ai/api/v1/auth/key", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
-      case "zunef": {
+      case "zunef-unlimited": {
         const res = await fetchWithConnectionProxy(
           `https://claude.zunef.com/api/claude-code/${encodeURIComponent(connection.apiKey)}/auth`,
           { headers: { Accept: "text/plain" } }, effectiveProxy);

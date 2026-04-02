@@ -3,7 +3,7 @@ import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/appConstants.js";
 import { buildClineHeaders } from "../../src/shared/utils/clineAuth.js";
 import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
-import { getZunefToken } from "../utils/zunefTokenCache.js";
+import { getZunefToken } from "../utils/zunefUnlimitedTokenCache.js";
 
 export class DefaultExecutor extends BaseExecutor {
   constructor(provider) {
@@ -11,7 +11,7 @@ export class DefaultExecutor extends BaseExecutor {
   }
 
   async preExecute(credentials) {
-    if (this.provider === "zunef" && credentials.apiKey) {
+    if (this.provider === "zunef-unlimited" && credentials.apiKey) {
       const token = await getZunefToken(credentials.apiKey);
       return { ...credentials, _zunefToken: token };
     }
@@ -88,7 +88,7 @@ export class DefaultExecutor extends BaseExecutor {
           : (headers["Authorization"] = `Bearer ${credentials.accessToken}`);
         break;
       }
-      case "zunef":
+      case "zunef-unlimited":
         headers["x-api-key"] = credentials._zunefToken || credentials.apiKey;
         break;
       case "glm":

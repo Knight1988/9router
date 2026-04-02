@@ -28,7 +28,7 @@ export async function getModelInfo(modelStr) {
       return { provider: matchedOpenAI.id, model: parsed.model };
     }
 
-    // Check Anthropic Compatible nodes by prefix (e.g. zn/model, zunef/model)
+    // Check Anthropic Compatible nodes by prefix (e.g. zu/model, zunef-unlimited/model)
     const anthropicNodes = await getProviderNodes({ type: "anthropic-compatible" });
     const matchedAnthropic = anthropicNodes.find((node) => node.prefix === providerPrefix);
     if (matchedAnthropic) {

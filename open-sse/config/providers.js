@@ -114,7 +114,7 @@ export const PROVIDERS = {
       "X-Title": "Endpoint Proxy"
     }
   },
-  zunef: {
+  "zunef-unlimited": {
     baseUrl: "https://claude.zunef.com/v1/ai/v1/messages",
     format: "claude",
     headers: { ...CLAUDE_API_HEADERS, "X-ZUNEF-CLIENT": "claude-code" }

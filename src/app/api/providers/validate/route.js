@@ -99,7 +99,7 @@ export async function POST(request) {
           isValid = openrouterRes.ok;
           break;
 
-        case "zunef": {
+        case "zunef-unlimited": {
           const zunefRes = await fetch(
             `https://claude.zunef.com/api/claude-code/${encodeURIComponent(apiKey)}/auth`,
             { headers: { Accept: "text/plain" } }
