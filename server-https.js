@@ -53,7 +53,7 @@ process.env.NODE_ENV = "production";
 process.chdir(__dirname);
 
 const currentPort = parseInt(process.env.PORT, 10) || 20128;
-const httpsPort = parseInt(process.env.HTTPS_PORT, 10) || currentPort;
+const httpsPort = parseInt(process.env.HTTPS_PORT, 10) || 20129;
 const hostname = process.env.HOSTNAME || "0.0.0.0";
 
 let keepAliveTimeout = parseInt(process.env.KEEP_ALIVE_TIMEOUT, 10);
@@ -117,6 +117,20 @@ if (httpsEnabled) {
 
         httpsServer.listen(httpsPort, hostname, () => {
           console.log(`[https] Server ready on https://${hostname}:${httpsPort}`);
+
+          // Start HTTP→HTTPS redirect server on PORT if different from HTTPS port
+          if (httpsPort !== currentPort) {
+            const http = require("http");
+            const redirectServer = http.createServer((req, res) => {
+              const host = (req.headers.host || hostname).replace(/:\d+$/, "");
+              const target = `https://${host}:${httpsPort}${req.url}`;
+              res.writeHead(301, { Location: target });
+              res.end();
+            });
+            redirectServer.listen(currentPort, hostname, () => {
+              console.log(`[https] HTTP→HTTPS redirect: http://${hostname}:${currentPort} → https port ${httpsPort}`);
+            });
+          }
         });
       } catch (err) {
         console.error("[https] Failed to start HTTPS server:", err);
@@ -124,19 +138,54 @@ if (httpsEnabled) {
       }
     })();
   } else {
-    console.warn("[https] HTTPS_ENABLED=true but no certificate found — starting HTTP server");
-    startServer({
-      dir,
-      isDev: false,
-      config: nextConfig,
-      hostname,
-      port: currentPort,
-      allowRetry: false,
-      keepAliveTimeout,
-    }).catch((err) => {
-      console.error(err);
+    // Auto-generate a self-signed cert so HTTPS port is always reachable
+    console.warn("[https] HTTPS_ENABLED=true but no certificate found — generating self-signed cert");
+    let autoKey, autoCert;
+    try {
+      const selfsigned = require("selfsigned");
+      const attrs = [{ name: "commonName", value: hostname === "0.0.0.0" ? "localhost" : hostname }];
+      const pems = selfsigned.generate(attrs, { days: 365, keySize: 2048 });
+      autoKey = pems.private;
+      autoCert = pems.cert;
+    } catch (err) {
+      console.error("[https] Failed to generate self-signed cert:", err);
       process.exit(1);
-    });
+    }
+
+    (async () => {
+      try {
+        const httpsServer = https.createServer({ key: autoKey, cert: autoCert });
+        const app = next({
+          dev: false,
+          dir,
+          conf: nextConfig,
+          hostname,
+          port: httpsPort,
+          httpServer: httpsServer,
+        });
+        await app.prepare();
+        const handler = app.getRequestHandler();
+        httpsServer.on("request", handler);
+        if (keepAliveTimeout) httpsServer.keepAliveTimeout = keepAliveTimeout;
+        httpsServer.listen(httpsPort, hostname, () => {
+          console.log(`[https] Server ready on https://${hostname}:${httpsPort} (self-signed cert)`);
+          if (httpsPort !== currentPort) {
+            const http = require("http");
+            const redirectServer = http.createServer((req, res) => {
+              const host = (req.headers.host || hostname).replace(/:\d+$/, "");
+              res.writeHead(301, { Location: `https://${host}:${httpsPort}${req.url}` });
+              res.end();
+            });
+            redirectServer.listen(currentPort, hostname, () => {
+              console.log(`[https] HTTP→HTTPS redirect: http://${hostname}:${currentPort} → https port ${httpsPort}`);
+            });
+          }
+        });
+      } catch (err) {
+        console.error("[https] Failed to start HTTPS server:", err);
+        process.exit(1);
+      }
+    })();
   }
 } else {
   // Default: plain HTTP — same as original server.js behavior

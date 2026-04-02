@@ -27,14 +27,14 @@ services:
       - NEXT_PUBLIC_CLOUD_URL=${NEXT_PUBLIC_CLOUD_URL:-https://9router.com}
       # HTTPS support (optional)
       - HTTPS_ENABLED=true
-      # - HTTPS_PORT=20129
+      - HTTPS_PORT=20129
       # - SSL_CERT_PATH=/var/lib/9router/ssl/server.crt
       # - SSL_KEY_PATH=/var/lib/9router/ssl/server.key
     volumes:
       - 9router_data:/var/lib/9router
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:20128/api/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "--no-check-certificate", "https://localhost:20129/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
