@@ -26,6 +26,8 @@ COPY --from=builder /app/open-sse ./open-sse
 COPY --from=builder /app/src/mitm ./src/mitm
 # Standalone node_modules may omit deps only required by the MITM child process.
 COPY --from=builder /app/node_modules/node-forge ./node_modules/node-forge
+# HTTPS support: custom server wrapper and ssl utility
+COPY --from=builder /app/server-https.js ./server-https.js
 
 RUN mkdir -p /var/lib/9router
 
@@ -34,6 +36,7 @@ RUN printf '#!/bin/sh\nset -e\nDATA_DIR="${DATA_DIR:-/var/lib/9router}"\nmkdir -
 RUN apk add --no-cache su-exec
 
 EXPOSE 20128
+EXPOSE 20129
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["node", "server.js"]
+CMD ["node", "server-https.js"]

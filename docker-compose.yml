@@ -7,6 +7,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - "20128:20128"
+      - "20129:20129"
     environment:
       - NODE_ENV=production
       - PORT=20128
@@ -24,6 +25,11 @@ services:
       - CLOUD_URL=${CLOUD_URL:-https://9router.com}
       - NEXT_PUBLIC_BASE_URL=http://localhost:20128
       - NEXT_PUBLIC_CLOUD_URL=${NEXT_PUBLIC_CLOUD_URL:-https://9router.com}
+      # HTTPS support (optional)
+      - HTTPS_ENABLED=true
+      # - HTTPS_PORT=20129
+      # - SSL_CERT_PATH=/var/lib/9router/ssl/server.crt
+      # - SSL_KEY_PATH=/var/lib/9router/ssl/server.key
     volumes:
       - 9router_data:/var/lib/9router
     restart: unless-stopped

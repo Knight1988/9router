@@ -27,6 +27,13 @@ export default function ProfilePage() {
   const [proxyLoading, setProxyLoading] = useState(false);
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
 
+  // SSL state
+  const [sslStatus, setSslStatus] = useState(null);
+  const [sslLoading, setSslLoading] = useState(false);
+  const [sslStatus2, setSslStatus2] = useState({ type: "", message: "" });
+  const certFileRef = useRef(null);
+  const keyFileRef = useRef(null);
+
   // Countdown timer for password change lockout
   useEffect(() => {
     if (!passRetryAfter || passRetryAfter <= 0) return;
@@ -282,6 +289,66 @@ export default function ProfilePage() {
     }
   };
 
+  useEffect(() => {
+    fetch("/api/settings/ssl")
+      .then((res) => res.json())
+      .then((data) => setSslStatus(data))
+      .catch(() => {});
+  }, []);
+
+  const handleCertUpload = async () => {
+    const certFile = certFileRef.current?.files?.[0];
+    const keyFile = keyFileRef.current?.files?.[0];
+    if (!certFile || !keyFile) {
+      setSslStatus2({ type: "error", message: "Please select both a certificate and a private key file" });
+      return;
+    }
+    setSslLoading(true);
+    setSslStatus2({ type: "", message: "" });
+    try {
+      const cert = await certFile.text();
+      const key = await keyFile.text();
+      const res = await fetch("/api/settings/ssl", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cert, key }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSslStatus2({ type: "success", message: "Certificate uploaded. Restart the server to apply HTTPS." });
+        const statusRes = await fetch("/api/settings/ssl");
+        if (statusRes.ok) setSslStatus(await statusRes.json());
+        if (certFileRef.current) certFileRef.current.value = "";
+        if (keyFileRef.current) keyFileRef.current.value = "";
+      } else {
+        setSslStatus2({ type: "error", message: data.error || "Upload failed" });
+      }
+    } catch {
+      setSslStatus2({ type: "error", message: "An error occurred" });
+    } finally {
+      setSslLoading(false);
+    }
+  };
+
+  const handleCertDelete = async () => {
+    setSslLoading(true);
+    setSslStatus2({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/settings/ssl", { method: "DELETE" });
+      if (res.ok) {
+        setSslStatus2({ type: "success", message: "Certificate removed. Restart the server to apply changes." });
+        const statusRes = await fetch("/api/settings/ssl");
+        if (statusRes.ok) setSslStatus(await statusRes.json());
+      } else {
+        setSslStatus2({ type: "error", message: "Failed to remove certificate" });
+      }
+    } catch {
+      setSslStatus2({ type: "error", message: "An error occurred" });
+    } finally {
+      setSslLoading(false);
+    }
+  };
+
   const reloadSettings = async () => {
     try {
       const res = await fetch("/api/settings");
@@ -519,6 +586,112 @@ export default function ProfilePage() {
                   </Button>
                 </div>
               </form>
+            )}
+          </div>
+        </Card>
+
+        {/* SSL / HTTPS */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-teal-500/10 text-teal-500">
+              <span className="material-symbols-outlined text-[20px]">lock</span>
+            </div>
+            <h3 className="text-lg font-semibold">SSL / HTTPS</h3>
+          </div>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">HTTPS Status</p>
+                <p className="text-sm text-text-muted">
+                  Controlled by <code className="bg-bg px-1 rounded">HTTPS_ENABLED</code> env var
+                </p>
+              </div>
+              <span className={`text-sm font-medium px-2 py-1 rounded-full ${sslStatus?.httpsEnabled ? "bg-green-500/10 text-green-500" : "bg-text-muted/10 text-text-muted"}`}>
+                {sslStatus?.httpsEnabled ? "Enabled" : "Disabled"}
+              </span>
+            </div>
+
+            <div className="pt-2 border-t border-border/50">
+              <p className="font-medium mb-2">Certificate</p>
+              {sslStatus?.hasCert ? (
+                <div className="flex flex-col gap-2">
+                  <div className="p-3 rounded-lg bg-bg border border-border text-sm font-mono">
+                    {sslStatus.certSource === "env" && (
+                      <p className="text-text-muted mb-1">Source: env var paths</p>
+                    )}
+                    {sslStatus.certSource === "uploaded" && (
+                      <p className="text-text-muted mb-1">Source: uploaded</p>
+                    )}
+                    {sslStatus.certInfo ? (
+                      <>
+                        <p className="truncate">Subject: {sslStatus.certInfo.subject}</p>
+                        <p className="truncate">Issuer: {sslStatus.certInfo.issuer}</p>
+                        <p>Valid until: {new Date(sslStatus.certInfo.validTo).toLocaleDateString()}</p>
+                        {sslStatus.certInfo.expired && (
+                          <p className="text-red-500 font-semibold mt-1">⚠ Certificate expired</p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-text-muted">Certificate present (metadata unavailable)</p>
+                    )}
+                  </div>
+                  {sslStatus.certSource === "uploaded" && (
+                    <Button
+                      variant="outline"
+                      icon="delete"
+                      onClick={handleCertDelete}
+                      loading={sslLoading}
+                    >
+                      Remove Certificate
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-text-muted">No certificate installed. Running on HTTP.</p>
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-border/50">
+              <p className="font-medium mb-2">Upload Certificate</p>
+              <p className="text-sm text-text-muted mb-3">
+                Upload a PEM-encoded certificate and private key. Restart the server after uploading.
+              </p>
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm font-medium">Certificate (.crt / .pem)</label>
+                  <input
+                    ref={certFileRef}
+                    type="file"
+                    accept=".crt,.pem,.cer"
+                    className="text-sm text-text-muted file:mr-3 file:py-1 file:px-3 file:rounded file:border file:border-border file:text-sm file:bg-bg file:text-text-main hover:file:bg-bg-hover cursor-pointer"
+                    disabled={sslLoading}
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm font-medium">Private Key (.key / .pem)</label>
+                  <input
+                    ref={keyFileRef}
+                    type="file"
+                    accept=".key,.pem"
+                    className="text-sm text-text-muted file:mr-3 file:py-1 file:px-3 file:rounded file:border file:border-border file:text-sm file:bg-bg file:text-text-main hover:file:bg-bg-hover cursor-pointer"
+                    disabled={sslLoading}
+                  />
+                </div>
+                <Button
+                  variant="primary"
+                  icon="upload"
+                  onClick={handleCertUpload}
+                  loading={sslLoading}
+                >
+                  Upload Certificate
+                </Button>
+              </div>
+            </div>
+
+            {sslStatus2.message && (
+              <p className={`text-sm ${sslStatus2.type === "error" ? "text-red-500" : "text-green-500"}`}>
+                {sslStatus2.message}
+              </p>
             )}
           </div>
         </Card>
