@@ -28,6 +28,7 @@ services:
       # HTTPS support (optional)
       - HTTPS_ENABLED=true
       - HTTPS_PORT=20129
+      - AUTO_REDIRECT=${AUTO_REDIRECT:-true}
       # - SSL_CERT_PATH=/var/lib/9router/ssl/server.crt
       # - SSL_KEY_PATH=/var/lib/9router/ssl/server.key
     volumes:

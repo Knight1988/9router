@@ -86,6 +86,7 @@ const next = require("next");
 const { startServer } = require("next/dist/server/lib/start-server");
 
 const httpsEnabled = process.env.HTTPS_ENABLED === "true";
+const autoRedirect = process.env.AUTO_REDIRECT !== "false";
 
 if (httpsEnabled) {
   const certs = resolveSSLCerts();
@@ -118,18 +119,34 @@ if (httpsEnabled) {
         httpsServer.listen(httpsPort, hostname, () => {
           console.log(`[https] Server ready on https://${hostname}:${httpsPort}`);
 
-          // Start HTTP→HTTPS redirect server on PORT if different from HTTPS port
+          // Start HTTP server on PORT if different from HTTPS port
           if (httpsPort !== currentPort) {
-            const http = require("http");
-            const redirectServer = http.createServer((req, res) => {
-              const host = (req.headers.host || hostname).replace(/:\d+$/, "");
-              const target = `https://${host}:${httpsPort}${req.url}`;
-              res.writeHead(301, { Location: target });
-              res.end();
-            });
-            redirectServer.listen(currentPort, hostname, () => {
-              console.log(`[https] HTTP→HTTPS redirect: http://${hostname}:${currentPort} → https port ${httpsPort}`);
-            });
+            if (autoRedirect) {
+              const http = require("http");
+              const redirectServer = http.createServer((req, res) => {
+                const host = (req.headers.host || hostname).replace(/:\d+$/, "");
+                const target = `https://${host}:${httpsPort}${req.url}`;
+                res.writeHead(301, { Location: target });
+                res.end();
+              });
+              redirectServer.listen(currentPort, hostname, () => {
+                console.log(`[https] HTTP→HTTPS redirect: http://${hostname}:${currentPort} → https port ${httpsPort}`);
+              });
+            } else {
+              startServer({
+                dir,
+                isDev: false,
+                config: nextConfig,
+                hostname,
+                port: currentPort,
+                allowRetry: false,
+                keepAliveTimeout,
+              }).then(() => {
+                console.log(`[https] HTTP server also running on http://${hostname}:${currentPort}`);
+              }).catch((err) => {
+                console.error("[https] Failed to start HTTP server:", err);
+              });
+            }
           }
         });
       } catch (err) {
@@ -170,15 +187,31 @@ if (httpsEnabled) {
         httpsServer.listen(httpsPort, hostname, () => {
           console.log(`[https] Server ready on https://${hostname}:${httpsPort} (self-signed cert)`);
           if (httpsPort !== currentPort) {
-            const http = require("http");
-            const redirectServer = http.createServer((req, res) => {
-              const host = (req.headers.host || hostname).replace(/:\d+$/, "");
-              res.writeHead(301, { Location: `https://${host}:${httpsPort}${req.url}` });
-              res.end();
-            });
-            redirectServer.listen(currentPort, hostname, () => {
-              console.log(`[https] HTTP→HTTPS redirect: http://${hostname}:${currentPort} → https port ${httpsPort}`);
-            });
+            if (autoRedirect) {
+              const http = require("http");
+              const redirectServer = http.createServer((req, res) => {
+                const host = (req.headers.host || hostname).replace(/:\d+$/, "");
+                res.writeHead(301, { Location: `https://${host}:${httpsPort}${req.url}` });
+                res.end();
+              });
+              redirectServer.listen(currentPort, hostname, () => {
+                console.log(`[https] HTTP→HTTPS redirect: http://${hostname}:${currentPort} → https port ${httpsPort}`);
+              });
+            } else {
+              startServer({
+                dir,
+                isDev: false,
+                config: nextConfig,
+                hostname,
+                port: currentPort,
+                allowRetry: false,
+                keepAliveTimeout,
+              }).then(() => {
+                console.log(`[https] HTTP server also running on http://${hostname}:${currentPort}`);
+              }).catch((err) => {
+                console.error("[https] Failed to start HTTP server:", err);
+              });
+            }
           }
         });
       } catch (err) {
