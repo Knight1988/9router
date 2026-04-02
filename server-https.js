@@ -86,7 +86,7 @@ const next = require("next");
 const { startServer } = require("next/dist/server/lib/start-server");
 
 const httpsEnabled = process.env.HTTPS_ENABLED === "true";
-const autoRedirect = process.env.AUTO_REDIRECT !== "false";
+const autoRedirect = process.env.AUTO_REDIRECT === "true";
 
 if (httpsEnabled) {
   const certs = resolveSSLCerts();
