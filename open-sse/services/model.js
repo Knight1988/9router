@@ -20,6 +20,8 @@ const ALIAS_TO_PROVIDER_ID = {
   openrouter: "openrouter",
   "zunef-unlimited": "zunef-unlimited",
   zu: "zunef-unlimited",
+  zunef: "zunef",
+  zf: "zunef",
   glm: "glm",
   kimi: "kimi",
   minimax: "minimax",

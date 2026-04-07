@@ -119,6 +119,11 @@ export const PROVIDERS = {
     format: "claude",
     headers: { ...CLAUDE_API_HEADERS, "X-ZUNEF-CLIENT": "claude-code" }
   },
+  zunef: {
+    baseUrl: "https://claude.zunef.com/v1/ai/v1/messages",
+    format: "claude",
+    headers: { ...CLAUDE_API_HEADERS }
+  },
   openai: {
     baseUrl: "https://api.openai.com/v1/chat/completions",
     format: "openai"

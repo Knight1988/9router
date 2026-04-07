@@ -68,6 +68,16 @@ const PROVIDER_MODELS_CONFIG = {
     authHeader: "x-api-key",
     parseResponse: (data) => data.data || []
   },
+  zunef: {
+    url: "https://claude.zunef.com/v1/ai/v1/models",
+    method: "GET",
+    headers: {
+      "Anthropic-Version": "2023-06-01",
+      "Content-Type": "application/json"
+    },
+    authHeader: "x-api-key",
+    parseResponse: (data) => data.data || []
+  },
   gemini: {
     url: "https://generativelanguage.googleapis.com/v1beta/models",
     method: "GET",

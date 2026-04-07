@@ -384,6 +384,12 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
           { headers: { Accept: "text/plain" } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid install token" };
       }
+      case "zunef": {
+        const res = await fetchWithConnectionProxy(
+          "https://claude.zunef.com/v1/ai/v1/models",
+          { headers: { "x-api-key": connection.apiKey, "Anthropic-Version": "2023-06-01" } }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
       case "glm": {
         const res = await fetchWithConnectionProxy("https://api.z.ai/api/anthropic/v1/messages", {
           method: "POST",
