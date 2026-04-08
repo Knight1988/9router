@@ -209,7 +209,7 @@ export const PROVIDERS = {
       "Content-Type": "application/connect+proto",
       "User-Agent": "connect-es/1.6.1"
     },
-    clientVersion: "1.1.3"
+    clientVersion: "3.1.0"
   },
   "kimi-coding": {
     baseUrl: KIMI_CODING_BASE_URL,
