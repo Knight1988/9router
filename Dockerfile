@@ -1,14 +1,21 @@
-FROM node:20-alpine AS builder
+# syntax=docker/dockerfile:1.7
+ARG BUN_IMAGE=oven/bun:1.3.2-alpine
+FROM ${BUN_IMAGE} AS base
 WORKDIR /app
 
-COPY package*.json ./
-RUN if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
+FROM base AS builder
+
+RUN apk --no-cache upgrade && apk --no-cache add nodejs npm python3 make g++ linux-headers
+
+COPY package.json ./
+RUN --mount=type=cache,target=/root/.npm \
+  npm install
 
 COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-FROM node:20-alpine AS runner
+FROM ${BUN_IMAGE} AS runner
 WORKDIR /app
 
 LABEL org.opencontainers.image.title="9router"

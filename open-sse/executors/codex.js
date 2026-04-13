@@ -1,7 +1,71 @@
+import { createHash } from "crypto";
 import { BaseExecutor } from "./base.js";
 import { CODEX_DEFAULT_INSTRUCTIONS } from "../config/codexInstructions.js";
 import { PROVIDERS } from "../config/providers.js";
 import { normalizeResponsesInput } from "../translator/helpers/responsesApiHelper.js";
+import { getConsistentMachineId } from "../../src/shared/utils/machineId.js";
+
+// In-memory map: hash(machineId + first assistant content) → { sessionId, lastUsed }
+const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour
+const assistantSessionMap = new Map();
+
+// Cache machine ID at module level (resolved once)
+let cachedMachineId = null;
+getConsistentMachineId().then(id => { cachedMachineId = id; });
+
+function hashContent(text) {
+  return createHash("sha256").update(text).digest("hex").slice(0, 16);
+}
+
+function generateSessionId() {
+  return `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+// Extract text content from an input item
+function extractItemText(item) {
+  if (!item) return "";
+  if (typeof item.content === "string") return item.content;
+  if (Array.isArray(item.content)) {
+    return item.content.map(c => c.text || c.output || "").filter(Boolean).join("");
+  }
+  return "";
+}
+
+// Resolve session_id from first assistant message + machineId to avoid cross-user collision
+function resolveConversationSessionId(input, machineId) {
+  const machineSessionId = machineId ? `sess_${hashContent(machineId)}` : generateSessionId();
+  if (!Array.isArray(input) || input.length === 0) return machineSessionId;
+
+  // Find first assistant message that has actual text content
+  let text = "";
+  for (const item of input) {
+    if (item.role === "assistant") {
+      text = extractItemText(item);
+      if (text) break;
+    }
+  }
+  if (!text) return machineSessionId;
+
+  const hash = hashContent((machineId || "") + text);
+  const entry = assistantSessionMap.get(hash);
+  if (entry) {
+    entry.lastUsed = Date.now();
+    return entry.sessionId;
+  }
+
+
+  const sessionId = generateSessionId();
+  assistantSessionMap.set(hash, { sessionId, lastUsed: Date.now() });
+  return sessionId;
+}
+
+// Cleanup expired entries periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of assistantSessionMap) {
+    if (now - entry.lastUsed > SESSION_TTL_MS) assistantSessionMap.delete(key);
+  }
+}, 10 * 60 * 1000);
 
 /**
  * Codex Executor - handles OpenAI Codex API (Responses API format)
@@ -10,14 +74,16 @@ import { normalizeResponsesInput } from "../translator/helpers/responsesApiHelpe
 export class CodexExecutor extends BaseExecutor {
   constructor() {
     super("codex", PROVIDERS.codex);
+    this._currentSessionId = null;
   }
 
   /**
-   * Override headers to add session_id per request
+   * Override headers to add session_id per conversation
+   * transformRequest runs BEFORE buildHeaders, sets this._currentSessionId
    */
   buildHeaders(credentials, stream = true) {
     const headers = super.buildHeaders(credentials, stream);
-    headers["session_id"] = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    headers["session_id"] = this._currentSessionId || credentials?.connectionId || "default";
     return headers;
   }
 
@@ -25,6 +91,8 @@ export class CodexExecutor extends BaseExecutor {
    * Transform request before sending - inject default instructions if missing
    */
   transformRequest(model, body, stream, credentials) {
+    // Resolve conversation-stable session_id from input history + machineId
+    this._currentSessionId = resolveConversationSessionId(body.input, cachedMachineId);
     // Convert string input to array format (Codex API requires input as array)
     const normalized = normalizeResponsesInput(body.input);
     if (normalized) body.input = normalized;
