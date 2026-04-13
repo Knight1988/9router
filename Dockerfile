@@ -36,11 +36,10 @@ COPY --from=builder /app/node_modules/node-forge ./node_modules/node-forge
 # HTTPS support: custom server wrapper and ssl utility
 COPY --from=builder /app/server-https.js ./server-https.js
 
-RUN mkdir -p /var/lib/9router
+RUN apk add --no-cache nodejs su-exec && mkdir -p /var/lib/9router
 
 # Fix permissions at runtime (handles mounted volumes)
 RUN printf '#!/bin/sh\nset -e\nDATA_DIR="${DATA_DIR:-/var/lib/9router}"\nmkdir -p "$DATA_DIR"\nchown -R node:node "$DATA_DIR" 2>/dev/null || true\nexec su-exec node "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
-RUN apk add --no-cache su-exec
 
 EXPOSE 20128
 EXPOSE 20129

@@ -39,9 +39,9 @@ async function hasValidToken(request) {
 async function isAuthenticated(request) {
   if (await hasValidToken(request)) return true;
   // Allow if requireLogin is disabled
-  const origin = request.nextUrl.origin;
+  const internalBase = process.env.BASE_URL || request.nextUrl.origin;
   try {
-    const res = await fetch(`${origin}/api/settings/require-login`);
+    const res = await fetch(`${internalBase}/api/settings/require-login`);
     const data = await res.json();
     if (data.requireLogin === false) return true;
   } catch {
@@ -72,12 +72,13 @@ export async function proxy(request) {
 
   // Protect all dashboard routes
   if (pathname.startsWith("/dashboard")) {
-    const origin = request.nextUrl.origin;
     let requireLogin = true;
     let tunnelDashboardAccess = false;
 
     try {
-      const res = await fetch(`${origin}/api/settings/require-login`);
+      // Use internal HTTP URL to avoid TLS issues with self-signed certs on the external hostname
+      const internalBase = process.env.BASE_URL || request.nextUrl.origin;
+      const res = await fetch(`${internalBase}/api/settings/require-login`);
       const data = await res.json();
       requireLogin = data.requireLogin !== false;
       tunnelDashboardAccess = data.tunnelDashboardAccess === true;
