@@ -70,34 +70,29 @@ export const PROVIDER_MODELS = {
     { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 Thinking" },
     { id: "gpt-oss-120b-medium", name: "GPT OSS 120B Medium" },
   ],
-  gh: [ // GitHub Copilot - OpenAI models
-    { id: "gpt-3.5-turbo", name: "GPT-3.5 Turbo" },
-    { id: "gpt-4", name: "GPT-4" },
-    { id: "gpt-4o", name: "GPT-4o" },
-    { id: "gpt-4o-mini", name: "GPT-4o mini" },
-    { id: "gpt-4.1", name: "GPT-4.1" },
-    { id: "gpt-5", name: "GPT-5" },
-    { id: "gpt-5-mini", name: "GPT-5 Mini" },
-    { id: "gpt-5-codex", name: "GPT-5 Codex" },
-    { id: "gpt-5.1", name: "GPT-5.1" },
-    { id: "gpt-5.1-codex", name: "GPT-5.1 Codex" },
-    { id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini" },
-    { id: "gpt-5.1-codex-max", name: "GPT-5.1 Codex Max" },
+  gh: [ // GitHub Copilot
+    // OpenAI models
+    { id: "gpt-5.4-mini", name: "GPT-5.4 Mini" },
+    { id: "gpt-5.3-codex", name: "GPT-5.3 Codex" },
     { id: "gpt-5.2", name: "GPT-5.2" },
     { id: "gpt-5.2-codex", name: "GPT-5.2 Codex" },
-    { id: "gpt-5.3-codex", name: "GPT-5.3 Codex" },
-    { id: "gpt-5.4", name: "GPT-5.4" },
-    // GitHub Copilot - Anthropic models
+    { id: "gpt-5.1", name: "GPT-5.1" },
+    { id: "gpt-5-mini", name: "GPT-5 Mini" },
+    { id: "gpt-4.1", name: "GPT-4.1" },
+    { id: "gpt-4o", name: "GPT-4o" },
+    { id: "gpt-4o-mini", name: "GPT-4o Mini" },
+    // Anthropic models
     { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
-    { id: "claude-opus-4.1", name: "Claude Opus 4.1" },
-    { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
-    { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
-    { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
-    { id: "claude-sonnet-4.6", name: "Claude Sonnet 4.6" },
-    { id: "claude-opus-4.6", name: "Claude Opus 4.6" },
-    // GitHub Copilot - Google models
+    // Google models
+    { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro" },
     { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
     { id: "gemini-3-flash-preview", name: "Gemini 3 Flash" },
+    // xAI models
+    { id: "grok-code-fast-1", name: "Grok Code Fast 1" },
+    // MiniMax models
+    { id: "minimax-m2.5", name: "MiniMax M2.5" },
+    // Other
+    { id: "goldeneye-free-auto", name: "Goldeneye" },
   ],
   kr: [ // Kiro AI
     // { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
