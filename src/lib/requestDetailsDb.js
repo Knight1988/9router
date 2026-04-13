@@ -1,17 +1,13 @@
-import { Low } from "lowdb";
-import { JSONFile } from "lowdb/node";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
 
 const isCloud = typeof caches !== "undefined" && typeof caches === "object";
 
-const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_BATCH_SIZE = 20;
 const DEFAULT_FLUSH_INTERVAL_MS = 5000;
-const DEFAULT_MAX_JSON_SIZE = 5 * 1024; // 5KB default, configurable via settings
+const DEFAULT_MAX_JSON_SIZE = 5 * 1024;
 const CONFIG_CACHE_TTL_MS = 5000;
-const MAX_TOTAL_DB_SIZE = 50 * 1024 * 1024; // 50MB hard limit for total DB file
 
 function getAppName() {
   return "9router";
@@ -32,7 +28,8 @@ function getUserDataDir() {
 }
 
 const DATA_DIR = getUserDataDir();
-const DB_FILE = isCloud ? null : path.join(DATA_DIR, "request-details.json");
+const DB_FILE = isCloud ? null : path.join(DATA_DIR, "request-details.db");
+const LEGACY_JSON_FILE = isCloud ? null : path.join(DATA_DIR, "request-details.json");
 
 if (!isCloud && !fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -40,16 +37,89 @@ if (!isCloud && !fs.existsSync(DATA_DIR)) {
 
 let dbInstance = null;
 
-async function getDb() {
+function getDb() {
   if (isCloud) return null;
-  if (!dbInstance) {
-    const adapter = new JSONFile(DB_FILE);
-    const db = new Low(adapter, { records: [] });
-    await db.read();
-    if (!db.data?.records) db.data = { records: [] };
-    dbInstance = db;
+  if (dbInstance) return dbInstance;
+
+  const Database = require("better-sqlite3");
+  const db = new Database(DB_FILE);
+
+  // WAL mode for better concurrent read performance
+  db.pragma("journal_mode = WAL");
+  db.pragma("synchronous = NORMAL");
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS request_details (
+      id TEXT PRIMARY KEY,
+      provider TEXT,
+      model TEXT,
+      connectionId TEXT,
+      timestamp TEXT NOT NULL,
+      status TEXT,
+      latency TEXT,
+      tokens TEXT,
+      request TEXT,
+      providerRequest TEXT,
+      providerResponse TEXT,
+      response TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_timestamp ON request_details(timestamp DESC);
+    CREATE INDEX IF NOT EXISTS idx_provider ON request_details(provider);
+    CREATE INDEX IF NOT EXISTS idx_model ON request_details(model);
+  `);
+
+  dbInstance = db;
+
+  // Migrate from legacy JSON file if it exists
+  migrateLegacyJson(db);
+
+  return db;
+}
+
+function migrateLegacyJson(db) {
+  if (!LEGACY_JSON_FILE || !fs.existsSync(LEGACY_JSON_FILE)) return;
+
+  try {
+    const raw = fs.readFileSync(LEGACY_JSON_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+    const records = parsed?.records;
+    if (!Array.isArray(records) || records.length === 0) {
+      fs.renameSync(LEGACY_JSON_FILE, LEGACY_JSON_FILE + ".migrated");
+      return;
+    }
+
+    const insert = db.prepare(`
+      INSERT OR IGNORE INTO request_details
+        (id, provider, model, connectionId, timestamp, status, latency, tokens, request, providerRequest, providerResponse, response)
+      VALUES
+        (@id, @provider, @model, @connectionId, @timestamp, @status, @latency, @tokens, @request, @providerRequest, @providerResponse, @response)
+    `);
+
+    const insertMany = db.transaction((rows) => {
+      for (const r of rows) {
+        insert.run({
+          id: r.id || generateDetailId(r.model),
+          provider: r.provider || null,
+          model: r.model || null,
+          connectionId: r.connectionId || null,
+          timestamp: r.timestamp || new Date().toISOString(),
+          status: r.status || null,
+          latency: JSON.stringify(r.latency || {}),
+          tokens: JSON.stringify(r.tokens || {}),
+          request: JSON.stringify(r.request || {}),
+          providerRequest: JSON.stringify(r.providerRequest || {}),
+          providerResponse: JSON.stringify(r.providerResponse || {}),
+          response: JSON.stringify(r.response || {}),
+        });
+      }
+    });
+
+    insertMany(records);
+    fs.renameSync(LEGACY_JSON_FILE, LEGACY_JSON_FILE + ".migrated");
+    console.log(`[requestDetailsDb] Migrated ${records.length} records from JSON to SQLite`);
+  } catch (err) {
+    console.error("[requestDetailsDb] Migration failed:", err);
   }
-  return dbInstance;
 }
 
 // Config cache
@@ -65,13 +135,12 @@ async function getObservabilityConfig() {
     const { getSettings } = await import("@/lib/localDb");
     const settings = await getSettings();
     const envEnabled = process.env.OBSERVABILITY_ENABLED !== "false";
-    const enabled = typeof settings.enableObservability === "boolean"
-      ? settings.enableObservability
-      : envEnabled;
+    // Support both key names for backward compatibility
+    const enabledSetting = settings.enableObservability ?? settings.observabilityEnabled;
+    const enabled = typeof enabledSetting === "boolean" ? enabledSetting : envEnabled;
 
     cachedConfig = {
       enabled,
-      maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS), 10),
       batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
       flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
       maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
@@ -79,7 +148,6 @@ async function getObservabilityConfig() {
   } catch {
     cachedConfig = {
       enabled: false,
-      maxRecords: DEFAULT_MAX_RECORDS,
       batchSize: DEFAULT_BATCH_SIZE,
       flushIntervalMs: DEFAULT_FLUSH_INTERVAL_MS,
       maxJsonSize: DEFAULT_MAX_JSON_SIZE,
@@ -88,23 +156,6 @@ async function getObservabilityConfig() {
 
   cachedConfigTs = Date.now();
   return cachedConfig;
-}
-
-// Batch write queue
-let writeBuffer = [];
-let flushTimer = null;
-let isFlushing = false;
-
-function safeJsonStringify(obj, maxSize) {
-  try {
-    const str = JSON.stringify(obj);
-    if (str.length > maxSize) {
-      return JSON.stringify({ _truncated: true, _originalSize: str.length, _preview: str.substring(0, 200) });
-    }
-    return str;
-  } catch {
-    return "{}";
-  }
 }
 
 function sanitizeHeaders(headers) {
@@ -126,6 +177,23 @@ function generateDetailId(model) {
   return `${timestamp}-${random}-${modelPart}`;
 }
 
+function safeJsonStringify(obj, maxSize) {
+  try {
+    const str = JSON.stringify(obj);
+    if (str.length > maxSize) {
+      return JSON.stringify({ _truncated: true, _originalSize: str.length, _preview: str.substring(0, 200) });
+    }
+    return str;
+  } catch {
+    return "{}";
+  }
+}
+
+// Batch write queue
+let writeBuffer = [];
+let flushTimer = null;
+let isFlushing = false;
+
 async function flushToDatabase() {
   if (isCloud || isFlushing || writeBuffer.length === 0) return;
 
@@ -134,62 +202,42 @@ async function flushToDatabase() {
     const itemsToSave = [...writeBuffer];
     writeBuffer = [];
 
-    const db = await getDb();
+    const db = getDb();
     const config = await getObservabilityConfig();
 
-    for (const item of itemsToSave) {
-      if (!item.id) item.id = generateDetailId(item.model);
-      if (!item.timestamp) item.timestamp = new Date().toISOString();
-      if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
+    const insert = db.prepare(`
+      INSERT OR REPLACE INTO request_details
+        (id, provider, model, connectionId, timestamp, status, latency, tokens, request, providerRequest, providerResponse, response)
+      VALUES
+        (@id, @provider, @model, @connectionId, @timestamp, @status, @latency, @tokens, @request, @providerRequest, @providerResponse, @response)
+    `);
 
-      // Serialize large fields
-      const record = {
-        id: item.id,
-        provider: item.provider || null,
-        model: item.model || null,
-        connectionId: item.connectionId || null,
-        timestamp: item.timestamp,
-        status: item.status || null,
-        latency: item.latency || {},
-        tokens: item.tokens || {},
-        request: item.request || {},
-        providerRequest: item.providerRequest || {},
-        providerResponse: item.providerResponse || {},
-        response: item.response || {},
-      };
+    const insertMany = db.transaction((items) => {
+      for (const item of items) {
+        if (!item.id) item.id = generateDetailId(item.model);
+        if (!item.timestamp) item.timestamp = new Date().toISOString();
+        if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
 
-      // Truncate oversized JSON fields
-      const maxSize = config.maxJsonSize;
-      for (const field of ["request", "providerRequest", "providerResponse", "response"]) {
-        const str = JSON.stringify(record[field]);
-        if (str.length > maxSize) {
-          record[field] = { _truncated: true, _originalSize: str.length, _preview: str.substring(0, 200) };
-        }
+        const maxSize = config.maxJsonSize;
+
+        insert.run({
+          id: item.id,
+          provider: item.provider || null,
+          model: item.model || null,
+          connectionId: item.connectionId || null,
+          timestamp: item.timestamp,
+          status: item.status || null,
+          latency: safeJsonStringify(item.latency || {}, maxSize),
+          tokens: safeJsonStringify(item.tokens || {}, maxSize),
+          request: safeJsonStringify(item.request || {}, maxSize),
+          providerRequest: safeJsonStringify(item.providerRequest || {}, maxSize),
+          providerResponse: safeJsonStringify(item.providerResponse || {}, maxSize),
+          response: safeJsonStringify(item.response || {}, maxSize),
+        });
       }
+    });
 
-      // Upsert: replace existing record with same id
-      const idx = db.data.records.findIndex(r => r.id === record.id);
-      if (idx !== -1) {
-        db.data.records[idx] = record;
-      } else {
-        db.data.records.push(record);
-      }
-    }
-
-    // Keep only latest maxRecords (sorted by timestamp desc)
-    db.data.records.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    if (db.data.records.length > config.maxRecords) {
-      db.data.records = db.data.records.slice(0, config.maxRecords);
-    }
-
-    // Shrink records until total serialized size is within safe limit
-    while (db.data.records.length > 1) {
-      const totalSize = Buffer.byteLength(JSON.stringify(db.data), "utf8");
-      if (totalSize <= MAX_TOTAL_DB_SIZE) break;
-      db.data.records = db.data.records.slice(0, Math.floor(db.data.records.length / 2));
-    }
-
-    await db.write();
+    insertMany(itemsToSave);
   } catch (error) {
     console.error("[requestDetailsDb] Batch write failed:", error);
   } finally {
@@ -216,30 +264,61 @@ export async function saveRequestDetail(detail) {
   }
 }
 
+function parseJsonField(val) {
+  if (!val) return {};
+  try { return JSON.parse(val); } catch { return {}; }
+}
+
+function rowToRecord(row) {
+  return {
+    id: row.id,
+    provider: row.provider,
+    model: row.model,
+    connectionId: row.connectionId,
+    timestamp: row.timestamp,
+    status: row.status,
+    latency: parseJsonField(row.latency),
+    tokens: parseJsonField(row.tokens),
+    request: parseJsonField(row.request),
+    providerRequest: parseJsonField(row.providerRequest),
+    providerResponse: parseJsonField(row.providerResponse),
+    response: parseJsonField(row.response),
+  };
+}
+
 export async function getRequestDetails(filter = {}) {
   if (isCloud) {
     return { details: [], pagination: { page: 1, pageSize: 50, totalItems: 0, totalPages: 0, hasNext: false, hasPrev: false } };
   }
 
-  const db = await getDb();
-  let records = [...db.data.records];
+  const db = getDb();
 
-  // Apply filters
-  if (filter.provider) records = records.filter(r => r.provider === filter.provider);
-  if (filter.model) records = records.filter(r => r.model === filter.model);
-  if (filter.connectionId) records = records.filter(r => r.connectionId === filter.connectionId);
-  if (filter.status) records = records.filter(r => r.status === filter.status);
-  if (filter.startDate) records = records.filter(r => new Date(r.timestamp) >= new Date(filter.startDate));
-  if (filter.endDate) records = records.filter(r => new Date(r.timestamp) <= new Date(filter.endDate));
+  const conditions = [];
+  const params = {};
 
-  // Sort desc
-  records.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  if (filter.provider) { conditions.push("provider = @provider"); params.provider = filter.provider; }
+  if (filter.model) { conditions.push("model = @model"); params.model = filter.model; }
+  if (filter.connectionId) { conditions.push("connectionId = @connectionId"); params.connectionId = filter.connectionId; }
+  if (filter.status) { conditions.push("status = @status"); params.status = filter.status; }
+  if (filter.startDate) { conditions.push("timestamp >= @startDate"); params.startDate = new Date(filter.startDate).toISOString(); }
+  if (filter.endDate) { conditions.push("timestamp <= @endDate"); params.endDate = new Date(filter.endDate).toISOString(); }
 
-  const totalItems = records.length;
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  const { totalItems } = db.prepare(`SELECT COUNT(*) AS totalItems FROM request_details ${where}`).get(params);
+
   const page = filter.page || 1;
   const pageSize = filter.pageSize || 50;
   const totalPages = Math.ceil(totalItems / pageSize);
-  const details = records.slice((page - 1) * pageSize, page * pageSize);
+  const offset = (page - 1) * pageSize;
+
+  const rows = db.prepare(`
+    SELECT * FROM request_details ${where}
+    ORDER BY timestamp DESC
+    LIMIT @limit OFFSET @offset
+  `).all({ ...params, limit: pageSize, offset });
+
+  const details = rows.map(rowToRecord);
 
   return {
     details,
@@ -250,20 +329,28 @@ export async function getRequestDetails(filter = {}) {
 export async function getRequestDetailById(id) {
   if (isCloud) return null;
 
-  const db = await getDb();
-  return db.data.records.find(r => r.id === id) || null;
+  const db = getDb();
+  const row = db.prepare("SELECT * FROM request_details WHERE id = ?").get(id);
+  return row ? rowToRecord(row) : null;
 }
 
-// Graceful shutdown — use named handler so we can remove it on re-registration
+export async function getTotalRecordCount() {
+  if (isCloud) return 0;
+  const db = getDb();
+  const { count } = db.prepare("SELECT COUNT(*) AS count FROM request_details").get();
+  return count;
+}
+
+// Graceful shutdown
 const _shutdownHandler = async () => {
   if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
   if (writeBuffer.length > 0) await flushToDatabase();
+  if (dbInstance) { dbInstance.close(); dbInstance = null; }
 };
 
 function ensureShutdownHandler() {
   if (isCloud) return;
 
-  // Remove any previously registered listeners from this module (hot-reload safety)
   process.off("beforeExit", _shutdownHandler);
   process.off("SIGINT", _shutdownHandler);
   process.off("SIGTERM", _shutdownHandler);
