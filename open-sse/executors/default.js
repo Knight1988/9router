@@ -18,6 +18,16 @@ export class DefaultExecutor extends BaseExecutor {
     return credentials;
   }
 
+  transformRequest(model, body, stream, credentials) {
+    if (!body || typeof body !== "object") return body;
+    const next = { ...body };
+    delete next._stream_options;
+    if (stream && body._stream_options && !next.stream_options) {
+      next.stream_options = body._stream_options;
+    }
+    return next;
+  }
+
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     if (this.provider?.startsWith?.("openai-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "https://api.openai.com/v1";

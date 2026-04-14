@@ -70,3 +70,4 @@ ecosystem.config.*
 
 .playwright-mcp/
 promt.txt
+~/.9router/

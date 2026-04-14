@@ -14,7 +14,8 @@ export function openaiToClaudeRequest(model, body, stream) {
   const result = {
     model: model,
     max_tokens: adjustMaxTokens(body),
-    stream: stream
+    stream: stream,
+    _stream_options: body?.stream_options
   };
 
   // Temperature
