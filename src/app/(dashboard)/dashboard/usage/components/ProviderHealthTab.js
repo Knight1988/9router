@@ -86,7 +86,7 @@ export default function ProviderHealthTab() {
   const [sortOrder, setSortOrder] = useState("desc");
 
   const handlePeriodChange = useCallback((value) => {
-    const params = new URLSearchParams(searchParams);
+    const params = new URLSearchParams(searchParams.toString());
     params.set("period", value);
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   }, [searchParams, router, pathname]);

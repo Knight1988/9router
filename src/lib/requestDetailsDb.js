@@ -69,10 +69,31 @@ function getDb() {
     CREATE INDEX IF NOT EXISTS idx_provider_health ON request_details(timestamp, provider, model);
   `);
 
+  // Add denormalized columns (idempotent via pragma)
+  const existingCols = db.pragma("table_info(request_details)").map(c => c.name);
+  if (!existingCols.includes("response_status")) {
+    db.exec("ALTER TABLE request_details ADD COLUMN response_status INTEGER");
+  }
+  if (!existingCols.includes("latency_total")) {
+    db.exec("ALTER TABLE request_details ADD COLUMN latency_total REAL");
+  }
+  if (!existingCols.includes("latency_ttft")) {
+    db.exec("ALTER TABLE request_details ADD COLUMN latency_ttft REAL");
+  }
+
+  // Covering index for the provider-health query
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_provider_health_v2
+      ON request_details(timestamp, provider, model, response_status, latency_total, latency_ttft, status);
+  `);
+
   dbInstance = db;
 
   // Migrate from legacy JSON file if it exists
   migrateLegacyJson(db);
+
+  // Backfill denormalized columns for existing rows
+  backfillDenormalizedColumns(db);
 
   return db;
 }
@@ -208,9 +229,11 @@ async function flushToDatabase() {
 
     const insert = db.prepare(`
       INSERT OR REPLACE INTO request_details
-        (id, provider, model, connectionId, timestamp, status, latency, tokens, request, providerRequest, providerResponse, response)
+        (id, provider, model, connectionId, timestamp, status, latency, tokens, request, providerRequest, providerResponse, response,
+         response_status, latency_total, latency_ttft)
       VALUES
-        (@id, @provider, @model, @connectionId, @timestamp, @status, @latency, @tokens, @request, @providerRequest, @providerResponse, @response)
+        (@id, @provider, @model, @connectionId, @timestamp, @status, @latency, @tokens, @request, @providerRequest, @providerResponse, @response,
+         @response_status, @latency_total, @latency_ttft)
     `);
 
     const insertMany = db.transaction((items) => {
@@ -234,6 +257,9 @@ async function flushToDatabase() {
           providerRequest: safeJsonStringify(item.providerRequest || {}, maxSize),
           providerResponse: safeJsonStringify(item.providerResponse || {}, maxSize),
           response: safeJsonStringify(item.response || {}, maxSize),
+          response_status: item.response?.status != null ? Number(item.response.status) : null,
+          latency_total: item.latency?.total != null ? Number(item.latency.total) : null,
+          latency_ttft: item.latency?.ttft != null ? Number(item.latency.ttft) : null,
         });
       }
     });
@@ -335,15 +361,41 @@ export async function getRequestDetailById(id) {
   return row ? rowToRecord(row) : null;
 }
 
+// TTL cache for record count (5 min)
+let countCache = null;
+let countCacheTs = 0;
+const COUNT_CACHE_TTL_MS = 5 * 60 * 1000;
+
 export async function getTotalRecordCount() {
   if (isCloud) return 0;
+  if (countCache !== null && (Date.now() - countCacheTs) < COUNT_CACHE_TTL_MS) {
+    return countCache;
+  }
   const db = getDb();
   const { count } = db.prepare("SELECT COUNT(*) AS count FROM request_details").get();
+  countCache = count;
+  countCacheTs = Date.now();
   return count;
+}
+
+// TTL cache for provider health stats
+// Key: `${startDate}|${provider}`, TTL: 30s for short periods, 120s for 7d+
+const healthCache = new Map();
+
+function healthCacheTtl(startDate) {
+  if (!startDate) return 120_000;
+  const ageMs = Date.now() - new Date(startDate).getTime();
+  return ageMs < 6 * 60 * 60 * 1000 ? 30_000 : 120_000;
 }
 
 export async function getProviderHealthStats({ startDate, provider } = {}) {
   if (isCloud) return [];
+
+  const cacheKey = `${startDate || ""}|${provider || ""}`;
+  const cached = healthCache.get(cacheKey);
+  if (cached && (Date.now() - cached.ts) < healthCacheTtl(startDate)) {
+    return cached.data;
+  }
 
   const db = getDb();
 
@@ -355,20 +407,23 @@ export async function getProviderHealthStats({ startDate, provider } = {}) {
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-  return db.prepare(`
+  const data = db.prepare(`
     SELECT
       provider,
       model,
       COUNT(*) AS totalRequests,
       SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS successCount,
-      SUM(CASE WHEN status != 'success' AND json_extract(response, '$.status') != 429 THEN 1 ELSE 0 END) AS errorCount,
-      SUM(CASE WHEN status != 'success' AND json_extract(response, '$.status') = 429 THEN 1 ELSE 0 END) AS rateLimitCount,
+      SUM(CASE WHEN status != 'success' AND response_status != 429 THEN 1 ELSE 0 END) AS errorCount,
+      SUM(CASE WHEN status != 'success' AND response_status = 429 THEN 1 ELSE 0 END) AS rateLimitCount,
       MAX(timestamp) AS lastUsed,
-      AVG(CASE WHEN json_extract(latency, '$.total') > 0 THEN json_extract(latency, '$.total') END) AS avgLatency,
-      AVG(CASE WHEN json_extract(latency, '$.ttft') > 0 THEN json_extract(latency, '$.ttft') END) AS avgTtft
+      AVG(CASE WHEN latency_total > 0 THEN latency_total END) AS avgLatency,
+      AVG(CASE WHEN latency_ttft > 0 THEN latency_ttft END) AS avgTtft
     FROM request_details ${where}
     GROUP BY provider, model
   `).all(params);
+
+  healthCache.set(cacheKey, { data, ts: Date.now() });
+  return data;
 }
 
 export async function getDistinctProviders() {

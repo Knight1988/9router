@@ -123,17 +123,22 @@ export async function GET(request) {
     const totalRequests = providers.reduce((s, p) => s + p.totalRequests, 0);
     const totalSuccess = providers.reduce((s, p) => s + p.successCount, 0);
 
-    return NextResponse.json({
-      providers,
-      summary: {
-        totalRequests,
-        overallSuccessRate: totalRequests > 0 ? (totalSuccess / totalRequests) * 100 : 0,
-        totalProviders: providers.length,
-        recordCount: totalFilteredRequests,
-        totalDbRecords,
-        period,
+    const ttl = ["10m", "1h", "5h"].includes(period) ? 30 : 120;
+
+    return NextResponse.json(
+      {
+        providers,
+        summary: {
+          totalRequests,
+          overallSuccessRate: totalRequests > 0 ? (totalSuccess / totalRequests) * 100 : 0,
+          totalProviders: providers.length,
+          recordCount: totalFilteredRequests,
+          totalDbRecords,
+          period,
+        },
       },
-    });
+      { headers: { "Cache-Control": `private, max-age=${ttl}` } }
+    );
   } catch (error) {
     console.error("[API] Failed to get provider health:", error);
     return NextResponse.json(
