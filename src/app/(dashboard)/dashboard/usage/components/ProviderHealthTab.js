@@ -5,9 +5,13 @@ import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import Card from "@/shared/components/Card";
 import { cn } from "@/shared/utils/cn";
 
-const VALID_PERIODS = new Set(["24h", "7d", "30d", "60d", "all"]);
+const VALID_PERIODS = new Set(["10m", "1h", "5h", "12h", "24h", "7d", "30d", "60d", "all"]);
 
 const PERIODS = [
+  { value: "10m", label: "10m" },
+  { value: "1h", label: "1h" },
+  { value: "5h", label: "5h" },
+  { value: "12h", label: "12h" },
   { value: "24h", label: "24h" },
   { value: "7d", label: "7d" },
   { value: "30d", label: "30d" },
@@ -193,7 +197,7 @@ export default function ProviderHealthTab() {
         {/* Header with period filter */}
         <div className="p-4 border-b border-border flex items-center justify-between gap-4">
           <h3 className="font-semibold">Provider Health</h3>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 flex-wrap">
             {PERIODS.map((p) => (
               <button
                 key={p.value}
