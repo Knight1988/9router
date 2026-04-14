@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getRequestDetails, getTotalRecordCount } from "@/lib/requestDetailsDb";
+import { getProviderHealthStats, getTotalRecordCount } from "@/lib/requestDetailsDb";
 import { getProviderNodes } from "@/lib/localDb";
 import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
 
@@ -14,7 +14,6 @@ export async function GET(request) {
     const period = searchParams.get("period") || "7d";
     const providerFilter = searchParams.get("provider");
 
-    // Build SQL-level time filter to avoid loading unnecessary records
     const periodMs = {
       "24h": 24 * 60 * 60 * 1000,
       "7d": 7 * 24 * 60 * 60 * 1000,
@@ -22,19 +21,18 @@ export async function GET(request) {
       "60d": 60 * 24 * 60 * 60 * 1000,
     };
 
-    const dbFilter = { pageSize: 100000 };
+    const statsFilter = {};
     if (period !== "all" && periodMs[period]) {
-      dbFilter.startDate = new Date(Date.now() - periodMs[period]).toISOString();
+      statsFilter.startDate = new Date(Date.now() - periodMs[period]).toISOString();
     }
-    if (providerFilter) dbFilter.provider = providerFilter;
+    if (providerFilter) statsFilter.provider = providerFilter;
 
-    const [{ details: filtered }, totalDbRecords] = await Promise.all([
-      getRequestDetails(dbFilter),
+    const [rows, totalDbRecords, providerNodes] = await Promise.all([
+      getProviderHealthStats(statsFilter),
       getTotalRecordCount(),
+      getProviderNodes(),
     ]);
 
-    // Resolve provider display names
-    const providerNodes = await getProviderNodes();
     const nodeMap = {};
     for (const node of providerNodes) {
       nodeMap[node.id] = node.name;
@@ -47,10 +45,14 @@ export async function GET(request) {
       return cfg?.name || providerId;
     }
 
-    // Group records by provider
+    // Group pre-aggregated SQL rows by provider
     const providerMap = {};
-    for (const record of filtered) {
-      const id = record.provider || "unknown";
+    let totalFilteredRequests = 0;
+
+    for (const row of rows) {
+      const id = row.provider || "unknown";
+      totalFilteredRequests += row.totalRequests;
+
       if (!providerMap[id]) {
         providerMap[id] = {
           id,
@@ -58,64 +60,46 @@ export async function GET(request) {
           totalRequests: 0,
           successCount: 0,
           errorCount: 0,
-          latencyTotalSum: 0,
-          latencyTotalCount: 0,
+          rateLimitCount: 0,
+          latencySum: 0,
+          latencyCount: 0,
           ttftSum: 0,
           ttftCount: 0,
           lastUsed: null,
-          models: {},
+          models: [],
         };
       }
 
       const p = providerMap[id];
-      p.totalRequests++;
+      p.totalRequests += row.totalRequests;
+      p.successCount += row.successCount;
+      p.errorCount += row.errorCount;
+      p.rateLimitCount += row.rateLimitCount;
 
-      if (record.status === "success") {
-        p.successCount++;
-      } else {
-        p.errorCount++;
+      if (row.avgLatency != null) {
+        p.latencySum += row.avgLatency * row.totalRequests;
+        p.latencyCount += row.totalRequests;
       }
-
-      if (record.latency?.total > 0) {
-        p.latencyTotalSum += record.latency.total;
-        p.latencyTotalCount++;
-      }
-
-      if (record.latency?.ttft > 0) {
-        p.ttftSum += record.latency.ttft;
-        p.ttftCount++;
+      if (row.avgTtft != null) {
+        p.ttftSum += row.avgTtft * row.totalRequests;
+        p.ttftCount += row.totalRequests;
       }
 
-      if (!p.lastUsed || new Date(record.timestamp) > new Date(p.lastUsed)) {
-        p.lastUsed = record.timestamp;
+      if (!p.lastUsed || row.lastUsed > p.lastUsed) {
+        p.lastUsed = row.lastUsed;
       }
 
-      // Per-model breakdown
-      const modelId = record.model || "unknown";
-      if (!p.models[modelId]) {
-        p.models[modelId] = {
-          id: modelId,
-          totalRequests: 0,
-          successCount: 0,
-          errorCount: 0,
-          latencyTotalSum: 0,
-          latencyTotalCount: 0,
-        };
-      }
-      const m = p.models[modelId];
-      m.totalRequests++;
-      if (record.status === "success") {
-        m.successCount++;
-      } else {
-        m.errorCount++;
-      }
-      if (record.latency?.total > 0) {
-        m.latencyTotalSum += record.latency.total;
-        m.latencyTotalCount++;
-      }
+      p.models.push({
+        id: row.model || "unknown",
+        totalRequests: row.totalRequests,
+        successCount: row.successCount,
+        errorCount: row.errorCount,
+        rateLimitCount: row.rateLimitCount,
+        successRate: row.totalRequests > 0 ? (row.successCount / row.totalRequests) * 100 : 0,
+        avgLatency: row.avgLatency != null ? Math.round(row.avgLatency) : 0,
+      });
     }
 
-    // Build final provider list
     const providers = Object.values(providerMap)
       .map((p) => ({
         id: p.id,
@@ -123,18 +107,12 @@ export async function GET(request) {
         totalRequests: p.totalRequests,
         successCount: p.successCount,
         errorCount: p.errorCount,
+        rateLimitCount: p.rateLimitCount,
         successRate: p.totalRequests > 0 ? (p.successCount / p.totalRequests) * 100 : 0,
-        avgLatency: p.latencyTotalCount > 0 ? Math.round(p.latencyTotalSum / p.latencyTotalCount) : 0,
+        avgLatency: p.latencyCount > 0 ? Math.round(p.latencySum / p.latencyCount) : 0,
         avgTtft: p.ttftCount > 0 ? Math.round(p.ttftSum / p.ttftCount) : 0,
         lastUsed: p.lastUsed,
-        models: Object.values(p.models).map((m) => ({
-          id: m.id,
-          totalRequests: m.totalRequests,
-          successCount: m.successCount,
-          errorCount: m.errorCount,
-          successRate: m.totalRequests > 0 ? (m.successCount / m.totalRequests) * 100 : 0,
-          avgLatency: m.latencyTotalCount > 0 ? Math.round(m.latencyTotalSum / m.latencyTotalCount) : 0,
-        })).sort((a, b) => b.totalRequests - a.totalRequests),
+        models: p.models.sort((a, b) => b.totalRequests - a.totalRequests),
       }))
       .sort((a, b) => b.totalRequests - a.totalRequests);
 
@@ -147,7 +125,7 @@ export async function GET(request) {
         totalRequests,
         overallSuccessRate: totalRequests > 0 ? (totalSuccess / totalRequests) * 100 : 0,
         totalProviders: providers.length,
-        recordCount: filtered.length,
+        recordCount: totalFilteredRequests,
         totalDbRecords,
         period,
       },

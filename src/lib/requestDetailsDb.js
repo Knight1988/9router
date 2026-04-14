@@ -66,6 +66,7 @@ function getDb() {
     CREATE INDEX IF NOT EXISTS idx_timestamp ON request_details(timestamp DESC);
     CREATE INDEX IF NOT EXISTS idx_provider ON request_details(provider);
     CREATE INDEX IF NOT EXISTS idx_model ON request_details(model);
+    CREATE INDEX IF NOT EXISTS idx_provider_health ON request_details(timestamp, provider, model);
   `);
 
   dbInstance = db;
@@ -339,6 +340,42 @@ export async function getTotalRecordCount() {
   const db = getDb();
   const { count } = db.prepare("SELECT COUNT(*) AS count FROM request_details").get();
   return count;
+}
+
+export async function getProviderHealthStats({ startDate, provider } = {}) {
+  if (isCloud) return [];
+
+  const db = getDb();
+
+  const conditions = [];
+  const params = {};
+
+  if (startDate) { conditions.push("timestamp >= @startDate"); params.startDate = new Date(startDate).toISOString(); }
+  if (provider) { conditions.push("provider = @provider"); params.provider = provider; }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  return db.prepare(`
+    SELECT
+      provider,
+      model,
+      COUNT(*) AS totalRequests,
+      SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS successCount,
+      SUM(CASE WHEN status != 'success' AND json_extract(response, '$.status') != 429 THEN 1 ELSE 0 END) AS errorCount,
+      SUM(CASE WHEN status != 'success' AND json_extract(response, '$.status') = 429 THEN 1 ELSE 0 END) AS rateLimitCount,
+      MAX(timestamp) AS lastUsed,
+      AVG(CASE WHEN json_extract(latency, '$.total') > 0 THEN json_extract(latency, '$.total') END) AS avgLatency,
+      AVG(CASE WHEN json_extract(latency, '$.ttft') > 0 THEN json_extract(latency, '$.ttft') END) AS avgTtft
+    FROM request_details ${where}
+    GROUP BY provider, model
+  `).all(params);
+}
+
+export async function getDistinctProviders() {
+  if (isCloud) return [];
+  const db = getDb();
+  return db.prepare("SELECT DISTINCT provider FROM request_details WHERE provider IS NOT NULL ORDER BY provider").all()
+    .map(r => r.provider);
 }
 
 // Graceful shutdown
