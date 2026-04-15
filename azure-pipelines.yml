@@ -5,9 +5,7 @@ trigger:
       - beta
 
 pool:
-  name: Default
-  demands:
-    - agent.os -equals Linux
+  name: Ubuntu
 
 variables:
   IMAGE_NAME: knight1988/9router
