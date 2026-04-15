@@ -1,7 +1,7 @@
 trigger:
   branches:
     include:
-      - master
+      - latest
       - beta
 
 pool:
@@ -9,20 +9,13 @@ pool:
 
 variables:
   IMAGE_NAME: knight1988/9router
-  # Map branch to Docker tag: master -> latest, beta -> beta
-  ${{ if eq(variables['Build.SourceBranchName'], 'master') }}:
-    DOCKER_TAG: latest
-  ${{ elseif eq(variables['Build.SourceBranchName'], 'beta') }}:
-    DOCKER_TAG: beta
-  ${{ else }}:
-    DOCKER_TAG: $(Build.SourceBranchName)
+  DOCKER_TAG: $(Build.SourceBranchName)
 
 steps:
   - checkout: self
     displayName: Checkout source
 
   - script: |
-      chmod +x publish.sh
       echo "Building Docker image $(IMAGE_NAME):$(DOCKER_TAG)..."
       docker build -t "$(IMAGE_NAME):$(DOCKER_TAG)" .
     displayName: Build Docker image
@@ -31,4 +24,4 @@ steps:
       echo "Pushing Docker image $(IMAGE_NAME):$(DOCKER_TAG)..."
       docker push "$(IMAGE_NAME):$(DOCKER_TAG)"
     displayName: Push Docker image
-    condition: and(succeeded(), or(eq(variables['Build.SourceBranchName'], 'master'), eq(variables['Build.SourceBranchName'], 'beta')))
+    condition: and(succeeded(), or(eq(variables['Build.SourceBranchName'], 'latest'), eq(variables['Build.SourceBranchName'], 'beta')))
