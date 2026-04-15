@@ -87,10 +87,17 @@ export class CodexExecutor extends BaseExecutor {
     return headers;
   }
 
+  buildUrl(model, stream, urlIndex = 0, credentials = null) {
+    const base = super.buildUrl(model, stream, urlIndex, credentials);
+    return this._isCompact ? `${base}/compact` : base;
+  }
+
   /**
    * Transform request before sending - inject default instructions if missing
    */
   transformRequest(model, body, stream, credentials) {
+    this._isCompact = !!body._compact;
+    delete body._compact;
     // Resolve conversation-stable session_id from input history + machineId
     this._currentSessionId = resolveConversationSessionId(body.input, cachedMachineId);
     // Convert string input to array format (Codex API requires input as array)
@@ -143,7 +150,7 @@ export class CodexExecutor extends BaseExecutor {
 
     // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
     if (!body.reasoning) {
-      const effort = body.reasoning_effort || modelEffort || 'medium';
+      const effort = body.reasoning_effort || modelEffort || 'low';
       body.reasoning = { effort, summary: "auto" };
     } else if (!body.reasoning.summary) {
       body.reasoning.summary = "auto";

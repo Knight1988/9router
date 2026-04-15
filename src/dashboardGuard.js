@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { jwtVerify } from "jose";
+import { getSettings } from "@/lib/localDb";
 
 const SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "9router-default-secret-change-me"
@@ -36,26 +37,29 @@ async function hasValidToken(request) {
   }
 }
 
+// Read settings directly from DB to avoid self-fetch deadlock in proxy
+async function loadSettings() {
+  try {
+    return await getSettings();
+  } catch {
+    return null;
+  }
+}
+
 async function isAuthenticated(request) {
   if (await hasValidToken(request)) return true;
-  // Allow if requireLogin is disabled
-  const internalBase = process.env.BASE_URL || request.nextUrl.origin;
-  try {
-    const res = await fetch(`${internalBase}/api/settings/require-login`);
-    const data = await res.json();
-    if (data.requireLogin === false) return true;
-  } catch {
-    // On error, require login
-  }
+  const settings = await loadSettings();
+  if (settings && settings.requireLogin === false) return true;
   return false;
 }
 
 export async function proxy(request) {
   const { pathname } = request.nextUrl;
+  const isLocal = isLocalRequest(request);
 
   // Always protected - allow localhost or valid JWT only
   if (ALWAYS_PROTECTED.some((p) => pathname.startsWith(p))) {
-    if (isLocalRequest(request) || await hasValidToken(request))
+    if (isLocal || await hasValidToken(request))
       return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -63,32 +67,34 @@ export async function proxy(request) {
   // Protect sensitive API endpoints (bypass if localhost or requireLogin = false)
   if (PROTECTED_API_PATHS.some((p) => pathname.startsWith(p))) {
     if (pathname === "/api/settings/require-login") return NextResponse.next();
-    if (isLocalRequest(request) || await isAuthenticated(request))
+    if (isLocal || await isAuthenticated(request))
       return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-
-
   // Protect all dashboard routes
   if (pathname.startsWith("/dashboard")) {
     let requireLogin = true;
-    let tunnelDashboardAccess = false;
+    let tunnelDashboardAccess = true;
 
     try {
-      // Use internal HTTP URL to avoid TLS issues with self-signed certs on the external hostname
-      const internalBase = process.env.BASE_URL || request.nextUrl.origin;
-      const res = await fetch(`${internalBase}/api/settings/require-login`);
-      const data = await res.json();
-      requireLogin = data.requireLogin !== false;
-      tunnelDashboardAccess = data.tunnelDashboardAccess === true;
+      const settings = await loadSettings();
+      if (settings) {
+        requireLogin = settings.requireLogin !== false;
+        tunnelDashboardAccess = settings.tunnelDashboardAccess === true;
+
+        // Block tunnel/tailscale access if disabled (redirect to login)
+        if (!tunnelDashboardAccess) {
+          const host = (request.headers.get("host") || "").split(":")[0].toLowerCase();
+          const tunnelHost = settings.tunnelUrl ? new URL(settings.tunnelUrl).hostname.toLowerCase() : "";
+          const tailscaleHost = settings.tailscaleUrl ? new URL(settings.tailscaleUrl).hostname.toLowerCase() : "";
+          if ((tunnelHost && host === tunnelHost) || (tailscaleHost && host === tailscaleHost)) {
+            return NextResponse.redirect(new URL("/login", request.url));
+          }
+        }
+      }
     } catch {
       // On error, keep defaults (require login, block tunnel)
-    }
-
-    // Block tunnel access if disabled (checked before token to enforce the setting)
-    if (!isLocalRequest(request) && !tunnelDashboardAccess) {
-      return NextResponse.redirect(new URL("/login", request.url));
     }
 
     // If login not required, allow through
