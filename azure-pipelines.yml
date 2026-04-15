@@ -1,19 +1,36 @@
-# Starter pipeline
-# Start with a minimal pipeline that you can customize to build and deploy your code.
-# Add steps that build, run tests, deploy, and more:
-# https://aka.ms/yaml
-
 trigger:
-- master
+  branches:
+    include:
+      - master
+      - beta
 
 pool:
-  vmImage: ubuntu-latest
+  name: Default
+  demands:
+    - agent.os -equals Linux
+
+variables:
+  IMAGE_NAME: knight1988/9router
+  # Map branch to Docker tag: master -> latest, beta -> beta
+  ${{ if eq(variables['Build.SourceBranchName'], 'master') }}:
+    DOCKER_TAG: latest
+  ${{ elseif eq(variables['Build.SourceBranchName'], 'beta') }}:
+    DOCKER_TAG: beta
+  ${{ else }}:
+    DOCKER_TAG: $(Build.SourceBranchName)
 
 steps:
-- script: echo Hello, world!
-  displayName: 'Run a one-line script'
+  - checkout: self
+    displayName: Checkout source
 
-- script: |
-    echo Add other tasks to build, test, and deploy your project.
-    echo See https://aka.ms/yaml
-  displayName: 'Run a multi-line script'
+  - script: |
+      chmod +x publish.sh
+      echo "Building Docker image $(IMAGE_NAME):$(DOCKER_TAG)..."
+      docker build -t "$(IMAGE_NAME):$(DOCKER_TAG)" .
+    displayName: Build Docker image
+
+  - script: |
+      echo "Pushing Docker image $(IMAGE_NAME):$(DOCKER_TAG)..."
+      docker push "$(IMAGE_NAME):$(DOCKER_TAG)"
+    displayName: Push Docker image
+    condition: and(succeeded(), or(eq(variables['Build.SourceBranchName'], 'master'), eq(variables['Build.SourceBranchName'], 'beta')))
