@@ -55,7 +55,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   const clientRequestedStreaming = body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI;
   const providerRequiresStreaming = provider === "openai" || provider === "codex";
-  let stream = providerRequiresStreaming ? true : (body.stream !== false);
+  const envDisablesStreaming = process.env.DISABLE_STREAM === "1" || (process.env[`DISABLE_STREAM_${provider.toUpperCase()}`] === "1");
+  let stream = envDisablesStreaming ? false : (providerRequiresStreaming ? true : (body.stream !== false));
 
   // Check client Accept header preference for non-streaming requests
   // This fixes AI SDK compatibility where clients send Accept: application/json
