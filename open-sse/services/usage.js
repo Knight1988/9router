@@ -33,6 +33,10 @@ const CLAUDE_CONFIG = {
   apiVersion: "2023-06-01",
 };
 
+const OPEN_CLAUDE_CONFIG = {
+  overviewUrl: "https://open-claude.com/api/dashboard/overview",
+};
+
 /**
  * Get usage data for a provider connection
  * @param {Object} connection - Provider connection with accessToken
@@ -58,6 +62,8 @@ export async function getUsageForProvider(connection) {
       return await getQwenUsage(accessToken, providerSpecificData);
     case "iflow":
       return await getIflowUsage(accessToken);
+    case "open-claude":
+      return await getOpenClaudeUsage(accessToken);
     default:
       return { message: `Usage API not implemented for ${provider}` };
   }
@@ -355,6 +361,52 @@ async function getAntigravitySubscriptionInfo(accessToken) {
     return null;
   } finally {
     clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * Open Claude Usage - Fetches budget/quota from dashboard API
+ */
+async function getOpenClaudeUsage(accessToken) {
+  try {
+    const response = await fetch(OPEN_CLAUDE_CONFIG.overviewUrl, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Open Claude API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const user = data.user || {};
+    const quotas = {};
+
+    // Budget quota: quota is in internal units (divide by 500000 to get USD)
+    const totalDollars = user.quota ? user.quota / 500000 : 0;
+    const usedDollars = user.periodUsedQuota ? user.periodUsedQuota / 500000 : 0;
+    const remainingDollars = Math.max(0, totalDollars - usedDollars);
+
+    quotas["budget (2h)"] = {
+      used: +usedDollars.toFixed(2),
+      total: +totalDollars.toFixed(2),
+      remaining: +remainingDollars.toFixed(2),
+      remainingPercentage: totalDollars > 0 ? Math.round((remainingDollars / totalDollars) * 100) : 0,
+      resetAt: null,
+      unlimited: !!user.isUnlimited,
+      unit: "$",
+    };
+
+    return {
+      plan: user.group || "Open Claude",
+      planExpiresAt: data.planExpiresAt ? parseResetTime(data.planExpiresAt) : null,
+      quotas,
+    };
+  } catch (error) {
+    return { message: `Open Claude connected. Unable to fetch usage: ${error.message}` };
   }
 }
 

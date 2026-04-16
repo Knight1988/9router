@@ -134,12 +134,17 @@ export const PROVIDER_MODELS = {
     { id: "deepseek/deepseek-chat", name: "DeepSeek Chat" },
     { id: "deepseek/deepseek-reasoner", name: "DeepSeek Reasoner" },
   ],
-  oc: [  // OpenCode
+  ocd: [  // OpenCode
     { id: "nemotron-3-super-free", name: "Nemotron 3 Super" },
     // { id: "qwen3.6-plus-free", name: "Qwen 3.6 Plus" },
     // { id: "big-pickle", name: "Big Pickle", targetFormat: "claude" },
     { id: "minimax-m2.5-free", name: "MiniMax M2.5", targetFormat: "claude" },
     // { id: "trinity-large-preview-free", name: "Trinity Large Preview" },
+  ],
+  oc: [  // Open Claude
+    { id: "claude-opus-4.6", name: "Claude Opus 4.6" },
+    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
+    { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5" },
   ],
 
   cl: [  // Cline

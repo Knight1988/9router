@@ -248,6 +248,10 @@ export const PROVIDERS = {
     format: "claude",
     headers: { ...CLAUDE_API_HEADERS }
   },
+  "open-claude": {
+    baseUrl: "https://open-claude.com/v1/chat/completions",
+    format: "openai"
+  },
   deepseek: {
     baseUrl: "https://api.deepseek.com/chat/completions",
     format: "openai"

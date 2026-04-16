@@ -9,7 +9,7 @@ export const FREE_PROVIDERS = {
   // codebuddy: { id: "codebuddy", alias: "cb", name: "CodeBuddy", icon: "smart_toy", color: "#006EFF" },
   // qoder: { id: "qoder", alias: "qd", name: "Qoder AI", icon: "water_drop", color: "#EC4899" },
   iflow: { id: "iflow", alias: "if", name: "iFlow AI", icon: "water_drop", color: "#6366F1" },
-  opencode: { id: "opencode", alias: "oc", name: "OpenCode", icon: "terminal", color: "#E87040", textIcon: "OC", noAuth: true },
+  opencode: { id: "opencode", alias: "ocd", name: "OpenCode", icon: "terminal", color: "#E87040", textIcon: "OC", noAuth: true },
 };
 
 // Free Tier Providers (has free access but may require account/API key)
@@ -61,7 +61,7 @@ export const APIKEY_PROVIDERS = {
   "alicode-intl": { id: "alicode-intl", alias: "alicode-intl", name: "Alibaba Intl", icon: "cloud", color: "#FF6A00", textIcon: "ALi" },
   openai: { id: "openai", alias: "openai", name: "OpenAI", icon: "auto_awesome", color: "#10A37F", textIcon: "OA", website: "https://platform.openai.com", serviceKinds: ["llm", "embedding", "tts"], thinkingConfig: THINKING_CONFIG.effort },
   anthropic: { id: "anthropic", alias: "anthropic", name: "Anthropic", icon: "smart_toy", color: "#D97757", textIcon: "AN", website: "https://console.anthropic.com", serviceKinds: ["llm"] },
-
+  "open-claude": { id: "open-claude", alias: "oc", name: "Open Claude", icon: "smart_toy", color: "#D97757", textIcon: "OC", website: "https://open-claude.com", notice: { text: "OpenAI-compatible Claude gateway with usage dashboard and budget tracking.", apiKeyUrl: "https://open-claude.com/keys" } },
 
   deepseek: { id: "deepseek", alias: "ds", name: "DeepSeek", icon: "bolt", color: "#4D6BFE", textIcon: "DS", website: "https://deepseek.com" },
   groq: { id: "groq", alias: "groq", name: "Groq", icon: "speed", color: "#F55036", textIcon: "GQ", website: "https://groq.com" },
@@ -178,4 +178,5 @@ export const USAGE_SUPPORTED_PROVIDERS = [
   "github",
   "codex",
   "kimi-coding",
+  "open-claude",
 ];
