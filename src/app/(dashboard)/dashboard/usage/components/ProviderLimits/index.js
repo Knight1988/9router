@@ -586,7 +586,10 @@ export default function ProviderLimits() {
                 </div>
               </div>
 
-               {conn.provider === "open-claude" && (
+               {[
+                 "open-claude",
+                 "troll-llm",
+               ].includes(conn.provider) && (
                  <div className="px-4 py-3 border-b border-black/10 dark:border-white/10 space-y-3">
                    <div className="flex items-center justify-between gap-2">
                      <p className="text-xs text-text-muted">

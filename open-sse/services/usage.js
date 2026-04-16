@@ -37,6 +37,12 @@ const OPEN_CLAUDE_CONFIG = {
   overviewUrl: "https://open-claude.com/api/dashboard/overview",
 };
 
+const TROLL_LLM_CONFIG = {
+  profileUrl: "https://www.trollllm.xyz/api/user/me",
+  billingUrl: "https://www.trollllm.xyz/api/user/billing",
+  usageStatusUrl: "https://www.trollllm.xyz/api/user/usage/status",
+};
+
 /**
  * Get usage data for a provider connection
  * @param {Object} connection - Provider connection with accessToken
@@ -64,6 +70,8 @@ export async function getUsageForProvider(connection) {
       return await getIflowUsage(accessToken);
     case "open-claude":
       return await getOpenClaudeUsage(accessToken);
+    case "troll-llm":
+      return await getTrollLlmUsage(accessToken);
     default:
       return { message: `Usage API not implemented for ${provider}` };
   }
@@ -427,6 +435,82 @@ async function getOpenClaudeUsage(accessToken) {
     };
   } catch (error) {
     return { message: `Open Claude connected. Unable to fetch usage: ${error.message}` };
+  }
+}
+
+async function getTrollLlmUsage(accessToken) {
+  try {
+    const headers = {
+      "Authorization": `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    };
+
+    const [profileRes, billingRes, usageStatusRes] = await Promise.all([
+      fetch(TROLL_LLM_CONFIG.profileUrl, { method: "GET", headers }),
+      fetch(TROLL_LLM_CONFIG.billingUrl, { method: "GET", headers }).catch(() => null),
+      fetch(TROLL_LLM_CONFIG.usageStatusUrl, { method: "GET", headers }).catch(() => null),
+    ]);
+
+    if (!profileRes.ok) {
+      throw new Error(`Troll LLM API error: ${profileRes.status}`);
+    }
+
+    const profile = await profileRes.json();
+    const billing = billingRes?.ok ? await billingRes.json().catch(() => null) : null;
+    const usageStatus = usageStatusRes?.ok ? await usageStatusRes.json().catch(() => null) : null;
+    const quotas = {};
+
+    const totalDaily = Number(profile.planDailyAllocation ?? billing?.planDailyAllocation ?? 0);
+    const usedDaily = Number(profile.planDailyUsed ?? billing?.planDailyUsed ?? 0);
+    const remainingDaily = Math.max(0, totalDaily - usedDaily);
+    const dailyResetAt = parseResetTime(profile.planDailyResetDate || billing?.planDailyResetDate || null);
+
+    if (totalDaily > 0 || usedDaily > 0) {
+      quotas["daily budget"] = {
+        used: +usedDaily.toFixed(2),
+        total: +totalDaily.toFixed(2),
+        remaining: +remainingDaily.toFixed(2),
+        remainingPercentage: totalDaily > 0 ? Math.round((remainingDaily / totalDaily) * 100) : 0,
+        resetAt: dailyResetAt,
+        unit: "$",
+      };
+    }
+
+    const totalCredits = Number(profile.credits ?? billing?.credits ?? 0);
+    const usedCredits = Number(profile.creditsUsed ?? billing?.creditsUsed ?? 0);
+    const remainingCredits = Math.max(0, totalCredits - usedCredits);
+
+    if (totalCredits > 0 || usedCredits > 0) {
+      quotas.credits = {
+        used: +usedCredits.toFixed(2),
+        total: +totalCredits.toFixed(2),
+        remaining: +remainingCredits.toFixed(2),
+        remainingPercentage: totalCredits > 0 ? Math.round((remainingCredits / totalCredits) * 100) : 0,
+        resetAt: null,
+        unit: "$",
+      };
+    }
+
+    if (usageStatus?.rpm?.limit) {
+      quotas.rpm = {
+        used: Number(usageStatus.rpm.used ?? 0),
+        total: Number(usageStatus.rpm.limit ?? 0),
+        remaining: Number(usageStatus.rpm.remaining ?? 0),
+        remainingPercentage: usageStatus.rpm.limit > 0
+          ? Math.round(((usageStatus.rpm.remaining ?? 0) / usageStatus.rpm.limit) * 100)
+          : 0,
+        resetAt: null,
+        unit: "req",
+      };
+    }
+
+    return {
+      plan: profile.tier || billing?.tier || "Troll LLM",
+      planExpiresAt: profile.planExpiresAt ? parseResetTime(profile.planExpiresAt) : null,
+      quotas,
+    };
+  } catch (error) {
+    return { message: `Troll LLM connected. Unable to fetch usage: ${error.message}` };
   }
 }
 

@@ -262,6 +262,14 @@ export async function POST(request) {
           break;
         }
 
+        case "troll-llm": {
+          const trollLlmRes = await fetch("https://chat.trollllm.xyz/v1/models", {
+            headers: { "Authorization": `Bearer ${apiKey}` },
+          });
+          isValid = trollLlmRes.ok;
+          break;
+        }
+
         default:
           return NextResponse.json({ error: "Provider validation not supported" }, { status: 400 });
       }

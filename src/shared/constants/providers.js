@@ -62,6 +62,7 @@ export const APIKEY_PROVIDERS = {
   openai: { id: "openai", alias: "openai", name: "OpenAI", icon: "auto_awesome", color: "#10A37F", textIcon: "OA", website: "https://platform.openai.com", serviceKinds: ["llm", "embedding", "tts"], thinkingConfig: THINKING_CONFIG.effort },
   anthropic: { id: "anthropic", alias: "anthropic", name: "Anthropic", icon: "smart_toy", color: "#D97757", textIcon: "AN", website: "https://console.anthropic.com", serviceKinds: ["llm"] },
   "open-claude": { id: "open-claude", alias: "oc", name: "Open Claude", icon: "smart_toy", color: "#D97757", textIcon: "OC", website: "https://open-claude.com", notice: { text: "OpenAI-compatible Claude gateway with usage dashboard and budget tracking.", apiKeyUrl: "https://open-claude.com/keys" } },
+  "troll-llm": { id: "troll-llm", alias: "tl", name: "Troll LLM", icon: "smart_toy", color: "#7C3AED", textIcon: "TL", website: "https://www.trollllm.xyz", notice: { text: "OpenAI-compatible multi-model gateway with Claude, GPT, and Gemini.", apiKeyUrl: "https://www.trollllm.xyz/dashboard/keys" } },
 
   deepseek: { id: "deepseek", alias: "ds", name: "DeepSeek", icon: "bolt", color: "#4D6BFE", textIcon: "DS", website: "https://deepseek.com" },
   groq: { id: "groq", alias: "groq", name: "Groq", icon: "speed", color: "#F55036", textIcon: "GQ", website: "https://groq.com" },
@@ -179,4 +180,5 @@ export const USAGE_SUPPORTED_PROVIDERS = [
   "codex",
   "kimi-coding",
   "open-claude",
+  "troll-llm",
 ];

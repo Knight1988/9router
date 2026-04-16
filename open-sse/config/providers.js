@@ -252,6 +252,10 @@ export const PROVIDERS = {
     baseUrl: "https://open-claude.com/v1/chat/completions",
     format: "openai"
   },
+  "troll-llm": {
+    baseUrl: "https://chat.trollllm.xyz/v1/chat/completions",
+    format: "openai"
+  },
   deepseek: {
     baseUrl: "https://api.deepseek.com/chat/completions",
     format: "openai"
