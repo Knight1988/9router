@@ -428,6 +428,12 @@ export const PROVIDER_MODELS = {
     { id: "ja-JP-NanamiNeural", name: "Nanami (ja-JP)", type: "tts" },
     { id: "ko-KR-SunHiNeural", name: "SunHi (ko-KR)", type: "tts" },
   ],
+  // Open Claude (API Key provider, key = provider id)
+  "open-claude": [
+    { id: "claude-opus-4.6", name: "Claude Opus 4.6" },
+    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4-6" },
+    { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
+  ],
 };
 
 export function isValidModel(aliasOrId, modelId, passthroughProviders = new Set()) {
