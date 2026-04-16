@@ -254,6 +254,14 @@ export async function POST(request) {
           break;
         }
 
+        case "open-claude": {
+          const openClaudeRes = await fetch("https://open-claude.com/v1/models", {
+            headers: { "Authorization": `Bearer ${apiKey}` },
+          });
+          isValid = openClaudeRes.ok;
+          break;
+        }
+
         default:
           return NextResponse.json({ error: "Provider validation not supported" }, { status: 400 });
       }
