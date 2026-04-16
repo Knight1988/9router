@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, Fragment } from "react";
+import { useState, useEffect, useCallback, useMemo, memo, Fragment } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import Card from "@/shared/components/Card";
 import { cn } from "@/shared/utils/cn";
@@ -38,7 +38,7 @@ function fmtTime(iso) {
   return new Date(iso).toLocaleDateString();
 }
 
-function SuccessRateBar({ rate }) {
+const SuccessRateBar = memo(function SuccessRateBar({ rate }) {
   const color =
     rate >= 95
       ? "bg-green-500"
@@ -66,7 +66,7 @@ function SuccessRateBar({ rate }) {
       </span>
     </div>
   );
-}
+});
 
 function SortIcon({ field, currentSort, currentOrder }) {
   if (currentSort !== field) return <span className="ml-1 opacity-20">↕</span>;
@@ -80,7 +80,7 @@ export default function ProviderHealthTab() {
   const period = getValidPeriod(searchParams.get("period"));
 
   const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(new Set());
   const [sortBy, setSortBy] = useState("totalRequests");
   const [sortOrder, setSortOrder] = useState("desc");
@@ -92,7 +92,8 @@ export default function ProviderHealthTab() {
   }, [searchParams, router, pathname]);
 
   const fetchData = useCallback(async () => {
-    setLoading(true);
+    // Only show full loading state if there's no cached data (stale-while-revalidate)
+    if (!data) setLoading(true);
     try {
       const res = await fetch(`/api/usage/provider-health?period=${period}`);
       const json = await res.json();
@@ -102,11 +103,12 @@ export default function ProviderHealthTab() {
     } finally {
       setLoading(false);
     }
-  }, [period]);
+  }, [period]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    setLoading(!data);
     fetchData();
-  }, [fetchData]);
+  }, [fetchData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleExpanded = (id) => {
     setExpanded((prev) => {
@@ -125,8 +127,9 @@ export default function ProviderHealthTab() {
     }
   };
 
-  const sortedProviders = data?.providers
-    ? [...data.providers].sort((a, b) => {
+  const sortedProviders = useMemo(() => {
+    if (!data?.providers) return [];
+    return [...data.providers].sort((a, b) => {
         const aVal = a[sortBy] ?? 0;
         const bVal = b[sortBy] ?? 0;
         if (typeof aVal === "string") {
@@ -135,10 +138,10 @@ export default function ProviderHealthTab() {
             : bVal.localeCompare(aVal);
         }
         return sortOrder === "asc" ? aVal - bVal : bVal - aVal;
-      })
-    : [];
+      });
+  }, [data?.providers, sortBy, sortOrder]);
 
-  const columns = [
+  const columns = useMemo(() => [
     { field: "name", label: "Provider" },
     { field: "totalRequests", label: "Total", align: "right" },
     { field: "successCount", label: "Success", align: "right" },
@@ -147,7 +150,7 @@ export default function ProviderHealthTab() {
     { field: "avgLatency", label: "Avg Latency", align: "right" },
     { field: "avgTtft", label: "Avg TTFT", align: "right" },
     { field: "lastUsed", label: "Last Used", align: "right" },
-  ];
+  ], []);
 
   return (
     <div className="flex flex-col gap-6">

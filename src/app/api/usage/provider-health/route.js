@@ -31,11 +31,13 @@ export async function GET(request) {
     }
     if (providerFilter) statsFilter.provider = providerFilter;
 
-    const [rows, totalDbRecords, providerNodes] = await Promise.all([
+    const [rows, providerNodes] = await Promise.all([
       getProviderHealthStats(statsFilter),
-      getTotalRecordCount(),
       getProviderNodes(),
     ]);
+
+    // Fetch total record count in background (non-blocking, cached)
+    const totalDbRecordsPromise = getTotalRecordCount();
 
     const nodeMap = {};
     for (const node of providerNodes) {
@@ -122,6 +124,10 @@ export async function GET(request) {
 
     const totalRequests = providers.reduce((s, p) => s + p.totalRequests, 0);
     const totalSuccess = providers.reduce((s, p) => s + p.successCount, 0);
+
+    // Await the non-critical total count (already cached most of the time)
+    let totalDbRecords;
+    try { totalDbRecords = await totalDbRecordsPromise; } catch { totalDbRecords = null; }
 
     const ttl = ["10m", "1h", "5h"].includes(period) ? 30 : 120;
 
