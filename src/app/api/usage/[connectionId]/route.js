@@ -2,6 +2,7 @@
 import "open-sse/index.js";
 
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
+import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 
@@ -104,7 +105,7 @@ export async function GET(request, { params }) {
   let connection;
   try {
     const { connectionId } = await params;
-
+    const queryMonitorToken = request.nextUrl.searchParams.get("monitorToken")?.trim();
 
     // Get connection from database
     connection = await getProviderConnectionById(connectionId);
@@ -112,28 +113,46 @@ export async function GET(request, { params }) {
       return Response.json({ error: "Connection not found" }, { status: 404 });
     }
 
-    // Only OAuth connections have usage APIs
-    if (connection.authType !== "oauth") {
+    // Use query param token, or fall back to saved monitor token from DB
+    const monitorToken = queryMonitorToken
+      || connection.providerSpecificData?.monitorToken || null;
+
+    const usageSupported = USAGE_SUPPORTED_PROVIDERS.includes(connection.provider);
+
+    if (!usageSupported) {
+      return Response.json({ message: `Usage API not implemented for ${connection.provider}` });
+    }
+
+    // API-key providers can still expose usage dashboards. An optional monitor token
+    // lets Open Claude use a dedicated bearer without changing the saved connection.
+    if (connection.authType !== "oauth" && !monitorToken && !connection.accessToken) {
       return Response.json({ message: "Usage not available for API key connections" });
     }
 
-    // Refresh credentials if needed using executor
-    try {
-      const result = await refreshAndUpdateCredentials(connection);
-      connection = result.connection;
-    } catch (refreshError) {
-      console.error("[Usage API] Credential refresh failed:", refreshError);
-      return Response.json({
-        error: `Credential refresh failed: ${refreshError.message}`
-      }, { status: 401 });
+    // Refresh OAuth credentials when needed. API-key providers skip refresh.
+    if (connection.authType === "oauth" && !monitorToken) {
+      try {
+        const result = await refreshAndUpdateCredentials(connection);
+        connection = result.connection;
+      } catch (refreshError) {
+        console.error("[Usage API] Credential refresh failed:", refreshError);
+        return Response.json({
+          error: `Credential refresh failed: ${refreshError.message}`
+        }, { status: 401 });
+      }
     }
 
+    // Override accessToken with monitor token when provided
+    const effectiveConnection = monitorToken
+      ? { ...connection, accessToken: monitorToken }
+      : connection;
+
     // Fetch usage from provider API
-    let usage = await getUsageForProvider(connection);
+    let usage = await getUsageForProvider(effectiveConnection);
 
     // If provider returned an auth-expired message instead of throwing,
-    // force-refresh token and retry once
-    if (isAuthExpiredMessage(usage) && connection.refreshToken) {
+    // force-refresh token and retry once (only for OAuth)
+    if (isAuthExpiredMessage(usage) && connection.refreshToken && !monitorToken) {
       try {
         const retryResult = await refreshAndUpdateCredentials(connection, true);
         connection = retryResult.connection;

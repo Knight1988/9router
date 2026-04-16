@@ -365,43 +365,63 @@ async function getAntigravitySubscriptionInfo(accessToken) {
 }
 
 /**
- * Open Claude Usage - Fetches budget/quota from dashboard API
+ * Open Claude Usage - Fetches budget/quota from dashboard API and proxy/usage for reset time
  */
 async function getOpenClaudeUsage(accessToken) {
   try {
-    const response = await fetch(OPEN_CLAUDE_CONFIG.overviewUrl, {
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-    });
+    const headers = {
+      "Authorization": `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    };
 
-    if (!response.ok) {
-      throw new Error(`Open Claude API error: ${response.status}`);
+    // Fetch both endpoints in parallel
+    const [overviewRes, usageRes] = await Promise.all([
+      fetch(OPEN_CLAUDE_CONFIG.overviewUrl, { method: "GET", headers }),
+      fetch("https://open-claude.com/api/proxy/usage?range=7d", { method: "GET", headers }).catch(() => null),
+    ]);
+
+    if (!overviewRes.ok) {
+      throw new Error(`Open Claude API error: ${overviewRes.status}`);
     }
 
-    const data = await response.json();
+    const data = await overviewRes.json();
+    const usageData = usageRes?.ok ? await usageRes.json().catch(() => null) : null;
     const user = data.user || {};
     const quotas = {};
 
-    // Budget quota: quota is in internal units (divide by 500000 to get USD)
-    const totalDollars = user.quota ? user.quota / 500000 : 0;
-    const usedDollars = user.periodUsedQuota ? user.periodUsedQuota / 500000 : 0;
+    // Use proxy/usage data for more accurate period quota if available
+    const planType = usageData?.plan_type;
+    const planAllowance = usageData?.plan_allowance;
+    const periodUsed = usageData?.period_used_quota;
+    const planPeriod = usageData?.plan_period || "2h";
+
+    // Determine total/used: prefer proxy/usage period data for "reset" plan type
+    let totalDollars, usedDollars;
+    if (planType === "reset" && planAllowance > 0 && periodUsed !== undefined) {
+      totalDollars = planAllowance / 500000;
+      usedDollars = periodUsed / 500000;
+    } else {
+      totalDollars = user.quota ? user.quota / 500000 : 0;
+      usedDollars = user.periodUsedQuota ? user.periodUsedQuota / 500000 : 0;
+    }
     const remainingDollars = Math.max(0, totalDollars - usedDollars);
 
-    quotas["budget (2h)"] = {
+    // Get reset time from proxy/usage endpoint
+    const resetAt = parseResetTime(usageData?.period_reset_at || null);
+
+    const quotaLabel = `budget (${planPeriod})`;
+    quotas[quotaLabel] = {
       used: +usedDollars.toFixed(2),
       total: +totalDollars.toFixed(2),
       remaining: +remainingDollars.toFixed(2),
       remainingPercentage: totalDollars > 0 ? Math.round((remainingDollars / totalDollars) * 100) : 0,
-      resetAt: null,
+      resetAt,
       unlimited: !!user.isUnlimited,
       unit: "$",
     };
 
     return {
-      plan: user.group || "Open Claude",
+      plan: usageData?.plan_name || user.group || "Open Claude",
       planExpiresAt: data.planExpiresAt ? parseResetTime(data.planExpiresAt) : null,
       quotas,
     };

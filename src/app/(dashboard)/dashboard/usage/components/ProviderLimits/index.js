@@ -27,6 +27,8 @@ export default function ProviderLimits() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
+  const [monitorTokens, setMonitorTokens] = useState({});
+  const [showMonitorInputs, setShowMonitorInputs] = useState({});
 
   const intervalRef = useRef(null);
   const countdownRef = useRef(null);
@@ -40,6 +42,29 @@ export default function ProviderLimits() {
       const data = await response.json();
       const connectionList = data.connections || [];
       setConnections(connectionList);
+
+      // Load saved monitor tokens from providerSpecificData
+      setMonitorTokens((prev) => {
+        const next = { ...prev };
+        connectionList.forEach((conn) => {
+          if (conn.providerSpecificData?.monitorToken && !next[conn.id]) {
+            next[conn.id] = conn.providerSpecificData.monitorToken;
+          }
+        });
+        return next;
+      });
+
+      // Auto-show monitor input for connections that have a saved token
+      setShowMonitorInputs((prev) => {
+        const next = { ...prev };
+        connectionList.forEach((conn) => {
+          if (conn.providerSpecificData?.monitorToken && next[conn.id] === undefined) {
+            next[conn.id] = true;
+          }
+        });
+        return next;
+      });
+
       return connectionList;
     } catch (error) {
       console.error("Error fetching connections:", error);
@@ -49,7 +74,7 @@ export default function ProviderLimits() {
   }, []);
 
   // Fetch quota for a specific connection
-  const fetchQuota = useCallback(async (connectionId, provider) => {
+  const fetchQuota = useCallback(async (connectionId, provider, monitorToken) => {
     setLoading((prev) => ({ ...prev, [connectionId]: true }));
     setErrors((prev) => ({ ...prev, [connectionId]: null }));
 
@@ -57,7 +82,10 @@ export default function ProviderLimits() {
       console.log(
         `[ProviderLimits] Fetching quota for ${provider} (${connectionId})`,
       );
-      const response = await fetch(`/api/usage/${connectionId}`);
+      const query = monitorToken
+        ? `?monitorToken=${encodeURIComponent(monitorToken)}`
+        : "";
+      const response = await fetch(`/api/usage/${connectionId}${query}`);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -123,10 +151,11 @@ export default function ProviderLimits() {
   // Refresh quota for a specific provider
   const refreshProvider = useCallback(
     async (connectionId, provider) => {
-      await fetchQuota(connectionId, provider);
+      const token = monitorTokens[connectionId];
+      await fetchQuota(connectionId, provider, token);
       setLastUpdated(new Date());
     },
-    [fetchQuota],
+    [fetchQuota, monitorTokens],
   );
 
   const handleDeleteConnection = useCallback(async (id) => {
@@ -195,14 +224,14 @@ export default function ProviderLimits() {
           setShowEditModal(false);
           setSelectedConnection(null);
           if (USAGE_SUPPORTED_PROVIDERS.includes(provider)) {
-            await fetchQuota(connectionId, provider);
+            await fetchQuota(connectionId, provider, monitorTokens[connectionId]);
           }
         }
       } catch (error) {
         console.error("Error saving connection:", error);
       }
     },
-    [selectedConnection, fetchConnections, fetchQuota],
+    [selectedConnection, fetchConnections, fetchQuota, monitorTokens],
   );
 
   useEffect(() => {
@@ -235,7 +264,9 @@ export default function ProviderLimits() {
       );
 
       await Promise.all(
-        supportedConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
+        supportedConnections.map((conn) =>
+          fetchQuota(conn.id, conn.provider, monitorTokens[conn.id]),
+        ),
       );
 
       setLastUpdated(new Date());
@@ -244,7 +275,7 @@ export default function ProviderLimits() {
     } finally {
       setRefreshingAll(false);
     }
-  }, [refreshingAll, fetchConnections, fetchQuota]);
+  }, [refreshingAll, fetchConnections, fetchQuota, monitorTokens]);
 
   // Initial load: fetch connections first so cards render immediately, then fetch quotas
   useEffect(() => {
@@ -265,13 +296,15 @@ export default function ProviderLimits() {
       setLoading(loadingState);
 
       await Promise.all(
-        supportedConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
+        supportedConnections.map((conn) =>
+          fetchQuota(conn.id, conn.provider, conn.providerSpecificData?.monitorToken),
+        ),
       );
       setLastUpdated(new Date());
     };
 
     initializeData();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fetchConnections, fetchQuota]);
 
   // Auto-refresh interval
   useEffect(() => {
@@ -553,8 +586,78 @@ export default function ProviderLimits() {
                 </div>
               </div>
 
-              <div className="px-3 py-3">
-                {isLoading ? (
+               {conn.provider === "open-claude" && (
+                 <div className="px-4 py-3 border-b border-black/10 dark:border-white/10 space-y-3">
+                   <div className="flex items-center justify-between gap-2">
+                     <p className="text-xs text-text-muted">
+                       Optional monitoring bearer token
+                     </p>
+                     <button
+                       type="button"
+                       onClick={() =>
+                         setShowMonitorInputs((prev) => ({
+                           ...prev,
+                           [conn.id]: !prev[conn.id],
+                         }))
+                       }
+                       className="text-xs text-primary hover:underline"
+                     >
+                       {showMonitorInputs[conn.id] ? "Hide" : "Show"}
+                     </button>
+                   </div>
+
+                    {showMonitorInputs[conn.id] && (
+                     <div className="space-y-2">
+                       <input
+                         type="password"
+                         value={monitorTokens[conn.id] || ""}
+                         onChange={(e) =>
+                           setMonitorTokens((prev) => ({
+                             ...prev,
+                             [conn.id]: e.target.value,
+                           }))
+                         }
+                         placeholder="Bearer token for quota monitoring only"
+                         className="w-full rounded-lg border border-black/10 dark:border-white/10 bg-transparent px-3 py-2 text-sm text-text-primary placeholder:text-text-muted outline-none focus:border-primary"
+                       />
+                       <div className="flex items-center justify-between gap-2">
+                         <p className="text-[11px] text-text-muted">
+                           Leave empty to use the saved connection token. This only
+                           affects quota monitoring requests.
+                         </p>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={async () => {
+                              // Save the monitor token to DB
+                              const token = monitorTokens[conn.id] || "";
+                              try {
+                                await fetch(`/api/providers/${conn.id}`, {
+                                  method: "PUT",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({
+                                    providerSpecificData: { monitorToken: token || null },
+                                  }),
+                                });
+                              } catch (e) {
+                                console.error("Failed to save monitor token:", e);
+                              }
+                              refreshProvider(conn.id, conn.provider);
+                            }}
+                            disabled={isLoading || rowBusy}
+                          >
+                            Apply
+                          </Button>
+                       </div>
+                     </div>
+                   )}
+
+                 </div>
+               )}
+
+               <div className="px-3 py-3">
+                 {isLoading ? (
+
                   <div className="text-center py-5 text-text-muted">
                     <span className="material-symbols-outlined text-[28px] animate-spin">
                       progress_activity
