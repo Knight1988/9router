@@ -463,7 +463,20 @@ async function getTrollLlmUsage(accessToken) {
     const totalDaily = Number(profile.planDailyAllocation ?? billing?.planDailyAllocation ?? 0);
     const usedDaily = Number(profile.planDailyUsed ?? billing?.planDailyUsed ?? 0);
     const remainingDaily = Math.max(0, totalDaily - usedDaily);
-    const dailyResetAt = parseResetTime(profile.planDailyResetDate || billing?.planDailyResetDate || null);
+    // Troll LLM returns the *last* reset timestamp in planDailyResetDate. Roll it
+    // forward by whole days so the countdown reflects the *next* reset, matching
+    // what the official trollllm.xyz dashboard displays.
+    const rawDailyReset = profile.planDailyResetDate || billing?.planDailyResetDate || null;
+    let dailyResetAt = parseResetTime(rawDailyReset);
+    if (dailyResetAt) {
+      const now = Date.now();
+      let resetMs = new Date(dailyResetAt).getTime();
+      if (Number.isFinite(resetMs) && resetMs <= now) {
+        const dayMs = 24 * 60 * 60 * 1000;
+        resetMs += Math.ceil((now - resetMs) / dayMs) * dayMs;
+        dailyResetAt = new Date(resetMs).toISOString();
+      }
+    }
 
     if (totalDaily > 0 || usedDaily > 0) {
       quotas["daily budget"] = {

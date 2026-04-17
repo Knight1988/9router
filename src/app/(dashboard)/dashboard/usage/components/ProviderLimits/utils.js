@@ -1,6 +1,31 @@
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 
 /**
+ * Normalize a reset timestamp so it points to the next future occurrence.
+ * Some providers (e.g. Troll LLM) return the *previous* daily reset time;
+ * we roll it forward by whole-day increments until it lands in the future
+ * so downstream formatting shows a live countdown.
+ */
+export function nextResetDate(date) {
+  if (!date) return null;
+  try {
+    const base = typeof date === "string" || typeof date === "number"
+      ? new Date(date)
+      : date;
+    const ms = base.getTime();
+    if (!Number.isFinite(ms)) return null;
+
+    const now = Date.now();
+    if (ms > now) return base;
+
+    const dayMs = 24 * 60 * 60 * 1000;
+    return new Date(ms + Math.ceil((now - ms) / dayMs) * dayMs);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Format ISO date string to countdown format (inspired by vscode-antigravity-cockpit)
  * @param {string|Date} date - ISO date string or Date object
  * @returns {string} Formatted countdown (e.g., "2d 5h 30m", "4h 40m", "15m") or "-"
@@ -9,9 +34,9 @@ export function formatResetTime(date) {
   if (!date) return "-";
 
   try {
-    const resetDate = typeof date === "string" ? new Date(date) : date;
-    const now = new Date();
-    const diffMs = resetDate - now;
+    const resetDate = nextResetDate(date);
+    if (!resetDate) return "-";
+    const diffMs = resetDate.getTime() - Date.now();
 
     if (diffMs <= 0) return "-";
 

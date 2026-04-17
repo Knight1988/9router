@@ -1,6 +1,6 @@
 "use client";
 
-import { formatResetTime, calculatePercentage } from "./utils";
+import { formatResetTime, calculatePercentage, nextResetDate } from "./utils";
 
 /**
  * Format reset time display (Today, 12:00 PM)
@@ -9,7 +9,8 @@ function formatResetTimeDisplay(resetTime) {
   if (!resetTime) return null;
   
   try {
-    const date = new Date(resetTime);
+    const date = nextResetDate(resetTime);
+    if (!date) return null;
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const tomorrow = new Date(today);
