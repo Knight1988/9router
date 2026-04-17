@@ -66,8 +66,9 @@ function getDb() {
     CREATE INDEX IF NOT EXISTS idx_timestamp ON request_details(timestamp DESC);
     CREATE INDEX IF NOT EXISTS idx_provider ON request_details(provider);
     CREATE INDEX IF NOT EXISTS idx_model ON request_details(model);
-    CREATE INDEX IF NOT EXISTS idx_provider_health ON request_details(timestamp, provider, model);
   `);
+
+  db.exec("DROP INDEX IF EXISTS idx_provider_health");
 
   // Add denormalized columns (idempotent via pragma)
   const existingCols = db.pragma("table_info(request_details)").map(c => c.name);
@@ -418,7 +419,7 @@ export async function getProviderHealthStats({ startDate, provider } = {}) {
       MAX(timestamp) AS lastUsed,
       AVG(CASE WHEN latency_total > 0 THEN latency_total END) AS avgLatency,
       AVG(CASE WHEN latency_ttft > 0 THEN latency_ttft END) AS avgTtft
-    FROM request_details ${where}
+    FROM request_details INDEXED BY idx_provider_health_v2 ${where}
     GROUP BY provider, model
   `).all(params);
 
