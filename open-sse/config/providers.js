@@ -250,7 +250,8 @@ export const PROVIDERS = {
   },
   "open-claude": {
     baseUrl: "https://open-claude.com/v1/chat/completions",
-    format: "openai"
+    format: "openai",
+    retry: { 503: 3 }
   },
   "troll-llm": {
     baseUrl: "https://chat.trollllm.xyz/v1/chat/completions",
