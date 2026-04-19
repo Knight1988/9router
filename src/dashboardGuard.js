@@ -1,10 +1,35 @@
 import { NextResponse } from "next/server";
-import { jwtVerify } from "jose";
+import { jwtVerify, SignJWT } from "jose";
 import { getSettings } from "@/lib/localDb";
 
 const SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "9router-default-secret-change-me"
 );
+
+const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 7 days
+
+// Mint a fresh token and attach it to the response so active users get a sliding session.
+async function refreshAuthCookie(response, request) {
+  try {
+    const token = await new SignJWT({ authenticated: true })
+      .setProtectedHeader({ alg: "HS256" })
+      .setExpirationTime("7d")
+      .sign(SECRET);
+    const forwardedProto = request.headers.get("x-forwarded-proto");
+    const useSecureCookie =
+      process.env.AUTH_COOKIE_SECURE === "true" || forwardedProto === "https";
+    response.cookies.set("auth_token", token, {
+      httpOnly: true,
+      secure: useSecureCookie,
+      sameSite: "lax",
+      path: "/",
+      maxAge: SESSION_MAX_AGE_SECONDS,
+    });
+  } catch {
+    // If signing fails, leave the existing cookie untouched.
+  }
+  return response;
+}
 
 // Always require JWT token regardless of requireLogin setting
 const ALWAYS_PROTECTED = [
@@ -59,16 +84,19 @@ export async function proxy(request) {
 
   // Always protected - allow localhost or valid JWT only
   if (ALWAYS_PROTECTED.some((p) => pathname.startsWith(p))) {
-    if (isLocal || await hasValidToken(request))
-      return NextResponse.next();
+    if (isLocal) return NextResponse.next();
+    if (await hasValidToken(request))
+      return refreshAuthCookie(NextResponse.next(), request);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   // Protect sensitive API endpoints (bypass if localhost or requireLogin = false)
   if (PROTECTED_API_PATHS.some((p) => pathname.startsWith(p))) {
     if (pathname === "/api/settings/require-login") return NextResponse.next();
-    if (isLocal || await isAuthenticated(request))
-      return NextResponse.next();
+    if (isLocal) return NextResponse.next();
+    if (await hasValidToken(request))
+      return refreshAuthCookie(NextResponse.next(), request);
+    if (await isAuthenticated(request)) return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -100,12 +128,12 @@ export async function proxy(request) {
     // If login not required, allow through
     if (!requireLogin) return NextResponse.next();
 
-    // Verify JWT token
+    // Verify JWT token and slide the session forward on success
     const token = request.cookies.get("auth_token")?.value;
     if (token) {
       try {
         await jwtVerify(token, SECRET);
-        return NextResponse.next();
+        return refreshAuthCookie(NextResponse.next(), request);
       } catch {
         return NextResponse.redirect(new URL("/login", request.url));
       }

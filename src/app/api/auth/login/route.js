@@ -68,7 +68,7 @@ export async function POST(request) {
 
       const token = await new SignJWT({ authenticated: true })
         .setProtectedHeader({ alg: "HS256" })
-        .setExpirationTime("24h")
+        .setExpirationTime("7d")
         .sign(SECRET);
 
       const cookieStore = await cookies();
@@ -77,6 +77,7 @@ export async function POST(request) {
         secure: useSecureCookie,
         sameSite: "lax",
         path: "/",
+        maxAge: 60 * 60 * 24 * 7,
       });
 
       resetAttempts(ip);
