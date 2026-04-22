@@ -1,6 +1,6 @@
 import path from "node:path";
-import os from "node:os";
 import fs from "node:fs";
+import { DATA_DIR } from "@/lib/dataDir.js";
 
 const isCloud = typeof caches !== "undefined" && typeof caches === "object";
 
@@ -8,26 +8,6 @@ const DEFAULT_BATCH_SIZE = 20;
 const DEFAULT_FLUSH_INTERVAL_MS = 5000;
 const DEFAULT_MAX_JSON_SIZE = 5 * 1024;
 const CONFIG_CACHE_TTL_MS = 5000;
-
-function getAppName() {
-  return "9router";
-}
-
-function getUserDataDir() {
-  if (isCloud) return "/tmp";
-  if (process.env.DATA_DIR) return process.env.DATA_DIR;
-
-  const platform = process.platform;
-  const homeDir = os.homedir();
-  const appName = getAppName();
-
-  if (platform === "win32") {
-    return path.join(process.env.APPDATA || path.join(homeDir, "AppData", "Roaming"), appName);
-  }
-  return path.join(homeDir, `.${appName}`);
-}
-
-const DATA_DIR = getUserDataDir();
 const DB_FILE = isCloud ? null : path.join(DATA_DIR, "request-details.db");
 const LEGACY_JSON_FILE = isCloud ? null : path.join(DATA_DIR, "request-details.json");
 
