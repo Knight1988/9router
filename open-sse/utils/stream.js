@@ -59,6 +59,8 @@ export function createSSEStream(options = {}) {
   let accumulatedContent = "";
   let accumulatedThinking = "";
   let ttftAt = null;
+  let hasToolCalls = false;
+  let hasEmittedContent = false;
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -167,11 +169,8 @@ export function createSSEStream(options = {}) {
         if (!parsed) continue;
 
         // For Ollama: done=true is the final chunk with finish_reason/usage, must translate
-        // For other formats: done=true is the [DONE] sentinel, skip
+        // For other formats: done=true is the [DONE] sentinel, skip here — flush() will emit [DONE]
         if (parsed && parsed.done && targetFormat !== FORMATS.OLLAMA) {
-          const output = "data: [DONE]\n\n";
-          reqLogger?.appendConvertedChunk?.(output);
-          controller.enqueue(sharedEncoder.encode(output));
           continue;
         }
 
@@ -227,6 +226,10 @@ export function createSSEStream(options = {}) {
           }
         }
 
+        // Track tool calls from upstream (OpenAI or Claude format)
+        if (parsed.choices?.[0]?.delta?.tool_calls?.length > 0) hasToolCalls = true;
+        if (parsed.type === "content_block_start" && parsed.content_block?.type === "tool_use") hasToolCalls = true;
+
         if (translated?.length > 0) {
           for (const item of translated) {
             // Filter empty chunks
@@ -249,6 +252,7 @@ export function createSSEStream(options = {}) {
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
+            hasEmittedContent = true;
           }
         }
       }
@@ -291,7 +295,8 @@ export function createSSEStream(options = {}) {
           if (onStreamComplete) {
             onStreamComplete({
               content: accumulatedContent,
-              thinking: accumulatedThinking
+              thinking: accumulatedThinking,
+              emptyStream: totalContentLength === 0
             }, usage, ttftAt);
           }
           return;
@@ -354,9 +359,11 @@ export function createSSEStream(options = {}) {
         }
         
         if (onStreamComplete) {
+          const emptyStream = !hasEmittedContent && totalContentLength === 0 && !hasToolCalls;
           onStreamComplete({
             content: accumulatedContent,
-            thinking: accumulatedThinking
+            thinking: accumulatedThinking,
+            emptyStream
           }, state?.usage, ttftAt);
         }
       } catch (error) {

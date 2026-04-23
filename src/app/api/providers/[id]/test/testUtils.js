@@ -340,10 +340,44 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
     const modelsBase = connection.providerSpecificData?.baseUrl;
     if (!modelsBase) return { valid: false, error: "Missing base URL" };
     try {
-      const res = await fetchWithConnectionProxy(`${modelsBase.replace(/\/$/, "")}/models`, {
+      const normalizedBase = modelsBase.replace(/\/$/, "");
+      const res = await fetchWithConnectionProxy(`${normalizedBase}/models`, {
         headers: { "Authorization": `Bearer ${connection.apiKey}` },
       }, effectiveProxy);
-      return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
+      if (!res.ok) return { valid: false, error: "Invalid API key or base URL" };
+
+      // Format check — send a minimal /chat/completions request and verify
+      // the response looks like OpenAI format, not Anthropic.
+      let probeModel = "gpt-4o-mini";
+      try {
+        const modelsBody = await res.clone().json();
+        const modelsList = modelsBody?.data || modelsBody?.models || (Array.isArray(modelsBody) ? modelsBody : []);
+        if (modelsList.length > 0) {
+          probeModel = modelsList[0]?.id || modelsList[0]?.name || probeModel;
+        }
+      } catch { /* ignore */ }
+
+      try {
+        const probeRes = await fetchWithConnectionProxy(`${normalizedBase}/chat/completions`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
+          body: JSON.stringify({ model: probeModel, max_tokens: 1, messages: [{ role: "user", content: "hi" }] }),
+        }, effectiveProxy);
+
+        if (probeRes.ok) {
+          const probeBody = await probeRes.json();
+          // Anthropic responses have { type: "message", content: [...] } with no choices
+          // OpenAI responses have { choices: [...] }
+          if (probeBody.type === "message" && probeBody.content && !probeBody.choices) {
+            return {
+              valid: false,
+              error: "Format mismatch: provider returns Anthropic format, not OpenAI. Use 'Anthropic Compatible' instead."
+            };
+          }
+        }
+      } catch { /* format probe failed, skip */ }
+
+      return { valid: true, error: null };
     } catch (err) {
       return { valid: false, error: err.message };
     }
@@ -355,10 +389,48 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
     try {
       modelsBase = modelsBase.replace(/\/$/, "");
       if (modelsBase.endsWith("/messages")) modelsBase = modelsBase.slice(0, -9);
+      const authHeaders = { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "Authorization": `Bearer ${connection.apiKey}` };
+
+      // Step 1: Auth check via /models
       const res = await fetchWithConnectionProxy(`${modelsBase}/models`, {
-        headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "Authorization": `Bearer ${connection.apiKey}` },
+        headers: authHeaders,
       }, effectiveProxy);
-      return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
+      if (!res.ok) return { valid: false, error: "Invalid API key or base URL" };
+
+      // Step 2: Format check — send a minimal /messages request and verify
+      // the response looks like Anthropic format, not OpenAI.
+      // Pick the first model from the models list if available.
+      let probeModel = "claude-3-haiku-20240307";
+      try {
+        const modelsBody = await res.clone().json();
+        const modelsList = modelsBody?.data || modelsBody?.models || (Array.isArray(modelsBody) ? modelsBody : []);
+        if (modelsList.length > 0) {
+          probeModel = modelsList[0]?.id || modelsList[0]?.name || probeModel;
+        }
+      } catch { /* ignore parse errors, use default model */ }
+
+      try {
+        const probeRes = await fetchWithConnectionProxy(`${modelsBase}/messages`, {
+          method: "POST",
+          headers: { ...authHeaders, "content-type": "application/json" },
+          body: JSON.stringify({ model: probeModel, max_tokens: 1, messages: [{ role: "user", content: "hi" }] }),
+        }, effectiveProxy);
+
+        // Only check format on successful responses; auth/model errors are fine
+        if (probeRes.ok) {
+          const probeBody = await probeRes.json();
+          // Anthropic responses have { type: "message", content: [...] }
+          // OpenAI responses have { choices: [...] }
+          if (probeBody.choices && !probeBody.content) {
+            return {
+              valid: false,
+              error: "Format mismatch: provider returns OpenAI format, not Anthropic. Use 'OpenAI Compatible' instead."
+            };
+          }
+        }
+      } catch { /* format probe failed, skip — auth was valid */ }
+
+      return { valid: true, error: null };
     } catch (err) {
       return { valid: false, error: err.message };
     }

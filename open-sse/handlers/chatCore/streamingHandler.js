@@ -79,6 +79,11 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     const safeContent = contentObj?.content || "[Empty streaming response]";
     const safeThinking = contentObj?.thinking || null;
 
+    // Warn when a stream completes with zero content — likely a format mismatch
+    if (contentObj?.emptyStream) {
+      console.warn(`[STREAM] WARNING: Empty stream from ${provider}/${model} (connection=${connectionId}). Possible format mismatch — provider may be returning a different format than expected.`);
+    }
+
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
       latency,
