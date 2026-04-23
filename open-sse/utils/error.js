@@ -56,9 +56,11 @@ export async function writeStreamError(writer, statusCode, message) {
  */
 export async function parseUpstreamError(response) {
   let message = "";
+  let rawBody = "";
 
   try {
     const text = await response.text();
+    rawBody = text;
 
     try {
       const json = JSON.parse(text);
@@ -75,7 +77,8 @@ export async function parseUpstreamError(response) {
 
   return {
     statusCode: response.status,
-    message: finalMessage
+    message: finalMessage,
+    rawBody
   };
 }
 
