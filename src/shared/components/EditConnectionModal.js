@@ -7,12 +7,22 @@ import Input from "@/shared/components/Input";
 import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import Toggle from "@/shared/components/Toggle";
+
+// Providers whose outgoing requests target Claude API format (Anthropic prompt caching applies)
+const CLAUDE_TARGET_PROVIDERS = new Set(["claude", "anthropic", "glm", "zunef", "kiro", "qwen"]);
+
+function isClaudeTargetProvider(providerId) {
+  if (!providerId) return false;
+  return CLAUDE_TARGET_PROVIDERS.has(providerId) || isAnthropicCompatibleProvider(providerId);
+}
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
     name: "",
     priority: 1,
     apiKey: "",
+    setCacheKey: true,
   });
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -26,6 +36,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         name: connection.name || "",
         priority: connection.priority || 1,
         apiKey: "",
+        setCacheKey: connection.providerSpecificData?.setCacheKey !== false,
       });
       setTestResult(null);
       setValidationResult(null);
@@ -36,6 +47,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const isCompatible = connection
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
+  const showCacheToggle = connection ? isClaudeTargetProvider(connection.provider) : false;
 
   const handleTest = async () => {
     if (!connection?.provider) return;
@@ -79,6 +91,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         name: formData.name,
         priority: formData.priority,
       };
+      if (showCacheToggle) {
+        updates.providerSpecificData = { setCacheKey: formData.setCacheKey };
+      }
       if (!isOAuth && formData.apiKey) {
         updates.apiKey = formData.apiKey;
         let isValid = validationResult === "success";
@@ -173,6 +188,15 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
               </Badge>
             )}
           </div>
+        )}
+
+        {showCacheToggle && (
+          <Toggle
+            label="Enable prompt caching"
+            description="Inject Anthropic cache_control markers (ephemeral) into outgoing requests. Disable for upstreams that don't support prompt caching."
+            checked={formData.setCacheKey}
+            onChange={(val) => setFormData({ ...formData, setCacheKey: val })}
+          />
         )}
 
         <div className="flex gap-2">

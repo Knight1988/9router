@@ -124,7 +124,9 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   // Final step: prepare request for Claude format endpoints
   if (targetFormat === FORMATS.CLAUDE) {
     const apiKey = credentials?.accessToken || credentials?.apiKey || null;
-    result = prepareClaudeRequest(result, provider, apiKey, connectionId);
+    // setCacheKey defaults true; explicitly passing false disables cache_control injection
+    const setCacheKey = credentials?.providerSpecificData?.setCacheKey !== false;
+    result = prepareClaudeRequest(result, provider, apiKey, connectionId, { setCacheKey });
   }
 
   // Claude cloaking: rename client tools with _cc suffix (anti-ban)

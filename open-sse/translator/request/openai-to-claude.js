@@ -88,22 +88,6 @@ export function openaiToClaudeRequest(model, body, stream) {
 
     flushCurrentMessage();
 
-    // Add cache_control to last assistant message
-    for (let i = result.messages.length - 1; i >= 0; i--) {
-      const message = result.messages[i];
-      if (message.role === "assistant" && Array.isArray(message.content) && message.content.length > 0) {
-        // Find the last block that can have cache_control (not thinking blocks)
-        const validBlockTypes = ["text", "tool_use", "tool_result", "image"];
-        for (let j = message.content.length - 1; j >= 0; j--) {
-          const block = message.content[j];
-          if (validBlockTypes.includes(block.type)) {
-            block.cache_control = { type: "ephemeral" };
-            break;
-          }
-        }
-        break;
-      }
-    }
   }
 
   // Handle response_format for JSON mode
@@ -121,14 +105,13 @@ Respond ONLY with the JSON object, no other text.`);
     }
   }
 
-  // System with Claude Code prompt and cache_control
+  // System: build blocks — cache_control will be injected by prepareClaudeRequest downstream
   const claudeCodePrompt = { type: "text", text: CLAUDE_SYSTEM_PROMPT };
 
   if (systemParts.length > 0) {
-    const systemText = systemParts.join("\n");
     result.system = [
       claudeCodePrompt,
-      { type: "text", text: systemText, cache_control: { type: "ephemeral", ttl: "1h" } }
+      { type: "text", text: systemParts.join("\n") }
     ];
   } else {
     result.system = [claudeCodePrompt];
@@ -161,9 +144,7 @@ Respond ONLY with the JSON object, no other text.`);
       });
     }
 
-    if (result.tools.length > 0) {
-      result.tools[result.tools.length - 1].cache_control = { type: "ephemeral", ttl: "1h" };
-    }
+    // cache_control on the last tool is added by prepareClaudeRequest downstream
   }
 
   // Tool choice
@@ -360,4 +341,3 @@ export { openaiToClaudeRequestForAntigravity };
 
 // Register
 register(FORMATS.OPENAI, FORMATS.CLAUDE, openaiToClaudeRequest, null);
-
