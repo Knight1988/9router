@@ -4,9 +4,12 @@
 export const VALID_OPENAI_CONTENT_TYPES = ["text", "image_url", "image"];
 export const VALID_OPENAI_MESSAGE_TYPES = ["text", "image_url", "image", "tool_calls", "tool_result"];
 
+// Providers that do not support assistant prefill (last message must be from "user")
+const NO_PREFILL_PROVIDERS = new Set(["open-claude", "troll-llm"]);
+
 // Filter messages to OpenAI standard format
 // Remove: thinking, redacted_thinking, signature, and other non-OpenAI blocks
-export function filterToOpenAIFormat(body) {
+export function filterToOpenAIFormat(body, provider = null) {
   if (!body.messages || !Array.isArray(body.messages)) return body;
   
   body.messages = body.messages.map(msg => {
@@ -75,6 +78,23 @@ export function filterToOpenAIFormat(body) {
     delete body.tools;
   }
 
+  // Strip trailing assistant message for providers that reject prefill
+  if (provider && NO_PREFILL_PROVIDERS.has(provider) && Array.isArray(body.messages)) {
+    while (body.messages.length > 0) {
+      const last = body.messages[body.messages.length - 1];
+      if (last.role === "assistant" && !last.tool_calls) {
+        body.messages.pop();
+      } else {
+        break;
+      }
+    }
+  }
+
+
+  // Normalize tools to OpenAI format (from Claude, Gemini, etc.)
+  if (body.tools && Array.isArray(body.tools) && body.tools.length > 0) {
+  }
+
   // Normalize tools to OpenAI format (from Claude, Gemini, etc.)
   if (body.tools && Array.isArray(body.tools) && body.tools.length > 0) {
     body.tools = body.tools.map(tool => {
@@ -124,4 +144,3 @@ export function filterToOpenAIFormat(body) {
 
   return body;
 }
-
