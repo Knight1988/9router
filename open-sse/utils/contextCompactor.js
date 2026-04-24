@@ -131,7 +131,13 @@ async function summarizeHead(headText, model, endpoint) {
 export async function compactBodyIfNeeded({ body, endpoint, settings, log }) {
   const threshold = settings.autoCompactTokenThreshold ?? 150000;
   const tailTurns = settings.autoCompactTailTurns ?? 2;
-  const summarizerModel = settings.autoCompactSummarizerModel?.trim() || body.model;
+  // Build ordered summarizer model list with fallback chain; supports legacy string value
+  const _rawSummarizer = settings.autoCompactSummarizerModel;
+  const summarizerModels = Array.isArray(_rawSummarizer)
+    ? _rawSummarizer.filter(Boolean)
+    : _rawSummarizer?.trim()
+      ? [_rawSummarizer.trim()]
+      : [];
 
   const estimated = estimateInputTokens(body);
   if (estimated <= threshold) return;
@@ -172,7 +178,18 @@ export async function compactBodyIfNeeded({ body, endpoint, settings, log }) {
   }
 
   const headText = serializeHead(head);
-  const summary = await summarizeHead(headText, summarizerModel, endpoint);
+
+  // Try each summarizer model in order; fall back to the request's own model as last resort
+  const modelsToTry = summarizerModels.length > 0 ? [...summarizerModels, body.model] : [body.model];
+  let summary = null;
+  for (const candidate of modelsToTry) {
+    try {
+      summary = await summarizeHead(headText, candidate, endpoint);
+      if (summary) break;
+    } catch (err) {
+      if (log) log.warn("COMPACT", `Summarizer model "${candidate}" failed: ${err?.message ?? err}`);
+    }
+  }
   if (!summary) {
     if (log) log.warn("COMPACT", "Summarization returned empty result; proceeding with original context.");
     return;

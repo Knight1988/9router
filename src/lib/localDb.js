@@ -40,7 +40,7 @@ const DEFAULT_SETTINGS = {
   autoCompactEnabled: true,
   autoCompactTokenThreshold: 150000,
   autoCompactTailTurns: 2,
-  autoCompactSummarizerModel: "",
+  autoCompactSummarizerModel: [],
 };
 
 function cloneDefaultData() {
@@ -95,6 +95,13 @@ function ensureDbShape(data) {
           }
           changed = true;
         }
+      }
+
+      // Normalize autoCompactSummarizerModel: coerce legacy string to array
+      if (typeof next.settings.autoCompactSummarizerModel === "string") {
+        const v = next.settings.autoCompactSummarizerModel.trim();
+        next.settings.autoCompactSummarizerModel = v ? [v] : [];
+        changed = true;
       }
     }
 

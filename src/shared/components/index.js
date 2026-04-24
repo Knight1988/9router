@@ -31,8 +31,8 @@ export { default as GitLabAuthModal } from "./GitLabAuthModal";
 export { default as EditConnectionModal } from "./EditConnectionModal";
 export { default as SegmentedControl } from "./SegmentedControl";
 export { default as Tooltip } from "./Tooltip";
+export { ModelListEditor } from "./ModelListEditor";
 
 // Layouts
 export * from "./layouts";
-
 

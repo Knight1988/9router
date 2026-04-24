@@ -126,7 +126,15 @@ export async function PATCH(request) {
       if (!isNaN(v)) body.autoCompactTailTurns = Math.min(20, Math.max(0, v));
     }
     if (Object.prototype.hasOwnProperty.call(body, "autoCompactSummarizerModel")) {
-      body.autoCompactSummarizerModel = String(body.autoCompactSummarizerModel || "").trim();
+      const raw = body.autoCompactSummarizerModel;
+      if (Array.isArray(raw)) {
+        // Validate: keep non-empty string entries
+        body.autoCompactSummarizerModel = raw.map((m) => String(m).trim()).filter(Boolean);
+      } else {
+        // Backward-compat: string input -> single-element array (or empty)
+        const v = String(raw || "").trim();
+        body.autoCompactSummarizerModel = v ? [v] : [];
+      }
     }
 
     const settings = await updateSettings(body);

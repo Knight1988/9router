@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Card, Button, Toggle, Input } from "@/shared/components";
+import { Card, Button, Toggle, Input, Modal, ModelListEditor } from "@/shared/components";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
@@ -10,6 +10,7 @@ export default function ProfilePage() {
   const { theme, setTheme, isDark } = useTheme();
   const [settings, setSettings] = useState({ fallbackStrategy: "fill-first" });
   const [loading, setLoading] = useState(true);
+  const [showSummarizerModal, setShowSummarizerModal] = useState(false);
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
   const [passStatus, setPassStatus] = useState({ type: "", message: "" });
   const [passLoading, setPassLoading] = useState(false);
@@ -332,14 +333,14 @@ export default function ProfilePage() {
     }
   };
 
-  const updateAutoCompactSummarizerModel = async (value) => {
+  const updateAutoCompactSummarizerModel = async (models) => {
     try {
       const res = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ autoCompactSummarizerModel: value }),
+        body: JSON.stringify({ autoCompactSummarizerModel: models }),
       });
-      if (res.ok) setSettings((prev) => ({ ...prev, autoCompactSummarizerModel: value }));
+      if (res.ok) setSettings((prev) => ({ ...prev, autoCompactSummarizerModel: models }));
     } catch (err) {
       console.error("Failed to update autoCompactSummarizerModel:", err);
     }
@@ -484,6 +485,7 @@ export default function ProfilePage() {
   const observabilityEnabled = settings.enableObservability === true;
 
   return (
+    <>
     <div className="max-w-2xl mx-auto">
       <div className="flex flex-col gap-6">
         {/* Local Mode Info */}
@@ -877,16 +879,29 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
-                  <p className="font-medium">Summarizer Model</p>
-                  <Input
-                    placeholder="Same as request model (default)"
-                    value={settings.autoCompactSummarizerModel ?? ""}
-                    onChange={(e) => updateAutoCompactSummarizerModel(e.target.value)}
-                    onBlur={(e) => updateAutoCompactSummarizerModel(e.target.value)}
-                    disabled={loading}
-                  />
+                  <div className="flex items-center justify-between">
+                    <p className="font-medium">Summarizer Model</p>
+                    <Button size="sm" variant="ghost" icon="edit" onClick={() => setShowSummarizerModal(true)} disabled={loading}>
+                      Edit
+                    </Button>
+                  </div>
+                  {/* Display selected models, or placeholder */}
+                  {(settings.autoCompactSummarizerModel?.length ?? 0) === 0 ? (
+                    <p className="text-sm text-text-muted italic">Same as request model (default)</p>
+                  ) : (
+                    <div className="flex flex-col gap-1">
+                      {(Array.isArray(settings.autoCompactSummarizerModel)
+                        ? settings.autoCompactSummarizerModel
+                        : [settings.autoCompactSummarizerModel].filter(Boolean)
+                      ).map((m, i) => (
+                        <code key={i} className="text-xs font-mono bg-black/5 dark:bg-white/5 px-2 py-1 rounded text-text-main">
+                          {i + 1}. {m}
+                        </code>
+                      ))}
+                    </div>
+                  )}
                   <p className="text-sm text-text-muted">
-                    Model used to generate the summary. Leave empty to use the same model as the request.
+                    Model(s) used to generate the summary, tried in order on failure. Leave empty to use the same model as the request.
                     Use a cheaper model (e.g. <code className="font-mono text-xs">haiku</code>) to reduce cost.
                   </p>
                 </div>
@@ -997,5 +1012,61 @@ export default function ProfilePage() {
         </div>
       </div>
     </div>
+    <SummarizerModelModal
+      isOpen={showSummarizerModal}
+      onClose={() => setShowSummarizerModal(false)}
+      initialModels={
+        Array.isArray(settings.autoCompactSummarizerModel)
+          ? settings.autoCompactSummarizerModel
+          : settings.autoCompactSummarizerModel
+            ? [settings.autoCompactSummarizerModel]
+            : []
+      }
+      onSave={async (models) => {
+        await updateAutoCompactSummarizerModel(models);
+        setShowSummarizerModal(false);
+      }}
+    />
+    </>
+  );
+}
+
+function SummarizerModelModal({ isOpen, onClose, initialModels, onSave }) {
+  const [models, setModels] = useState(initialModels);
+  const [saving, setSaving] = useState(false);
+
+  // Sync when modal opens with fresh initialModels
+  useEffect(() => {
+    if (isOpen) setModels(initialModels);
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSave = async () => {
+    setSaving(true);
+    await onSave(models);
+    setSaving(false);
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Summarizer Model">
+      <div className="flex flex-col gap-3">
+        <p className="text-sm text-text-muted">
+          Models tried in order on failure. Leave empty to use the same model as the request.
+        </p>
+        <ModelListEditor
+          models={models}
+          onChange={setModels}
+          emptyIcon="smart_toy"
+          emptyLabel="No models — uses the request model"
+          addLabel="Add Model"
+          modalTitle="Select Summarizer Model"
+        />
+        <div className="flex gap-2 pt-1">
+          <Button onClick={onClose} variant="ghost" fullWidth size="sm">Cancel</Button>
+          <Button onClick={handleSave} fullWidth size="sm" disabled={saving}>
+            {saving ? "Saving..." : "Save"}
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }
