@@ -116,6 +116,19 @@ export async function PATCH(request) {
       delete body.currentPassword;
     }
 
+    // Clamp numeric auto-compact settings to valid ranges
+    if (Object.prototype.hasOwnProperty.call(body, "autoCompactTokenThreshold")) {
+      const v = parseInt(body.autoCompactTokenThreshold, 10);
+      if (!isNaN(v)) body.autoCompactTokenThreshold = Math.min(2_000_000, Math.max(1000, v));
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "autoCompactTailTurns")) {
+      const v = parseInt(body.autoCompactTailTurns, 10);
+      if (!isNaN(v)) body.autoCompactTailTurns = Math.min(20, Math.max(0, v));
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "autoCompactSummarizerModel")) {
+      body.autoCompactSummarizerModel = String(body.autoCompactSummarizerModel || "").trim();
+    }
+
     const settings = await updateSettings(body);
 
     // Apply outbound proxy settings immediately (no restart required)

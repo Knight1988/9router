@@ -289,6 +289,62 @@ export default function ProfilePage() {
     }
   };
 
+  const updateAutoCompactEnabled = async (enabled) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ autoCompactEnabled: enabled }),
+      });
+      if (res.ok) setSettings((prev) => ({ ...prev, autoCompactEnabled: enabled }));
+    } catch (err) {
+      console.error("Failed to update autoCompactEnabled:", err);
+    }
+  };
+
+  const updateAutoCompactThreshold = async (value) => {
+    const num = parseInt(value, 10);
+    if (isNaN(num) || num < 1000) return;
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ autoCompactTokenThreshold: num }),
+      });
+      if (res.ok) setSettings((prev) => ({ ...prev, autoCompactTokenThreshold: num }));
+    } catch (err) {
+      console.error("Failed to update autoCompactTokenThreshold:", err);
+    }
+  };
+
+  const updateAutoCompactTailTurns = async (value) => {
+    const num = parseInt(value, 10);
+    if (isNaN(num) || num < 0) return;
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ autoCompactTailTurns: num }),
+      });
+      if (res.ok) setSettings((prev) => ({ ...prev, autoCompactTailTurns: num }));
+    } catch (err) {
+      console.error("Failed to update autoCompactTailTurns:", err);
+    }
+  };
+
+  const updateAutoCompactSummarizerModel = async (value) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ autoCompactSummarizerModel: value }),
+      });
+      if (res.ok) setSettings((prev) => ({ ...prev, autoCompactSummarizerModel: value }));
+    } catch (err) {
+      console.error("Failed to update autoCompactSummarizerModel:", err);
+    }
+  };
+
   useEffect(() => {
     fetch("/api/settings/ssl")
       .then((res) => res.json())
@@ -762,6 +818,83 @@ export default function ProfilePage() {
             </p>
           </div>
         </Card>
+
+        {/* Context Management */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-teal-500/10 text-teal-500">
+              <span className="material-symbols-outlined text-[20px]">compress</span>
+            </div>
+            <h3 className="text-lg font-semibold">Context Management</h3>
+          </div>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Auto Compact Context</p>
+                <p className="text-sm text-text-muted">
+                  Summarize older messages when estimated input tokens exceed the threshold
+                </p>
+              </div>
+              <Toggle
+                checked={settings.autoCompactEnabled === true || settings.autoCompactEnabled === undefined}
+                onChange={() => updateAutoCompactEnabled(!(settings.autoCompactEnabled === true || settings.autoCompactEnabled === undefined))}
+                disabled={loading}
+              />
+            </div>
+
+            {(settings.autoCompactEnabled === true || settings.autoCompactEnabled === undefined) && (
+              <div className="flex flex-col gap-4 pt-2 border-t border-border/50">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Token Threshold</p>
+                    <p className="text-sm text-text-muted">Compact when estimated tokens exceed this limit</p>
+                  </div>
+                  <Input
+                    type="number"
+                    min="1000"
+                    step="1000"
+                    value={settings.autoCompactTokenThreshold ?? 150000}
+                    onChange={(e) => updateAutoCompactThreshold(e.target.value)}
+                    disabled={loading}
+                    className="w-28 text-center"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-border/50">
+                  <div>
+                    <p className="font-medium">Tail Turns to Keep</p>
+                    <p className="text-sm text-text-muted">Recent user turns preserved verbatim after compaction</p>
+                  </div>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="20"
+                    value={settings.autoCompactTailTurns ?? 2}
+                    onChange={(e) => updateAutoCompactTailTurns(e.target.value)}
+                    disabled={loading}
+                    className="w-20 text-center"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
+                  <p className="font-medium">Summarizer Model</p>
+                  <Input
+                    placeholder="Same as request model (default)"
+                    value={settings.autoCompactSummarizerModel ?? ""}
+                    onChange={(e) => updateAutoCompactSummarizerModel(e.target.value)}
+                    onBlur={(e) => updateAutoCompactSummarizerModel(e.target.value)}
+                    disabled={loading}
+                  />
+                  <p className="text-sm text-text-muted">
+                    Model used to generate the summary. Leave empty to use the same model as the request.
+                    Use a cheaper model (e.g. <code className="font-mono text-xs">haiku</code>) to reduce cost.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </Card>
+
 
         {/* Network */}
         <Card>

@@ -19,6 +19,7 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { compactBodyIfNeeded } from "open-sse/utils/contextCompactor.js";
 
 /**
  * Handle chat completion request
@@ -82,6 +83,15 @@ export async function handleChat(request, clientRawRequest = null) {
   if (!modelStr) {
     log.warn("CHAT", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+  }
+
+  // Auto-compact context if enabled and not an internal compaction call
+  if (settings.autoCompactEnabled && !body._isInternalCompaction) {
+    try {
+      await compactBodyIfNeeded({ body, endpoint: request.url, settings, log });
+    } catch (err) {
+      log.warn("COMPACT", `Auto-compact failed, continuing with original context: ${err.message}`);
+    }
   }
 
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots
