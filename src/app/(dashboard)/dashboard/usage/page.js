@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { UsageStats, RequestLogger, CardSkeleton, SegmentedControl } from "@/shared/components";
 import RequestDetailsTab from "./components/RequestDetailsTab";
 import ProviderHealthTab from "./components/ProviderHealthTab";
+import ApiKeyUsageTab from "./components/ApiKeyUsageTab";
 
 export default function UsagePage() {
   return (
@@ -21,12 +22,12 @@ function UsageContent() {
   const [tabLoading, setTabLoading] = useState(false);
 
   const tabFromUrl = searchParams.get("tab");
-  const activeTab = tabFromUrl && ["overview", "logs", "details", "health"].includes(tabFromUrl)
+  const activeTab = tabFromUrl && ["overview", "logs", "details", "health", "apikeys"].includes(tabFromUrl)
     ? tabFromUrl
     : "overview";
 
   // Params that are owned by a specific tab and should not leak to others
-  const TAB_OWNED_PARAMS = { health: ["period"] };
+  const TAB_OWNED_PARAMS = { health: ["period"], apikeys: ["period"] };
 
   const handleTabChange = (value) => {
     if (value === activeTab) return;
@@ -48,6 +49,7 @@ function UsageContent() {
         options={[
           { value: "overview", label: "Overview" },
           { value: "details", label: "Details" },
+          { value: "apikeys", label: "API Key Usage" },
           { value: "health", label: "Provider Health" },
         ]}
         value={activeTab}
@@ -65,10 +67,10 @@ function UsageContent() {
           )}
           {activeTab === "logs" && <RequestLogger />}
           {activeTab === "details" && <RequestDetailsTab />}
+          {activeTab === "apikeys" && <ApiKeyUsageTab />}
           {activeTab === "health" && <ProviderHealthTab />}
         </>
       )}
     </div>
   );
 }
-

@@ -491,11 +491,18 @@ async function calculateCost(provider, model, tokens) {
   }
 }
 
-const PERIOD_MS = { "24h": 86400000, "7d": 604800000, "30d": 2592000000, "60d": 5184000000 };
+const PERIOD_MS = {
+  "5h": 18000000,
+  "12h": 43200000,
+  "24h": 86400000,
+  "7d": 604800000,
+  "30d": 2592000000,
+  "60d": 5184000000,
+};
 
 /**
  * Get aggregated usage stats
- * @param {"24h"|"7d"|"30d"|"60d"|"all"} period - Time period to filter
+ * @param {"5h"|"12h"|"24h"|"7d"|"30d"|"60d"|"all"} period - Time period to filter
  */
 export async function getUsageStats(period = "all") {
   const db = await getUsageDb();
@@ -604,8 +611,8 @@ export async function getUsageStats(period = "all") {
     }
   }
 
-  // Determine if we use dailySummary (7d/30d/60d/all) or live history (24h)
-  const useDailySummary = period !== "24h";
+  // Short windows use live history, longer windows use dailySummary buckets.
+  const useDailySummary = !(period in PERIOD_MS) || PERIOD_MS[period] > PERIOD_MS["24h"];
 
   if (useDailySummary) {
     // Collect relevant date keys
@@ -704,8 +711,7 @@ export async function getUsageStats(period = "all") {
       }
     }
   } else {
-    // 24h: use live history (original logic)
-    const cutoff = Date.now() - PERIOD_MS["24h"];
+    const cutoff = Date.now() - (PERIOD_MS[period] || PERIOD_MS["24h"]);
     const filtered = history.filter((e) => new Date(e.timestamp).getTime() >= cutoff);
 
     for (const entry of filtered) {
