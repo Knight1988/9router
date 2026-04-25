@@ -2,6 +2,7 @@ import { getProviderConnectionById, updateProviderConnection } from "@/lib/local
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import {
@@ -438,6 +439,21 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
 
   try {
     switch (connection.provider) {
+      case "azure": {
+        const psd = connection.providerSpecificData || {};
+        const endpoint = (psd.azureEndpoint || "").replace(/\/$/, "");
+        const deployment = psd.deployment || "gpt-4";
+        const apiVersion = psd.apiVersion || "2024-10-01-preview";
+        const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
+        const headers = { "api-key": connection.apiKey, "Content-Type": "application/json" };
+        if (psd.organization) headers["OpenAI-Organization"] = psd.organization;
+        const res = await fetchWithConnectionProxy(url, {
+          method: "POST", headers,
+          body: JSON.stringify({ messages: [{ role: "user", content: "test" }], max_completion_tokens: 1 }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid API key or Azure configuration" };
+      }
       case "openai": {
         const res = await fetchWithConnectionProxy("https://api.openai.com/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
@@ -516,6 +532,16 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
           ? "https://coding-intl.dashscope.aliyuncs.com/v1/chat/completions"
           : "https://coding.dashscope.aliyuncs.com/v1/chat/completions";
         const res = await fetchWithConnectionProxy(aliBaseUrl, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
+          body: JSON.stringify({ model: getDefaultModel(connection.provider), max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid API key" };
+      }
+      case "volcengine-ark":
+      case "byteplus": {
+        const res = await fetchWithConnectionProxy(PROVIDER_ENDPOINTS[connection.provider], {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
           body: JSON.stringify({ model: getDefaultModel(connection.provider), max_tokens: 1, messages: [{ role: "user", content: "test" }] }),

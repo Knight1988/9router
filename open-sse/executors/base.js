@@ -1,4 +1,4 @@
-import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG } from "../config/runtimeConfig.js";
+import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { resolveOllamaLocalHost } from "../config/providers.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
@@ -116,6 +116,16 @@ export class BaseExecutor {
     // Allow subclass to fetch/refresh credentials asynchronously before sending
     credentials = await this.preExecute(credentials);
 
+    // Schedule retry via retryConfig[statusKey]. Returns true when caller should `urlIndex--; continue`
+    const tryRetry = async (urlIndex, statusKey, reason) => {
+      const { attempts, delayMs } = resolveRetryEntry(retryConfig[statusKey]);
+      if (attempts <= 0 || retryAttemptsByUrl[urlIndex] >= attempts) return false;
+      retryAttemptsByUrl[urlIndex]++;
+      log?.debug?.("RETRY", `${reason} retry ${retryAttemptsByUrl[urlIndex]}/${attempts} after ${delayMs / 1000}s`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+      return true;
+    };
+
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
       const url = this.buildUrl(model, stream, urlIndex, credentials);
       const transformedBody = this.transformRequest(model, body, stream, credentials);
@@ -131,15 +141,7 @@ export class BaseExecutor {
           signal
         }, proxyOptions);
 
-        // Retry based on status code config
-        const maxRetries = retryConfig[response.status] || 0;
-        if (maxRetries > 0 && retryAttemptsByUrl[urlIndex] < maxRetries) {
-          retryAttemptsByUrl[urlIndex]++;
-          log?.debug?.("RETRY", `${response.status} retry ${retryAttemptsByUrl[urlIndex]}/${maxRetries} after ${RETRY_CONFIG.delayMs / 1000}s`);
-          await new Promise(resolve => setTimeout(resolve, RETRY_CONFIG.delayMs));
-          urlIndex--;
-          continue;
-        }
+        if (await tryRetry(urlIndex, response.status, `status ${response.status}`)) { urlIndex--; continue; }
 
         if (this.shouldRetry(response.status, urlIndex)) {
           log?.debug?.("RETRY", `${response.status} on ${url}, trying fallback ${urlIndex + 1}`);
@@ -150,6 +152,11 @@ export class BaseExecutor {
         return { response, url, headers, transformedBody };
       } catch (error) {
         lastError = error;
+        if (error.name === "AbortError") throw error;
+
+        // Map network/fetch exceptions to 502 retry config
+        if (await tryRetry(urlIndex, HTTP_STATUS.BAD_GATEWAY, `network "${error.message}"`)) { urlIndex--; continue; }
+
         if (urlIndex + 1 < fallbackCount) {
           log?.debug?.("RETRY", `Error on ${url}, trying fallback ${urlIndex + 1}`);
           continue;

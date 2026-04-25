@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { getProviderNodeById } from "@/models";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
+import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
 
 // POST /api/providers/validate - Validate API key with provider
 export async function POST(request) {
@@ -35,6 +36,37 @@ export async function POST(request) {
         });
       }
 
+      // Custom Embedding nodes: probe /models (most embedding APIs are OpenAI-compatible)
+      if (isCustomEmbeddingProvider(provider)) {
+        const node = await getProviderNodeById(provider);
+        if (!node) {
+          return NextResponse.json({ error: "Custom Embedding node not found" }, { status: 404 });
+        }
+        const baseUrl = node.baseUrl?.replace(/\/$/, "");
+        const modelsRes = await fetch(`${baseUrl}/models`, {
+          headers: { "Authorization": `Bearer ${apiKey}` },
+        });
+        if (modelsRes.ok) {
+          return NextResponse.json({ valid: true });
+        }
+        // Auth errors are definitive
+        if (modelsRes.status === 401 || modelsRes.status === 403) {
+          return NextResponse.json({ valid: false, error: "Invalid API key" });
+        }
+        // Fallback: probe /embeddings with a common test model — many providers lack /models
+        const embedRes = await fetch(`${baseUrl}/embeddings`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ model: "test", input: "ping" }),
+        });
+        // 401/403 = bad key; anything else (including 400 "model not found") means key works
+        isValid = embedRes.status !== 401 && embedRes.status !== 403;
+        return NextResponse.json({
+          valid: isValid,
+          error: isValid ? null : "Invalid API key",
+        });
+      }
+
       if (isAnthropicCompatibleProvider(provider)) {
         const node = await getProviderNodeById(provider);
         if (!node) {
@@ -60,6 +92,35 @@ export async function POST(request) {
         return NextResponse.json({
           valid: isValid,
           error: isValid ? null : "Invalid API key",
+        });
+      }
+
+      if (provider === "azure") {
+        const { providerSpecificData } = body;
+        const endpoint = (providerSpecificData?.azureEndpoint || "").replace(/\/$/, "");
+        const deployment = providerSpecificData?.deployment || "gpt-4";
+        const apiVersion = providerSpecificData?.apiVersion || "2024-10-01-preview";
+        const organization = providerSpecificData?.organization;
+
+        const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
+        const headers = {
+          "api-key": apiKey,
+          "Content-Type": "application/json",
+        };
+        if (organization) headers["OpenAI-Organization"] = organization;
+
+        const azureRes = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            messages: [{ role: "user", content: "test" }],
+            max_tokens: 1,
+          }),
+        });
+        isValid = azureRes.status !== 401 && azureRes.status !== 403;
+        return NextResponse.json({
+          valid: isValid,
+          error: isValid ? null : "Invalid API key or Azure configuration",
         });
       }
 
@@ -167,6 +228,23 @@ export async function POST(request) {
             });
             isValid = claudeRes.status !== 401;
           }
+          break;
+        }
+        case "volcengine-ark":
+        case "byteplus": {
+          const res = await fetch(PROVIDER_ENDPOINTS[provider], {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              model: getDefaultModel(provider),
+              max_tokens: 1,
+              messages: [{ role: "user", content: "test" }],
+            }),
+          });
+          isValid = res.status !== 401 && res.status !== 403;
           break;
         }
 

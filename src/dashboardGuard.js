@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { jwtVerify, SignJWT } from "jose";
 import { getSettings } from "@/lib/localDb";
+import { getConsistentMachineId } from "@/shared/utils/machineId";
 
 const SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "9router-default-secret-change-me"
 );
 
-const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 7 days
+const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
-// Mint a fresh token and attach it to the response so active users get a sliding session.
 async function refreshAuthCookie(response, request) {
   try {
     const token = await new SignJWT({ authenticated: true })
@@ -26,18 +26,30 @@ async function refreshAuthCookie(response, request) {
       maxAge: SESSION_MAX_AGE_SECONDS,
     });
   } catch {
-    // If signing fails, leave the existing cookie untouched.
   }
   return response;
 }
 
-// Always require JWT token regardless of requireLogin setting
+const CLI_TOKEN_HEADER = "x-9r-cli-token";
+const CLI_TOKEN_SALT = "9r-cli-auth";
+
+let cachedCliToken = null;
+async function getCliToken() {
+  if (!cachedCliToken) cachedCliToken = await getConsistentMachineId(CLI_TOKEN_SALT);
+  return cachedCliToken;
+}
+
+async function hasValidCliToken(request) {
+  const token = request.headers.get(CLI_TOKEN_HEADER);
+  if (!token) return false;
+  return token === await getCliToken();
+}
+
 const ALWAYS_PROTECTED = [
   "/api/shutdown",
   "/api/settings/database",
 ];
 
-// Require auth, but allow through if requireLogin is disabled
 const PROTECTED_API_PATHS = [
   "/api/settings",
   "/api/keys",
@@ -62,7 +74,6 @@ async function hasValidToken(request) {
   }
 }
 
-// Read settings directly from DB to avoid self-fetch deadlock in proxy
 async function loadSettings() {
   try {
     return await getSettings();
@@ -82,25 +93,20 @@ export async function proxy(request) {
   const { pathname } = request.nextUrl;
   const isLocal = isLocalRequest(request);
 
-  // Always protected - allow localhost or valid JWT only
   if (ALWAYS_PROTECTED.some((p) => pathname.startsWith(p))) {
-    if (isLocal) return NextResponse.next();
-    if (await hasValidToken(request))
-      return refreshAuthCookie(NextResponse.next(), request);
+    if (isLocal || await hasValidCliToken(request)) return NextResponse.next();
+    if (await hasValidToken(request)) return refreshAuthCookie(NextResponse.next(), request);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Protect sensitive API endpoints (bypass if localhost or requireLogin = false)
   if (PROTECTED_API_PATHS.some((p) => pathname.startsWith(p))) {
     if (pathname === "/api/settings/require-login") return NextResponse.next();
-    if (isLocal) return NextResponse.next();
-    if (await hasValidToken(request))
-      return refreshAuthCookie(NextResponse.next(), request);
+    if (isLocal || await hasValidCliToken(request)) return NextResponse.next();
+    if (await hasValidToken(request)) return refreshAuthCookie(NextResponse.next(), request);
     if (await isAuthenticated(request)) return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Protect all dashboard routes
   if (pathname.startsWith("/dashboard")) {
     let requireLogin = true;
     let tunnelDashboardAccess = true;
@@ -111,7 +117,6 @@ export async function proxy(request) {
         requireLogin = settings.requireLogin !== false;
         tunnelDashboardAccess = settings.tunnelDashboardAccess === true;
 
-        // Block tunnel/tailscale access if disabled (redirect to login)
         if (!tunnelDashboardAccess) {
           const host = (request.headers.get("host") || "").split(":")[0].toLowerCase();
           const tunnelHost = settings.tunnelUrl ? new URL(settings.tunnelUrl).hostname.toLowerCase() : "";
@@ -122,13 +127,10 @@ export async function proxy(request) {
         }
       }
     } catch {
-      // On error, keep defaults (require login, block tunnel)
     }
 
-    // If login not required, allow through
     if (!requireLogin) return NextResponse.next();
 
-    // Verify JWT token and slide the session forward on success
     const token = request.cookies.get("auth_token")?.value;
     if (token) {
       try {
@@ -142,7 +144,6 @@ export async function proxy(request) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Redirect / to /dashboard if logged in, or /dashboard if it's the root
   if (pathname === "/") {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
