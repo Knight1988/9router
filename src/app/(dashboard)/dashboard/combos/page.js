@@ -265,7 +265,7 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete, roundRobinEnabled,
   );
 }
 
-function ComboFormModal({ isOpen, combo, onClose, onSave }) {
+function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
@@ -328,6 +328,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave }) {
           <ModelListEditor
             models={models}
             onChange={setModels}
+            activeProviders={activeProviders}
             modalTitle="Add Model to Combo"
           />
         </div>

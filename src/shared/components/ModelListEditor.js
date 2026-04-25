@@ -79,6 +79,7 @@ export function ModelListEditor({
   models,
   onChange,
   disabled,
+  activeProviders = [],
   emptyIcon = "layers",
   emptyLabel = "No models added yet",
   addLabel = "Add Model",
@@ -86,12 +87,23 @@ export function ModelListEditor({
 }) {
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
+  const [resolvedActiveProviders, setResolvedActiveProviders] = useState(activeProviders);
   useEffect(() => {
     fetch("/api/models/alias")
       .then((r) => r.ok ? r.json() : {})
       .then((d) => setModelAliases(d.aliases || {}))
       .catch(() => {});
   }, []);
+  useEffect(() => {
+    setResolvedActiveProviders(activeProviders);
+  }, [activeProviders]);
+  useEffect(() => {
+    if (activeProviders.length > 0) return;
+    fetch("/api/providers")
+      .then((r) => r.ok ? r.json() : {})
+      .then((d) => setResolvedActiveProviders(d.connections || []))
+      .catch(() => {});
+  }, [activeProviders]);
   const handleAddModel = (model) => {
     if (!models.includes(model.value)) {
       onChange([...models, model.value]);
@@ -151,6 +163,7 @@ export function ModelListEditor({
         isOpen={showModelSelect}
         onClose={() => setShowModelSelect(false)}
         onSelect={handleAddModel}
+        activeProviders={resolvedActiveProviders}
         modelAliases={modelAliases}
         title={modalTitle}
       />

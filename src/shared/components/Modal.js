@@ -14,6 +14,8 @@ export default function Modal({
   closeOnOverlay = true,
   showCloseButton = true,
   className,
+  bodyClassName,
+  bodyScrollable = true,
 }) {
   const sizes = {
     sm: "max-w-sm",
@@ -94,7 +96,15 @@ export default function Modal({
         )}
 
         {/* Body */}
-        <div className="p-6 max-h-[calc(85vh-100px)] overflow-y-auto">{children}</div>
+        <div
+          className={cn(
+            "p-6 max-h-[calc(85vh-100px)]",
+            bodyScrollable ? "overflow-y-auto" : "overflow-hidden",
+            bodyClassName
+          )}
+        >
+          {children}
+        </div>
 
         {/* Footer */}
         {footer && (
