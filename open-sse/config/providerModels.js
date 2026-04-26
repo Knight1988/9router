@@ -510,13 +510,13 @@ export const PROVIDER_MODELS = {
     { id: "stabilityai/stable-diffusion-xl-base-1.0", name: "SDXL Base 1.0", type: "image", params: [] },
   ],
   // Open Claude (API Key provider, key = provider id)
-  "open-claude": [
+  oc: [ // Open Claude (API Key provider)
     { id: "claude-opus-4.7", name: "Claude Opus 4.7" },
     { id: "claude-opus-4.6", name: "Claude Opus 4.6" },
     { id: "claude-sonnet-4-6", name: "Claude Sonnet 4-6" },
     { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
   ],
-  "troll-llm": [
+  tl: [ // Troll LLM (API Key provider)
     { id: "claude-opus-4.6", name: "Claude Opus 4.6" },
     { id: "claude-sonnet-4.6", name: "Claude Sonnet 4.6" },
     { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
