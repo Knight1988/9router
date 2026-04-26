@@ -20,6 +20,8 @@ export default function APIPageClient({ machineId }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
+  const [editingKeyId, setEditingKeyId] = useState(null);
+  const [editingKeyName, setEditingKeyName] = useState("");
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
@@ -591,6 +593,36 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  const startEditingKey = (key) => {
+    setEditingKeyId(key.id);
+    setEditingKeyName(key.name);
+  };
+
+  const cancelEditingKey = () => {
+    setEditingKeyId(null);
+    setEditingKeyName("");
+  };
+
+  const handleRenameKey = async (id) => {
+    const name = editingKeyName.trim();
+    if (!name) return;
+
+    try {
+      const res = await fetch(`/api/keys/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setKeys(prev => prev.map(k => k.id === id ? data.key : k));
+        cancelEditingKey();
+      }
+    } catch (error) {
+      console.log("Error renaming key:", error);
+    }
+  };
+
   const maskKey = (fullKey) => {
     if (!fullKey) return "";
     return fullKey.length > 8 ? fullKey.slice(0, 8) + "..." : fullKey;
@@ -890,7 +922,44 @@ export default function APIPageClient({ machineId }) {
                 className={`group flex items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
               >
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{key.name}</p>
+                  {editingKeyId === key.id ? (
+                    <div className="flex items-center gap-1 mb-1">
+                      <input
+                        value={editingKeyName}
+                        onChange={(e) => setEditingKeyName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleRenameKey(key.id);
+                          if (e.key === "Escape") cancelEditingKey();
+                        }}
+                        className="w-full max-w-xs px-2 py-1 text-sm rounded border border-border bg-background text-text-main"
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => handleRenameKey(key.id)}
+                        disabled={!editingKeyName.trim()}
+                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary disabled:opacity-50"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">check</span>
+                      </button>
+                      <button
+                        onClick={cancelEditingKey}
+                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">close</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <p className="text-sm font-medium truncate">{key.name}</p>
+                      <button
+                        onClick={() => startEditingKey(key)}
+                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-0 group-hover:opacity-100 transition-all"
+                        title="Rename key"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">edit</span>
+                      </button>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 mt-1">
                     <code className="text-xs text-text-muted font-mono">
                       {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
