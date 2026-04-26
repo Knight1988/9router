@@ -62,6 +62,15 @@ export default function ProviderDetailPage() {
   const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId];
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
   const models = getModelsByProviderId(providerId);
+  const fallbackModels = providerId === "troll-llm"
+    ? [
+        { id: "claude-opus-4.6", name: "Claude Opus 4.6" },
+        { id: "claude-sonnet-4.6", name: "Claude Sonnet 4.6" },
+        { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
+        { id: "gpt-5.4", name: "GPT 5.4" },
+      ]
+    : [];
+  const resolvedModels = models.length > 0 ? models : fallbackModels;
   const providerAlias = getProviderAlias(providerId);
   
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
@@ -588,8 +597,8 @@ export default function ProviderDetailPage() {
     // Combine hardcoded models with Kilo free models (deduplicated)
     // Exclude non-llm models (embedding, tts, etc.) — they have dedicated pages under media-providers
     const displayModels = [
-      ...models,
-      ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
+      ...resolvedModels,
+      ...kiloFreeModels.filter((fm) => !resolvedModels.some((m) => m.id === fm.id)),
     ].filter((m) => !m.type || m.type === "llm");
     // Custom models added by user (stored as aliases: modelId → providerAlias/modelId)
     const customModels = Object.entries(modelAliases)
@@ -599,8 +608,8 @@ export default function ProviderDetailPage() {
         const modelId = fullModel.slice(prefix.length);
         // Only show if not already in hardcoded list
         // For passthroughModels, include all aliases (model IDs may contain slashes like "anthropic/claude-3")
-        if (providerInfo.passthroughModels) return !models.some((m) => m.id === modelId);
-        return !models.some((m) => m.id === modelId) && alias === modelId;
+        if (providerInfo.passthroughModels) return !resolvedModels.some((m) => m.id === modelId);
+        return !resolvedModels.some((m) => m.id === modelId) && alias === modelId;
       })
       .map(([alias, fullModel]) => ({
         id: fullModel.slice(`${providerStorageAlias}/`.length),
@@ -665,7 +674,8 @@ export default function ProviderDetailPage() {
         {/* Suggested models from provider API — show only models not yet added */}
         {suggestedModels.length > 0 && (() => {
           const addedFullModels = new Set(Object.values(modelAliases));
-          const hardcodedIds = new Set(models.map((m) => m.id));
+           const hardcodedIds = new Set(resolvedModels.map((m) => m.id));
+
           const notAdded = suggestedModels.filter(
             (m) => !addedFullModels.has(`${providerStorageAlias}/${m.id}`) && !hardcodedIds.has(m.id)
           );
