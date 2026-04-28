@@ -5,7 +5,25 @@ export const VALID_OPENAI_CONTENT_TYPES = ["text", "image_url", "image"];
 export const VALID_OPENAI_MESSAGE_TYPES = ["text", "image_url", "image", "tool_calls", "tool_result"];
 
 // Providers that do not support assistant prefill (last message must be from "user")
+// These are also OpenAI-compat Claude gateways that require thinking.budget_tokens when enabled.
 const NO_PREFILL_PROVIDERS = new Set(["open-claude", "troll-llm"]);
+
+// Normalize thinking config for OpenAI-compat Claude gateway providers.
+// Mirrors the same logic in claudeHelper.prepareClaudeRequest but applied on the OpenAI-format path.
+// - type "enabled" (or missing type) → ensure budget_tokens > 0 (default 10000)
+// - type "disabled" → strip budget_tokens
+function normalizeOpenAIThinkingBudget(body) {
+  if (!body.thinking || typeof body.thinking !== "object") return;
+  const t = body.thinking;
+  if (!t.type || t.type === "enabled") {
+    t.type = "enabled";
+    if (typeof t.budget_tokens !== "number" || t.budget_tokens <= 0) {
+      t.budget_tokens = 10000;
+    }
+  } else if (t.type === "disabled") {
+    delete t.budget_tokens;
+  }
+}
 
 // Filter messages to OpenAI standard format
 // Remove: thinking, redacted_thinking, signature, and other non-OpenAI blocks
@@ -88,6 +106,8 @@ export function filterToOpenAIFormat(body, provider = null) {
         break;
       }
     }
+    // Normalize thinking.budget_tokens for OpenAI-compat Claude gateways
+    normalizeOpenAIThinkingBudget(body);
   }
 
 
