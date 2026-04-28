@@ -77,6 +77,7 @@ export function fixToolUseOrdering(messages) {
 }
 
 // Prepare request for Claude format endpoints
+// - Normalize thinking config (required budget_tokens for enabled, strip for disabled)
 // - Cleanup cache_control
 // - Filter empty messages
 // - Add thinking block for Anthropic endpoint (provider === "claude")
@@ -86,6 +87,23 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
   // setCacheKey defaults to true to preserve historical behavior; pass false to disable
   // automatic Anthropic prompt-cache marker injection on this request.
   const { setCacheKey = true } = opts;
+
+  // 0. Normalize thinking config to satisfy Anthropic API requirements.
+  //    Applies before any translation so Claude→Claude passthrough is also covered.
+  //    - type "enabled" requires budget_tokens > 0 (default 10000)
+  //    - type "disabled" must NOT include budget_tokens
+  //    - missing type → treat as "enabled"
+  if (body.thinking && typeof body.thinking === "object") {
+    const t = body.thinking;
+    if (!t.type || t.type === "enabled") {
+      t.type = "enabled";
+      if (typeof t.budget_tokens !== "number" || t.budget_tokens <= 0) {
+        t.budget_tokens = 10000;
+      }
+    } else if (t.type === "disabled") {
+      delete t.budget_tokens;
+    }
+  }
 
   // 1. System: always strip incoming cache_control; inject only to the last block when enabled
   if (body.system && Array.isArray(body.system)) {
