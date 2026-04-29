@@ -1,6 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
 import { ModelSelectModal } from "@/shared/components";
+
+const EMPTY_PROVIDERS = [];
 // Inline-editable single model row
 function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
   const [editing, setEditing] = useState(false);
@@ -79,7 +81,7 @@ export function ModelListEditor({
   models,
   onChange,
   disabled,
-  activeProviders = [],
+  activeProviders = EMPTY_PROVIDERS,
   emptyIcon = "layers",
   emptyLabel = "No models added yet",
   addLabel = "Add Model",
@@ -87,7 +89,7 @@ export function ModelListEditor({
 }) {
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
-  const [resolvedActiveProviders, setResolvedActiveProviders] = useState(activeProviders);
+  const [fetchedProviders, setFetchedProviders] = useState(null);
   useEffect(() => {
     fetch("/api/models/alias")
       .then((r) => r.ok ? r.json() : {})
@@ -95,15 +97,18 @@ export function ModelListEditor({
       .catch(() => {});
   }, []);
   useEffect(() => {
-    setResolvedActiveProviders(activeProviders);
-  }, [activeProviders]);
-  useEffect(() => {
-    if (activeProviders.length > 0) return;
+    if (activeProviders.length > 0) {
+      setFetchedProviders(null);
+      return;
+    }
+    let cancelled = false;
     fetch("/api/providers")
       .then((r) => r.ok ? r.json() : {})
-      .then((d) => setResolvedActiveProviders(d.connections || []))
+      .then((d) => { if (!cancelled) setFetchedProviders(d.connections || []); })
       .catch(() => {});
+    return () => { cancelled = true; };
   }, [activeProviders]);
+  const resolvedActiveProviders = activeProviders.length > 0 ? activeProviders : (fetchedProviders ?? EMPTY_PROVIDERS);
   const handleAddModel = (model) => {
     if (!models.includes(model.value)) {
       onChange([...models, model.value]);
