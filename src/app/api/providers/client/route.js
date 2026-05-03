@@ -8,11 +8,20 @@ export async function GET() {
     await backfillCodexEmails();
     const connections = await getProviderConnections();
     
-    // Include sensitive fields for sync to cloud (only accessible from same origin)
-    const clientConnections = connections.map(c => ({
-      ...c,
-      // Don't hide sensitive fields here since this is for internal sync
-    }));
+    // Include sensitive fields for sync to cloud (only accessible from same origin),
+    // but strip monitorCreds.password to avoid leaking it to the UI.
+    const clientConnections = connections.map(c => {
+      if (c.providerSpecificData?.monitorCreds) {
+        return {
+          ...c,
+          providerSpecificData: {
+            ...c.providerSpecificData,
+            monitorCreds: { username: c.providerSpecificData.monitorCreds.username || "" },
+          },
+        };
+      }
+      return c;
+    });
 
     return NextResponse.json({ connections: clientConnections });
   } catch (error) {

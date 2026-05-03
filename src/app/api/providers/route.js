@@ -65,7 +65,7 @@ export async function GET() {
       const name = isCompatible
         ? (nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider)
         : c.name;
-      return {
+      const safe = {
         ...c,
         name,
         apiKey: undefined,
@@ -73,6 +73,13 @@ export async function GET() {
         refreshToken: undefined,
         idToken: undefined,
       };
+      if (safe.providerSpecificData?.monitorCreds) {
+        safe.providerSpecificData = {
+          ...safe.providerSpecificData,
+          monitorCreds: { username: safe.providerSpecificData.monitorCreds.username || "" },
+        };
+      }
+      return safe;
     });
 
     return NextResponse.json({ connections: safeConnections });

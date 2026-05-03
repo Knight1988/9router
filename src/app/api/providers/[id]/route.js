@@ -59,6 +59,23 @@ function shouldMergeProviderSpecificData(existing, incoming, hasLegacyProxy, has
   return existing !== undefined || incoming !== undefined || hasLegacyProxy || hasProxyPoolField;
 }
 
+function redactSensitiveProviderData(connection) {
+  const result = { ...connection };
+  delete result.apiKey;
+  delete result.accessToken;
+  delete result.refreshToken;
+  delete result.idToken;
+  if (result.providerSpecificData?.monitorCreds) {
+    result.providerSpecificData = {
+      ...result.providerSpecificData,
+      monitorCreds: {
+        username: result.providerSpecificData.monitorCreds.username || "",
+      },
+    };
+  }
+  return result;
+}
+
 // GET /api/providers/[id] - Get single connection
 export async function GET(request, { params }) {
   try {
@@ -70,11 +87,7 @@ export async function GET(request, { params }) {
     }
 
     // Hide sensitive fields
-    const result = { ...connection };
-    delete result.apiKey;
-    delete result.accessToken;
-    delete result.refreshToken;
-    delete result.idToken;
+    const result = redactSensitiveProviderData(connection);
 
     return NextResponse.json({ connection: result });
   } catch (error) {
@@ -158,11 +171,7 @@ export async function PUT(request, { params }) {
     const updated = await updateProviderConnection(id, updateData);
 
     // Hide sensitive fields
-    const result = { ...updated };
-    delete result.apiKey;
-    delete result.accessToken;
-    delete result.refreshToken;
-    delete result.idToken;
+    const result = redactSensitiveProviderData(updated);
 
     return NextResponse.json({ connection: result });
   } catch (error) {

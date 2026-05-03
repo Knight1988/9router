@@ -29,6 +29,7 @@ export default function ProviderLimits() {
   const [proxyPools, setProxyPools] = useState([]);
   const [monitorTokens, setMonitorTokens] = useState({});
   const [showMonitorInputs, setShowMonitorInputs] = useState({});
+  const [monitorCreds, setMonitorCreds] = useState({});
   const [providerFilter, setProviderFilter] = useState("all");
   const [expiringFirst, setExpiringFirst] = useState(false);
 
@@ -56,11 +57,24 @@ export default function ProviderLimits() {
         return next;
       });
 
-      // Auto-show monitor input for connections that have a saved token
+      // Load saved open-claude creds (username only; password is never returned by server)
+      setMonitorCreds((prev) => {
+        const next = { ...prev };
+        connectionList.forEach((conn) => {
+          if (conn.provider === "open-claude" && conn.providerSpecificData?.monitorCreds?.username && !next[conn.id]) {
+            next[conn.id] = { username: conn.providerSpecificData.monitorCreds.username, password: "" };
+          }
+        });
+        return next;
+      });
+
+      // Auto-show monitor input for connections that have saved credentials
       setShowMonitorInputs((prev) => {
         const next = { ...prev };
         connectionList.forEach((conn) => {
-          if (conn.providerSpecificData?.monitorToken && next[conn.id] === undefined) {
+          const hasToken = conn.providerSpecificData?.monitorToken;
+          const hasCreds = conn.provider === "open-claude" && conn.providerSpecificData?.monitorCreds?.username;
+          if ((hasToken || hasCreds) && next[conn.id] === undefined) {
             next[conn.id] = true;
           }
         });
@@ -635,7 +649,9 @@ export default function ProviderLimits() {
                  <div className="px-4 py-3 border-b border-black/10 dark:border-white/10 space-y-3">
                    <div className="flex items-center justify-between gap-2">
                      <p className="text-xs text-text-muted">
-                       Optional monitoring bearer token
+                       {conn.provider === "open-claude"
+                         ? "Quota monitoring credentials"
+                         : "Optional monitoring bearer token"}
                      </p>
                      <button
                        type="button"
@@ -653,39 +669,89 @@ export default function ProviderLimits() {
 
                     {showMonitorInputs[conn.id] && (
                      <div className="space-y-2">
-                       <input
-                         type="password"
-                         value={monitorTokens[conn.id] || ""}
-                         onChange={(e) =>
-                           setMonitorTokens((prev) => ({
-                             ...prev,
-                             [conn.id]: e.target.value,
-                           }))
-                         }
-                         placeholder="Bearer token for quota monitoring only"
-                         className="w-full rounded-lg border border-black/10 dark:border-white/10 bg-transparent px-3 py-2 text-sm text-text-primary placeholder:text-text-muted outline-none focus:border-primary"
-                       />
+                       {conn.provider === "open-claude" ? (
+                         <>
+                           <input
+                             type="text"
+                             autoComplete="username"
+                             value={monitorCreds[conn.id]?.username || ""}
+                             onChange={(e) =>
+                               setMonitorCreds((prev) => ({
+                                 ...prev,
+                                 [conn.id]: { ...(prev[conn.id] || {}), username: e.target.value },
+                               }))
+                             }
+                             placeholder="Username"
+                             className="w-full rounded-lg border border-black/10 dark:border-white/10 bg-transparent px-3 py-2 text-sm text-text-primary placeholder:text-text-muted outline-none focus:border-primary"
+                           />
+                           <input
+                             type="password"
+                             autoComplete="new-password"
+                             value={monitorCreds[conn.id]?.password || ""}
+                             onChange={(e) =>
+                               setMonitorCreds((prev) => ({
+                                 ...prev,
+                                 [conn.id]: { ...(prev[conn.id] || {}), password: e.target.value },
+                               }))
+                             }
+                             placeholder={conn.providerSpecificData?.monitorCreds?.username ? "Password (leave blank to keep saved)" : "Password"}
+                             className="w-full rounded-lg border border-black/10 dark:border-white/10 bg-transparent px-3 py-2 text-sm text-text-primary placeholder:text-text-muted outline-none focus:border-primary"
+                           />
+                         </>
+                       ) : (
+                         <input
+                           type="password"
+                           value={monitorTokens[conn.id] || ""}
+                           onChange={(e) =>
+                             setMonitorTokens((prev) => ({
+                               ...prev,
+                               [conn.id]: e.target.value,
+                             }))
+                           }
+                           placeholder="Bearer token for quota monitoring only"
+                           className="w-full rounded-lg border border-black/10 dark:border-white/10 bg-transparent px-3 py-2 text-sm text-text-primary placeholder:text-text-muted outline-none focus:border-primary"
+                         />
+                       )}
                        <div className="flex items-center justify-between gap-2">
                          <p className="text-[11px] text-text-muted">
-                           Leave empty to use the saved connection token. This only
-                           affects quota monitoring requests.
+                           {conn.provider === "open-claude"
+                             ? "Credentials are used only for quota monitoring. Leave password blank to keep the saved one."
+                             : "Leave empty to use the saved connection token. This only affects quota monitoring requests."}
                          </p>
                           <Button
                             variant="secondary"
                             size="sm"
                             onClick={async () => {
-                              // Save the monitor token to DB
-                              const token = monitorTokens[conn.id] || "";
                               try {
-                                await fetch(`/api/providers/${conn.id}`, {
-                                  method: "PUT",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({
-                                    providerSpecificData: { monitorToken: token || null },
-                                  }),
-                                });
+                                if (conn.provider === "open-claude") {
+                                  const username = monitorCreds[conn.id]?.username || "";
+                                  const password = monitorCreds[conn.id]?.password || "";
+                                  const existing = conn.providerSpecificData?.monitorCreds || {};
+                                  const newCreds = username
+                                    ? { username, ...(password ? { password } : { password: existing.password || "" }) }
+                                    : null;
+                                  await fetch(`/api/providers/${conn.id}`, {
+                                    method: "PUT",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                      providerSpecificData: {
+                                        monitorCreds: newCreds,
+                                        monitorSession: null,
+                                      },
+                                    }),
+                                  });
+                                } else {
+                                  const token = monitorTokens[conn.id] || "";
+                                  await fetch(`/api/providers/${conn.id}`, {
+                                    method: "PUT",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                      providerSpecificData: { monitorToken: token || null },
+                                    }),
+                                  });
+                                }
                               } catch (e) {
-                                console.error("Failed to save monitor token:", e);
+                                console.error("Failed to save monitor credentials:", e);
                               }
                               refreshProvider(conn.id, conn.provider);
                             }}

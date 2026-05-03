@@ -125,7 +125,9 @@ export async function GET(request, { params }) {
 
     // API-key providers can still expose usage dashboards. An optional monitor token
     // lets Open Claude use a dedicated bearer without changing the saved connection.
-    if (connection.authType !== "oauth" && !monitorToken && !connection.accessToken) {
+    // For open-claude, saved monitorCreds (username+password) also satisfy this check.
+    const hasOpenClaudeMonitorCreds = connection.provider === "open-claude" && !!connection.providerSpecificData?.monitorCreds?.username;
+    if (connection.authType !== "oauth" && !monitorToken && !connection.accessToken && !hasOpenClaudeMonitorCreds) {
       return Response.json({ message: "Usage not available for API key connections" });
     }
 
@@ -147,8 +149,22 @@ export async function GET(request, { params }) {
       ? { ...connection, accessToken: monitorToken }
       : connection;
 
+    // Persist a freshly obtained Open Claude session back to the DB
+    const onSessionRefreshed = async (newSession) => {
+      try {
+        await updateProviderConnection(connection.id, {
+          providerSpecificData: {
+            ...connection.providerSpecificData,
+            monitorSession: newSession,
+          },
+        });
+      } catch (err) {
+        console.warn("[Usage] Failed to persist open-claude session:", err.message);
+      }
+    };
+
     // Fetch usage from provider API
-    let usage = await getUsageForProvider(effectiveConnection);
+    let usage = await getUsageForProvider(effectiveConnection, { onSessionRefreshed });
 
     // If provider returned an auth-expired message instead of throwing,
     // force-refresh token and retry once (only for OAuth)
@@ -156,7 +172,7 @@ export async function GET(request, { params }) {
       try {
         const retryResult = await refreshAndUpdateCredentials(connection, true);
         connection = retryResult.connection;
-        usage = await getUsageForProvider(connection);
+        usage = await getUsageForProvider(connection, { onSessionRefreshed });
       } catch (retryError) {
         console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
       }

@@ -35,6 +35,7 @@ const CLAUDE_CONFIG = {
 
 const OPEN_CLAUDE_CONFIG = {
   overviewUrl: "https://open-claude.com/api/dashboard/overview",
+  loginUrl: "https://open-claude.com/api/auth/login",
 };
 
 const TROLL_LLM_CONFIG = {
@@ -46,9 +47,11 @@ const TROLL_LLM_CONFIG = {
 /**
  * Get usage data for a provider connection
  * @param {Object} connection - Provider connection with accessToken
+ * @param {Object} [options]
+ * @param {Function} [options.onSessionRefreshed] - Called with { accessToken, expiresAt } when open-claude refreshes its session
  * @returns {Object} Usage data with quotas
  */
-export async function getUsageForProvider(connection) {
+export async function getUsageForProvider(connection, options = {}) {
   const { provider, accessToken, providerSpecificData } = connection;
 
   switch (provider) {
@@ -69,7 +72,7 @@ export async function getUsageForProvider(connection) {
     case "iflow":
       return await getIflowUsage(accessToken);
     case "open-claude":
-      return await getOpenClaudeUsage(accessToken);
+      return await getOpenClaudeUsage(connection, options.onSessionRefreshed);
     case "troll-llm":
       return await getTrollLlmUsage(accessToken);
     case "ollama":
@@ -379,20 +382,119 @@ async function getAntigravitySubscriptionInfo(accessToken) {
 }
 
 /**
- * Open Claude Usage - Fetches budget/quota from dashboard API and proxy/usage for reset time
+ * Log in to Open Claude with username + password.
+ * Returns { accessToken, expiresAt } or throws on failure.
  */
-async function getOpenClaudeUsage(accessToken) {
+async function loginOpenClaude(username, password) {
+  const res = await fetch(OPEN_CLAUDE_CONFIG.loginUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    let msg;
+    try { msg = JSON.parse(body)?.error || body; } catch { msg = body; }
+    throw new Error(msg || `Login failed: ${res.status}`);
+  }
+  const data = await res.json();
+  if (!data.token) throw new Error("Login succeeded but no token returned");
+  return {
+    accessToken: data.token,
+    expiresAt: data.expiresAt ? parseResetTime(data.expiresAt) : null,
+  };
+}
+
+/**
+ * Resolve bearer for Open Claude usage requests.
+ *
+ * Priority:
+ *  1. Cached session in providerSpecificData.monitorSession (if not within 60s of expiry)
+ *  2. Fresh login from providerSpecificData.monitorCreds
+ *  3. Legacy one-time monitorToken (providerSpecificData.monitorToken)
+ *  4. connection.accessToken
+ *
+ * Returns { bearer, newSession } where newSession is non-null when a fresh login occurred
+ * and should be persisted by the caller.
+ */
+async function resolveOpenClaudeBearer(connection) {
+  const psd = connection.providerSpecificData || {};
+  const { monitorSession, monitorCreds, monitorToken } = psd;
+
+  // 1. Valid cached session
+  if (monitorSession?.accessToken) {
+    const expiresMs = monitorSession.expiresAt ? new Date(monitorSession.expiresAt).getTime() : Infinity;
+    if (Date.now() < expiresMs - 60_000) {
+      return { bearer: monitorSession.accessToken, newSession: null };
+    }
+  }
+
+  // 2. Login with stored credentials
+  if (monitorCreds?.username && monitorCreds?.password) {
+    const session = await loginOpenClaude(monitorCreds.username, monitorCreds.password);
+    return { bearer: session.accessToken, newSession: session };
+  }
+
+  // 3. Legacy one-time monitor token (backwards compatibility)
+  if (monitorToken) {
+    return { bearer: monitorToken, newSession: null };
+  }
+
+  // 4. Connection-level access token
+  if (connection.accessToken) {
+    return { bearer: connection.accessToken, newSession: null };
+  }
+
+  throw new Error("No credentials available for Open Claude usage monitoring. Enter a username and password in the Usage settings.");
+}
+
+/**
+ * Open Claude Usage - Fetches budget/quota from dashboard API and proxy/usage for reset time.
+ * Accepts optional onSessionRefreshed(newSession) callback to persist the cached bearer.
+ */
+async function getOpenClaudeUsage(connection, onSessionRefreshed) {
   try {
+    let bearer, newSession;
+    try {
+      ({ bearer, newSession } = await resolveOpenClaudeBearer(connection));
+    } catch (credErr) {
+      return { message: `Open Claude: ${credErr.message}` };
+    }
+
     const headers = {
-      "Authorization": `Bearer ${accessToken}`,
+      "Authorization": `Bearer ${bearer}`,
       "Content-Type": "application/json",
     };
 
-    // Fetch both endpoints in parallel
-    const [overviewRes, usageRes] = await Promise.all([
-      fetch(OPEN_CLAUDE_CONFIG.overviewUrl, { method: "GET", headers }),
-      fetch("https://open-claude.com/api/proxy/usage?range=7d", { method: "GET", headers }).catch(() => null),
-    ]);
+    const fetchDashboard = async (hdrs) => {
+      const [overviewRes, usageRes] = await Promise.all([
+        fetch(OPEN_CLAUDE_CONFIG.overviewUrl, { method: "GET", headers: hdrs }),
+        fetch("https://open-claude.com/api/proxy/usage?range=7d", { method: "GET", headers: hdrs }).catch(() => null),
+      ]);
+      return { overviewRes, usageRes };
+    };
+
+    let { overviewRes, usageRes } = await fetchDashboard(headers);
+
+    // On 401/403, try a fresh login once (only when credentials are available)
+    if ((overviewRes.status === 401 || overviewRes.status === 403) && connection.providerSpecificData?.monitorCreds?.username) {
+      try {
+        const refreshed = await loginOpenClaude(
+          connection.providerSpecificData.monitorCreds.username,
+          connection.providerSpecificData.monitorCreds.password,
+        );
+        newSession = refreshed;
+        const retryHeaders = { "Authorization": `Bearer ${refreshed.accessToken}`, "Content-Type": "application/json" };
+        ({ overviewRes, usageRes } = await fetchDashboard(retryHeaders));
+      } catch {
+        // swallow – surface original error below
+      }
+    }
+
+    // Persist fresh session after successful fetch (and after any retry)
+    if (newSession && typeof onSessionRefreshed === "function" && overviewRes.ok) {
+      onSessionRefreshed(newSession);
+    }
 
     if (!overviewRes.ok) {
       throw new Error(`Open Claude API error: ${overviewRes.status}`);
@@ -403,13 +505,11 @@ async function getOpenClaudeUsage(accessToken) {
     const user = data.user || {};
     const quotas = {};
 
-    // Use proxy/usage data for more accurate period quota if available
     const planType = usageData?.plan_type;
     const planAllowance = usageData?.plan_allowance;
     const periodUsed = usageData?.period_used_quota;
     const planPeriod = usageData?.plan_period || "2h";
 
-    // Determine total/used: prefer proxy/usage period data for "reset" plan type
     let totalDollars, usedDollars;
     if (planType === "reset" && planAllowance > 0 && periodUsed !== undefined) {
       totalDollars = planAllowance / 500000;
@@ -420,7 +520,6 @@ async function getOpenClaudeUsage(accessToken) {
     }
     const remainingDollars = Math.max(0, totalDollars - usedDollars);
 
-    // Get reset time from proxy/usage endpoint
     const resetAt = parseResetTime(usageData?.period_reset_at || null);
 
     const quotaLabel = `budget (${planPeriod})`;
