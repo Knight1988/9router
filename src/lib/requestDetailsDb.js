@@ -4,6 +4,7 @@ import { DATA_DIR } from "@/lib/dataDir.js";
 
 const isCloud = typeof caches !== "undefined" && typeof caches === "object";
 
+const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_BATCH_SIZE = 20;
 const DEFAULT_FLUSH_INTERVAL_MS = 5000;
 const DEFAULT_MAX_JSON_SIZE = 5 * 1024;
@@ -11,7 +12,7 @@ const CONFIG_CACHE_TTL_MS = 5000;
 const DB_FILE = isCloud ? null : path.join(DATA_DIR, "request-details.db");
 const LEGACY_JSON_FILE = isCloud ? null : path.join(DATA_DIR, "request-details.json");
 
-if (!isCloud && !fs.existsSync(DATA_DIR)) {
+if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
@@ -198,7 +199,7 @@ let flushTimer = null;
 let isFlushing = false;
 
 async function flushToDatabase() {
-  if (isCloud || isFlushing || writeBuffer.length === 0) return;
+  if (isFlushing || writeBuffer.length === 0) return;
 
   isFlushing = true;
   try {
@@ -254,8 +255,6 @@ async function flushToDatabase() {
 }
 
 export async function saveRequestDetail(detail) {
-  if (isCloud) return;
-
   const config = await getObservabilityConfig();
   if (!config.enabled) return;
 
@@ -423,6 +422,7 @@ const _shutdownHandler = async () => {
 
 function ensureShutdownHandler() {
   if (isCloud) return;
+
 
   process.off("beforeExit", _shutdownHandler);
   process.off("SIGINT", _shutdownHandler);

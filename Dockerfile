@@ -24,6 +24,7 @@ ENV NODE_ENV=production
 ENV PORT=20128
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV DATA_DIR=/app/data
 
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/static ./.next/static
@@ -36,10 +37,14 @@ COPY --from=builder /app/node_modules/node-forge ./node_modules/node-forge
 # HTTPS support: custom server wrapper and ssl utility
 COPY --from=builder /app/server-https.js ./server-https.js
 
-RUN apk add --no-cache nodejs su-exec && mkdir -p /var/lib/9router
+RUN mkdir -p /app/data && chown -R bun:bun /app && \
+  mkdir -p /app/data-home && chown bun:bun /app/data-home && \
+  ln -sf /app/data-home /root/.9router 2>/dev/null || true
 
 # Fix permissions at runtime (handles mounted volumes)
-RUN printf '#!/bin/sh\nset -e\nDATA_DIR="${DATA_DIR:-/var/lib/9router}"\nmkdir -p "$DATA_DIR"\nchown -R node:node "$DATA_DIR" 2>/dev/null || true\nexec su-exec node "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+RUN apk --no-cache upgrade && apk --no-cache add su-exec && \
+  printf '#!/bin/sh\nchown -R bun:bun /app/data /app/data-home 2>/dev/null\nexec su-exec bun "$@"\n' > /entrypoint.sh && \
+  chmod +x /entrypoint.sh
 
 EXPOSE 20128
 EXPOSE 20129

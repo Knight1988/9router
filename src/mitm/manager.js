@@ -5,7 +5,8 @@ const os = require("os");
 const net = require("net");
 const https = require("https");
 const crypto = require("crypto");
-const { addDNSEntry, removeDNSEntry, removeAllDNSEntries, checkAllDNSStatus, TOOL_HOSTS, isSudoAvailable } = require("./dns/dnsConfig");
+const { addDNSEntry, removeDNSEntry, removeAllDNSEntries, removeAllDNSEntriesSync, checkAllDNSStatus, TOOL_HOSTS, isSudoAvailable, isSudoPasswordRequired } = require("./dns/dnsConfig");
+const { isAdmin } = require("./winElevated.js");
 
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
@@ -139,9 +140,9 @@ function killProcess(pid, force = false, sudoPassword = null) {
   } else {
     const sig = force ? "SIGKILL" : "SIGTERM";
     const cmd = `pkill -${sig} -P ${pid} 2>/dev/null; kill -${sig} ${pid} 2>/dev/null`;
-    if (sudoPassword) {
+    if (sudoPassword || isSudoAvailable()) {
       const { execWithPassword } = require("./dns/dnsConfig");
-      execWithPassword(cmd, sudoPassword).catch(() => exec(cmd, { windowsHide: true }, () => { }));
+      execWithPassword(cmd, sudoPassword || "").catch(() => exec(cmd, { windowsHide: true }, () => { }));
     } else {
       exec(cmd, { windowsHide: true }, () => { });
     }
@@ -219,6 +220,55 @@ async function loadEncryptedPassword() {
   }
 }
 
+async function saveDnsToolState(tool, enabled) {
+  if (!_updateSettings || !_getSettings) return;
+  try {
+    const s = await _getSettings();
+    const next = { ...(s.dnsToolEnabled || {}), [tool]: enabled };
+    await _updateSettings({ dnsToolEnabled: next });
+  } catch (e) {
+    err(`Failed to save DNS state: ${e.message}`);
+  }
+}
+
+async function loadDnsToolState() {
+  if (!_getSettings) return {};
+  try {
+    const s = await _getSettings();
+    return s.dnsToolEnabled || {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Re-apply DNS for tools previously enabled — called on app startup after MITM running.
+ */
+async function restoreToolDNS(sudoPassword) {
+  const state = await loadDnsToolState();
+  const password = sudoPassword || getCachedPassword() || await loadEncryptedPassword();
+  for (const [tool, enabled] of Object.entries(state)) {
+    if (!enabled || !TOOL_HOSTS[tool]) continue;
+    try {
+      await addDNSEntry(tool, password);
+    } catch (e) {
+      err(`DNS ${tool}: restore failed — ${e.message}`);
+    }
+  }
+}
+
+/**
+ * Check if user has privilege to mutate hosts file.
+ * Win: needs admin. Mac/Linux: root OR cached/encrypted sudo password.
+ */
+async function hasDnsPrivilege() {
+  if (IS_WIN) return isAdmin();
+  if (isAdmin()) return true;
+  if (!isSudoPasswordRequired()) return true;
+  const pwd = getCachedPassword() || await loadEncryptedPassword();
+  return !!pwd;
+}
+
 function checkPort443Free() {
   return new Promise((resolve) => {
     const tester = net.createServer();
@@ -279,9 +329,9 @@ async function killLeftoverMitm(sudoPassword) {
   if (!IS_WIN && SERVER_PATH) {
     try {
       const escaped = SERVER_PATH.replace(/'/g, "'\\''");
-      if (sudoPassword) {
+      if (sudoPassword || isSudoAvailable()) {
         const { execWithPassword } = require("./dns/dnsConfig");
-        await execWithPassword(`pkill -SIGKILL -f "${escaped}" 2>/dev/null || true`, sudoPassword).catch(() => { });
+        await execWithPassword(`pkill -SIGKILL -f "${escaped}" 2>/dev/null || true`, sudoPassword || "").catch(() => { });
       } else {
         exec(`pkill -SIGKILL -f "${escaped}" 2>/dev/null || true`, { windowsHide: true }, () => { });
       }
@@ -465,7 +515,7 @@ async function startServer(apiKey, sudoPassword) {
     if (linuxNoSystemTrust) {
       log(`🔐 Cert: skipping system trust (no sudo). Install ${rootCACertPath} as a trusted CA on machines that use this proxy.`);
     } else {
-      if (!password && !IS_WIN) {
+      if (!password && isSudoPasswordRequired()) {
         throw new Error("Sudo password required to install Root CA certificate");
       }
       try {
@@ -626,14 +676,32 @@ async function stopServer(sudoPassword) {
   serverPid = null;
 
   if (IS_WIN) {
-    // Process already has admin rights — edit hosts file directly
     const hostsFile = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "drivers", "etc", "hosts");
     const allHosts = Object.values(TOOL_HOSTS).flat();
     try {
-      const hostsContent = fs.readFileSync(hostsFile, "utf8");
-      const filtered = hostsContent.split(/\r?\n/).filter(l => !allHosts.some(h => l.includes(h))).join("\r\n");
-      fs.writeFileSync(hostsFile, filtered, "utf8");
-      require("child_process").execSync("ipconfig /flushdns", { windowsHide: true });
+      const { isAdmin, runElevatedPowerShell, quotePs } = require("./winElevated.js");
+      if (isAdmin()) {
+        // Direct fs write — bypass PowerShell to avoid parser pitfalls
+        const content = fs.readFileSync(hostsFile, "utf8");
+        const filtered = content.split(/\r?\n/).filter(l => !allHosts.some(h => l.includes(h))).join("\r\n");
+        const next = filtered.replace(/[\r\n\s]+$/g, "") + "\r\n";
+        if (next !== content) fs.writeFileSync(hostsFile, next, "utf8");
+        try { require("child_process").execSync("ipconfig /flushdns", { windowsHide: true, stdio: "ignore" }); } catch { /* ignore */ }
+        log("🌐 DNS: ✅ all tool hosts removed");
+      } else {
+        const hostsList = allHosts.map(quotePs).join(",");
+        const script = `
+          $hosts = @(${hostsList})
+          $lines = Get-Content -LiteralPath ${quotePs(hostsFile)}
+          $filtered = $lines | Where-Object {
+            $line = $_
+            -not ($hosts | Where-Object { $line -match [regex]::Escape($_) })
+          }
+          Set-Content -LiteralPath ${quotePs(hostsFile)} -Value $filtered
+          ipconfig /flushdns | Out-Null
+        `;
+        await runElevatedPowerShell(script);
+      }
     } catch (e) { err(`Failed to clean hosts: ${e.message}`); }
   } else {
     await removeAllDNSEntries(sudoPassword);
@@ -652,10 +720,10 @@ async function stopServer(sudoPassword) {
 async function enableToolDNS(tool, sudoPassword) {
   const status = await getMitmStatus();
   if (!status.running) throw new Error("MITM server is not running. Start the server first.");
-  
-  // Use cached password if not provided
+
   const password = sudoPassword || getCachedPassword() || await loadEncryptedPassword();
   await addDNSEntry(tool, password);
+  await saveDnsToolState(tool, true);
   return { success: true };
 }
 
@@ -663,9 +731,9 @@ async function enableToolDNS(tool, sudoPassword) {
  * Disable DNS for a specific tool
  */
 async function disableToolDNS(tool, sudoPassword) {
-  // Use cached password if not provided
   const password = sudoPassword || getCachedPassword() || await loadEncryptedPassword();
   await removeDNSEntry(tool, password);
+  await saveDnsToolState(tool, false);
   return { success: true };
 }
 
@@ -681,7 +749,7 @@ async function trustCert(sudoPassword) {
     return;
   }
   const password = sudoPassword || getCachedPassword() || await loadEncryptedPassword();
-  if (!password && !IS_WIN) throw new Error("Sudo password required to trust certificate");
+  if (!password && isSudoPasswordRequired()) throw new Error("Sudo password required to trust certificate");
   await installCert(password, rootCACertPath);
   if (password) setCachedPassword(password);
 }
@@ -704,5 +772,9 @@ module.exports = {
   setCachedPassword,
   loadEncryptedPassword,
   clearEncryptedPassword,
+  isSudoPasswordRequired,
   initDbHooks,
+  restoreToolDNS,
+  hasDnsPrivilege,
+  removeAllDNSEntriesSync,
 };

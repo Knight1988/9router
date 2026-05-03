@@ -76,6 +76,8 @@ export function fixToolUseOrdering(messages) {
   return merged;
 }
 
+const CLAUDE_FORMAT_PROVIDERS_WITHOUT_OUTPUT_CONFIG = new Set(["minimax", "minimax-cn"]);
+
 // Prepare request for Claude format endpoints
 // - Normalize thinking config (required budget_tokens for enabled, strip for disabled)
 // - Cleanup cache_control
@@ -87,6 +89,12 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
   // setCacheKey defaults to true to preserve historical behavior; pass false to disable
   // automatic Anthropic prompt-cache marker injection on this request.
   const { setCacheKey = true } = opts;
+
+  // MiniMax exposes a Claude-compatible endpoint but rejects Anthropic's extended
+  // structured output parameter with a generic 400 "invalid params" response.
+  if (CLAUDE_FORMAT_PROVIDERS_WITHOUT_OUTPUT_CONFIG.has(provider)) {
+    delete body.output_config;
+  }
 
   // 0. Normalize thinking config to satisfy Anthropic API requirements.
   //    Applies before any translation so Claude→Claude passthrough is also covered.

@@ -19,30 +19,24 @@ export async function getModelInfo(modelStr) {
   const parsed = parseModel(modelStr);
 
   if (!parsed.isAlias) {
-    const providerPrefix = parsed.providerAlias || parsed.provider;
-
-    // Check OpenAI Compatible nodes by prefix (e.g. oc-foo/model)
+    // Always check provider-node prefix matching using original input first
     const openaiNodes = await getProviderNodes({ type: "openai-compatible" });
-    const matchedOpenAI = openaiNodes.find((node) => node.prefix === providerPrefix);
+    const matchedOpenAI = openaiNodes.find((node) => node.prefix === parsed.providerAlias);
     if (matchedOpenAI) {
       return { provider: matchedOpenAI.id, model: parsed.model };
     }
 
-    // Check Custom Embedding nodes by prefix
-    const embeddingNodes = await getProviderNodes({ type: "custom-embedding" });
-    const matchedEmbedding = embeddingNodes.find((node) => node.prefix === providerPrefix);
-    if (matchedEmbedding) {
-      return { provider: matchedEmbedding.id, model: parsed.model };
-    }
-
-    // Check Anthropic Compatible nodes by prefix (e.g. zu/model, zunef-unlimited/model)
     const anthropicNodes = await getProviderNodes({ type: "anthropic-compatible" });
-    const matchedAnthropic = anthropicNodes.find((node) => node.prefix === providerPrefix);
+    const matchedAnthropic = anthropicNodes.find((node) => node.prefix === parsed.providerAlias);
     if (matchedAnthropic) {
       return { provider: matchedAnthropic.id, model: parsed.model };
     }
 
-    return {
+    const embeddingNodes = await getProviderNodes({ type: "custom-embedding" });
+    const matchedEmbedding = embeddingNodes.find((node) => node.prefix === parsed.providerAlias);
+    if (matchedEmbedding) {
+      return { provider: matchedEmbedding.id, model: parsed.model };
+    }
       provider: parsed.provider,
       model: parsed.model
     };

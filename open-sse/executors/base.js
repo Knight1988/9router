@@ -90,7 +90,7 @@ export class BaseExecutor {
   }
 
   // Override in subclass for provider-specific refresh
-  async refreshCredentials(credentials, log) {
+  async refreshCredentials(credentials, log, proxyOptions = null) {
     return null;
   }
 

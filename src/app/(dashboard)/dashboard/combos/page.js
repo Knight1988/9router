@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Card, Button, Modal, Input, CardSkeleton, ModelListEditor, Toggle } from "@/shared/components";
+import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, Toggle } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
@@ -32,7 +32,8 @@ export default function CombosPage() {
       const providersData = await providersRes.json();
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
       
-      if (combosRes.ok) setCombos(combosData.combos || []);
+      // Only LLM combos here — webSearch/webFetch combos belong to media-providers/web
+      if (combosRes.ok) setCombos((combosData.combos || []).filter(c => !c.kind));
       if (providersRes.ok) {
         setActiveProviders(providersData.connections || []);
       }
@@ -125,16 +126,16 @@ export default function CombosPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold">Combos</h1>
           <p className="text-sm text-text-muted mt-1">
             Create model combos with fallback support
           </p>
         </div>
-        <Button icon="add" onClick={() => setShowCreateModal(true)}>
+        <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto">
           Create Combo
         </Button>
       </div>
@@ -148,7 +149,7 @@ export default function CombosPage() {
             </div>
             <p className="text-text-main font-medium mb-1">No combos yet</p>
             <p className="text-sm text-text-muted mb-4">Create model combos with fallback support</p>
-            <Button icon="add" onClick={() => setShowCreateModal(true)}>
+            <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto">
               Create Combo
             </Button>
           </div>
@@ -195,19 +196,19 @@ export default function CombosPage() {
 function ComboCard({ combo, copied, onCopy, onEdit, onDelete, roundRobinEnabled, onToggleRoundRobin }) {
   return (
     <Card padding="sm" className="group">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3 flex-1 min-w-0">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
           <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
             <span className="material-symbols-outlined text-primary text-[18px]">layers</span>
           </div>
           <div className="min-w-0 flex-1">
-            <code className="text-sm font-medium font-mono truncate">{combo.name}</code>
-            <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+            <code className="block truncate font-mono text-sm font-medium">{combo.name}</code>
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
               {combo.models.length === 0 ? (
                 <span className="text-xs text-text-muted italic">No models</span>
               ) : (
                 combo.models.slice(0, 3).map((model, index) => (
-                  <code key={index} className="text-[10px] font-mono bg-black/5 dark:bg-white/5 px-1.5 py-0.5 rounded text-text-muted">
+                  <code key={index} className="max-w-full truncate rounded bg-black/5 px-1.5 py-0.5 font-mono text-[10px] text-text-muted dark:bg-white/5 sm:max-w-[220px]">
                     {model}
                   </code>
                 ))
@@ -220,9 +221,9 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete, roundRobinEnabled,
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3 sm:shrink-0">
           {/* Round Robin Toggle — always visible */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center justify-between gap-1.5 rounded-lg bg-black/[0.02] px-2 py-1.5 dark:bg-white/[0.02] sm:justify-start sm:bg-transparent sm:px-0 sm:py-0 sm:dark:bg-transparent">
             <span className="text-xs text-text-muted font-medium">Round Robin</span>
             <Toggle
               size="sm"
@@ -231,10 +232,10 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete, roundRobinEnabled,
             />
           </div>
 
-          <div className="flex gap-1">
+          <div className="grid grid-cols-3 gap-1 sm:flex">
             <button
               onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
-              className="flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary transition-colors"
+              className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
               title="Copy combo name"
             >
               <span className="material-symbols-outlined text-[18px]">
@@ -244,7 +245,7 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete, roundRobinEnabled,
             </button>
             <button
               onClick={onEdit}
-              className="flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary transition-colors"
+              className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
               title="Edit"
             >
               <span className="material-symbols-outlined text-[18px]">edit</span>
@@ -252,7 +253,7 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete, roundRobinEnabled,
             </button>
             <button
               onClick={onDelete}
-              className="flex flex-col items-center px-2 py-1 rounded hover:bg-red-500/10 text-red-500 transition-colors"
+              className="flex flex-col items-center rounded px-2 py-1 text-red-500 transition-colors hover:bg-red-500/10"
               title="Delete"
             >
               <span className="material-symbols-outlined text-[18px]">delete</span>
@@ -265,12 +266,88 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete, roundRobinEnabled,
   );
 }
 
-function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
+// Inline editable model item
+function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(model);
+
+  const commit = () => {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== model) onEdit(trimmed);
+    else setDraft(model); // revert if empty or unchanged
+    setEditing(false);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") commit();
+    if (e.key === "Escape") { setDraft(model); setEditing(false); }
+  };
+
+  return (
+    <div className="group flex min-w-0 items-center gap-1.5 rounded-md bg-black/[0.02] px-2 py-1 transition-colors hover:bg-black/[0.04] dark:bg-white/[0.02] dark:hover:bg-white/[0.04]">
+      {/* Index badge */}
+      <span className="text-[10px] font-medium text-text-muted w-3 text-center shrink-0">{index + 1}</span>
+
+      {/* Inline editable model value */}
+      {editing ? (
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={handleKeyDown}
+          className="min-w-0 flex-1 rounded border border-primary/40 bg-white px-1.5 py-0.5 font-mono text-xs text-text-main outline-none dark:bg-black/20"
+        />
+      ) : (
+        <div
+          className="min-w-0 flex-1 cursor-text truncate rounded px-1.5 py-0.5 font-mono text-xs text-text-main hover:bg-black/5 dark:hover:bg-white/5"
+          onClick={() => setEditing(true)}
+          title="Click to edit"
+        >
+          {model}
+        </div>
+      )}
+
+      {/* Priority arrows */}
+      <div className="flex shrink-0 items-center gap-0.5">
+        <button
+          onClick={onMoveUp}
+          disabled={isFirst}
+          className={`p-0.5 rounded ${isFirst ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"}`}
+          title="Move up"
+        >
+          <span className="material-symbols-outlined text-[12px]">arrow_upward</span>
+        </button>
+        <button
+          onClick={onMoveDown}
+          disabled={isLast}
+          className={`p-0.5 rounded ${isLast ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"}`}
+          title="Move down"
+        >
+          <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
+        </button>
+      </div>
+
+      {/* Remove */}
+      <button
+        onClick={onRemove}
+        className="p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 transition-all"
+        title="Remove"
+      >
+        <span className="material-symbols-outlined text-[12px]">close</span>
+      </button>
+    </div>
+  );
+}
+
+function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
+  const [showModelSelect, setShowModelSelect] = useState(false);
+  const [modelAliases, setModelAliases] = useState({});
 
   const validateName = (value) => {
     if (!value.trim()) {
@@ -301,53 +378,122 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
 
   const isEdit = !!combo;
 
+  const handleAddModel = (model) => {
+    setModels((prev) => [...prev, model]);
+    setShowModelSelect(false);
+  };
+
+  const handleMoveUp = (index) => {
+    if (index === 0) return;
+    setModels((prev) => {
+      const next = [...prev];
+      [next[index - 1], next[index]] = [next[index], next[index - 1]];
+      return next;
+    });
+  };
+
+  const handleMoveDown = (index) => {
+    setModels((prev) => {
+      if (index === prev.length - 1) return prev;
+      const next = [...prev];
+      [next[index], next[index + 1]] = [next[index + 1], next[index]];
+      return next;
+    });
+  };
+
+  const handleRemoveModel = (index) => {
+    setModels((prev) => prev.filter((_, i) => i !== index));
+  };
+
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      title={isEdit ? "Edit Combo" : "Create Combo"}
-    >
-      <div className="flex flex-col gap-3">
-        {/* Name */}
-        <div>
-          <Input
-            label="Combo Name"
-            value={name}
-            onChange={handleNameChange}
-            placeholder="my-combo"
-            error={nameError}
-          />
-          <p className="text-[10px] text-text-muted mt-0.5">
-            Only letters, numbers, -, _ and . allowed
-          </p>
-        </div>
+    <>
+      <Modal
+        isOpen={isOpen}
+        onClose={onClose}
+        title={isEdit ? "Edit Combo" : "Create Combo"}
+      >
+        <div className="flex flex-col gap-3">
+          {/* Name */}
+          <div>
+            <Input
+              label="Combo Name"
+              value={name}
+              onChange={handleNameChange}
+              placeholder="my-combo"
+              error={nameError}
+            />
+            <p className="text-[10px] text-text-muted mt-0.5">
+              Only letters, numbers, -, _ and . allowed
+            </p>
+          </div>
 
-        {/* Models */}
-        <div>
-          <label className="text-sm font-medium mb-1.5 block">Models</label>
-          <ModelListEditor
-            models={models}
-            onChange={setModels}
-            activeProviders={activeProviders}
-            modalTitle="Add Model to Combo"
-          />
-        </div>
+          {/* Models */}
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Models</label>
 
-        {/* Actions */}
-        <div className="flex gap-2 pt-1">
-          <Button onClick={onClose} variant="ghost" fullWidth size="sm">
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSave}
-            fullWidth
-            size="sm"
-            disabled={!name.trim() || !!nameError || saving}
-          >
-            {saving ? "Saving..." : isEdit ? "Save" : "Create"}
-          </Button>
+            {models.length === 0 ? (
+              <div className="text-center py-4 border border-dashed border-black/10 dark:border-white/10 rounded-lg bg-black/[0.01] dark:bg-white/[0.01]">
+                <span className="material-symbols-outlined text-text-muted text-xl mb-1">layers</span>
+                <p className="text-xs text-text-muted">No models added yet</p>
+              </div>
+            ) : (
+            <div className="flex max-h-[55vh] min-w-0 flex-col gap-1 overflow-y-auto sm:max-h-[350px]">
+                {models.map((model, index) => (
+                  <ModelItem
+                    key={index}
+                    index={index}
+                    model={model}
+                    isFirst={index === 0}
+                    isLast={index === models.length - 1}
+                    onEdit={(newVal) => {
+                      const updated = [...models];
+                      updated[index] = newVal;
+                      setModels(updated);
+                    }}
+                    onMoveUp={() => handleMoveUp(index)}
+                    onMoveDown={() => handleMoveDown(index)}
+                    onRemove={() => handleRemoveModel(index)}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Add Model button */}
+            <button
+              onClick={() => setShowModelSelect(true)}
+              className="w-full mt-2 py-2 border border-dashed border-black/10 dark:border-white/10 rounded-lg text-xs text-primary font-medium hover:text-primary hover:border-primary/50 transition-colors flex items-center justify-center gap-1"
+            >
+              <span className="material-symbols-outlined text-[16px]">add</span>
+              Add Model
+            </button>
+          </div>
+
+          {/* Actions */}
+          <div className="flex flex-col gap-2 pt-1 sm:flex-row">
+            <Button onClick={onClose} variant="ghost" fullWidth size="sm">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSave}
+              fullWidth
+              size="sm"
+              disabled={!name.trim() || !!nameError || saving}
+            >
+              {saving ? "Saving..." : isEdit ? "Save" : "Create"}
+            </Button>
+          </div>
         </div>
-      </div>
-    </Modal>
+      </Modal>
+      {/* Model Select Modal */}
+      <ModelSelectModal
+        isOpen={showModelSelect}
+        onClose={() => setShowModelSelect(false)}
+        onSelect={handleAddModel}
+        activeProviders={activeProviders}
+        modelAliases={modelAliases}
+        title="Add Model to Combo"
+        kindFilter={kindFilter}
+      />
+    </>
   );
 }

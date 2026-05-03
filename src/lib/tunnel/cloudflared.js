@@ -11,6 +11,7 @@ const BINARY_NAME = "cloudflared";
 const IS_WINDOWS = os.platform() === "win32";
 const BIN_NAME = IS_WINDOWS ? `${BINARY_NAME}.exe` : BINARY_NAME;
 const BIN_PATH = path.join(BIN_DIR, BIN_NAME);
+const POWERSHELL_HIDDEN_COMMAND = "powershell -NoProfile -NonInteractive -WindowStyle Hidden -Command";
 
 const GITHUB_BASE_URL = "https://github.com/cloudflare/cloudflared/releases/latest/download";
 
@@ -233,22 +234,31 @@ export async function spawnCloudflared(tunnelToken) {
       }
     });
 
-    child.on("exit", (code) => {
+    child.on("exit", (code, signal) => {
       cloudflaredProcess = null;
       clearPid();
       const wasConnected = resolved; // true = already connected successfully
       if (!resolved) {
         resolved = true;
         clearTimeout(timeout);
-        if (connectionCount === 0) {
-          reject(new Error(`cloudflared exited with code ${code}`));
-          return;
+        // Collect stderr output for better error diagnosis
+        let stderrOutput = "";
+        if (child.stderr && !child.stderr.destroyed) {
+          // Try to read any buffered stderr (may not have all output but helps with common errors)
+          stderrOutput = " Check cloudflared logs for details.";
         }
+        if (code === 1) {
+          // Common exit code 1 issues: invalid token, auth failure, network issues
+          reject(new Error(`cloudflared exited with code ${code}${stderrOutput} Ensure your tunnel token is valid and network is reachable.`));
+        } else if (code === 2) {
+          reject(new Error(`cloudflared exited with code ${code}${stderrOutput} Check if required arguments are correct.`));
+        } else {
+          reject(new Error(`cloudflared exited with code ${code}${stderrOutput}`));
+        }
+        return;
       }
-      // Only notify on unexpected exit AFTER successful connection
-      if (wasConnected && unexpectedExitHandler) {
-        unexpectedExitHandler();
-      }
+      // Watchdog (initializeApp) handles recovery — no auto-reconnect here
+      if (wasConnected && unexpectedExitHandler) unexpectedExitHandler();
     });
   });
 }
@@ -344,14 +354,21 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
       reject(err);
     });
 
-    child.on("exit", (code) => {
+    child.on("exit", (code, signal) => {
       cloudflaredProcess = null;
       clearPid();
       if (!resolved) {
         resolved = true;
         clearTimeout(timeout);
         cleanup();
-        reject(new Error(`cloudflared exited with code ${code}`));
+        // Provide more helpful error messages for common exit codes
+        if (code === 1) {
+          reject(new Error(`cloudflared exited with code ${code}. This often means: (1) the tunnel token is invalid or expired, (2) network connectivity issues, or (3) cloudflared cannot reach the local server.`));
+        } else if (code === 2) {
+          reject(new Error(`cloudflared exited with code ${code}. Check that arguments are correct.`));
+        } else {
+          reject(new Error(`cloudflared exited with code ${code}`));
+        }
         return;
       }
       if (unexpectedExitHandler) unexpectedExitHandler();
@@ -360,7 +377,21 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
   });
 }
 
-export function killCloudflared() {
+// Kill cloudflared processes whose command line targets the given port (any host).
+// Boundary check ensures :20128 doesn't match :201280 or :202128.
+function killCloudflaredByPort(port) {
+  if (!port) return;
+  try {
+    if (IS_WINDOWS) {
+      const psCmd = `Get-CimInstance Win32_Process -Filter \\"Name='cloudflared.exe'\\" | Where-Object { $_.CommandLine -match ':${port}(\\D|$)' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`;
+      execSync(`${POWERSHELL_HIDDEN_COMMAND} "${psCmd}"`, { stdio: "ignore", windowsHide: true });
+    } else {
+      execSync(`pkill -f "cloudflared.*:${port}([^0-9]|$)" 2>/dev/null || true`, { stdio: "ignore", windowsHide: true });
+    }
+  } catch (e) { /* ignore */ }
+}
+
+export function killCloudflared(localPort) {
   if (cloudflaredProcess) {
     try {
       cloudflaredProcess.kill();
@@ -376,10 +407,7 @@ export function killCloudflared() {
     clearPid();
   }
 
-  // Kill any remaining cloudflared processes
-  try {
-    execSync("pkill -f cloudflared 2>/dev/null || true", { stdio: "ignore", windowsHide: true });
-  } catch (e) { /* ignore */ }
+  killCloudflaredByPort(localPort);
 }
 
 export function isCloudflaredRunning() {

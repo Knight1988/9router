@@ -7,6 +7,13 @@ import RequestDetailsTab from "./components/RequestDetailsTab";
 import ProviderHealthTab from "./components/ProviderHealthTab";
 import ApiKeyUsageTab from "./components/ApiKeyUsageTab";
 
+const PERIODS = [
+  { value: "24h", label: "24h" },
+  { value: "7d", label: "7D" },
+  { value: "30d", label: "30D" },
+  { value: "60d", label: "60D" },
+];
+
 export default function UsagePage() {
   return (
     <Suspense fallback={<CardSkeleton />}>
@@ -20,6 +27,7 @@ function UsageContent() {
   const router = useRouter();
 
   const [tabLoading, setTabLoading] = useState(false);
+  const [period, setPeriod] = useState("7d");
 
   const tabFromUrl = searchParams.get("tab");
   const activeTab = tabFromUrl && ["overview", "logs", "details", "health", "apikeys"].includes(tabFromUrl)
@@ -39,7 +47,6 @@ function UsageContent() {
       for (const param of paramList) params.delete(param);
     }
     router.push(`/dashboard/usage?${params.toString()}`, { scroll: false });
-    // Brief loading flash so user sees feedback
     setTimeout(() => setTabLoading(false), 300);
   };
 
@@ -62,7 +69,7 @@ function UsageContent() {
         <>
           {activeTab === "overview" && (
             <Suspense fallback={<CardSkeleton />}>
-              <UsageStats />
+              <UsageStats period={period} setPeriod={setPeriod} hidePeriodSelector />
             </Suspense>
           )}
           {activeTab === "logs" && <RequestLogger />}

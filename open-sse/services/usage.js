@@ -3,6 +3,7 @@
  */
 
 import { CLIENT_METADATA, getPlatformUserAgent } from "../config/appConstants.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 // GitHub API config
 const GITHUB_CONFIG = {
@@ -52,27 +53,29 @@ const TROLL_LLM_CONFIG = {
  * @returns {Object} Usage data with quotas
  */
 export async function getUsageForProvider(connection, options = {}) {
+  const { onSessionRefreshed, ...proxyOptions } = typeof options === "object" && options !== null ? options : {};
+  const proxyOpts = Object.keys(proxyOptions).length > 0 ? proxyOptions : null;
   const { provider, accessToken, providerSpecificData } = connection;
 
   switch (provider) {
     case "github":
-      return await getGitHubUsage(accessToken, providerSpecificData);
+      return await getGitHubUsage(accessToken, providerSpecificData, proxyOpts);
     case "gemini-cli":
-      return await getGeminiUsage(accessToken);
+      return await getGeminiUsage(accessToken, proxyOpts);
     case "antigravity":
-      return await getAntigravityUsage(accessToken);
+      return await getAntigravityUsage(accessToken, providerSpecificData, proxyOpts);
     case "claude":
-      return await getClaudeUsage(accessToken);
+      return await getClaudeUsage(accessToken, proxyOpts);
     case "codex":
-      return await getCodexUsage(accessToken);
+      return await getCodexUsage(accessToken, proxyOpts);
     case "kiro":
-      return await getKiroUsage(accessToken, providerSpecificData);
+      return await getKiroUsage(accessToken, providerSpecificData, proxyOpts);
     case "qwen":
       return await getQwenUsage(accessToken, providerSpecificData);
     case "iflow":
       return await getIflowUsage(accessToken);
     case "open-claude":
-      return await getOpenClaudeUsage(connection, options.onSessionRefreshed);
+      return await getOpenClaudeUsage(connection, onSessionRefreshed);
     case "troll-llm":
       return await getTrollLlmUsage(accessToken);
     case "ollama":
@@ -120,14 +123,14 @@ function parseResetTime(resetValue) {
  * GitHub Copilot Usage
  * Uses GitHub accessToken (not copilotToken) to call copilot_internal/user API
  */
-async function getGitHubUsage(accessToken, providerSpecificData) {
+async function getGitHubUsage(accessToken, providerSpecificData, proxyOptions = null) {
   try {
     if (!accessToken) {
       throw new Error("No GitHub access token available. Please re-authorize the connection.");
     }
 
     // copilot_internal/user API requires GitHub OAuth token, not copilotToken
-    const response = await fetch("https://api.github.com/copilot_internal/user", {
+    const response = await proxyAwareFetch("https://api.github.com/copilot_internal/user", {
       headers: {
         "Authorization": `token ${accessToken}`,
         "Accept": "application/json",
@@ -136,7 +139,7 @@ async function getGitHubUsage(accessToken, providerSpecificData) {
         "Editor-Version": "vscode/1.100.0",
         "Editor-Plugin-Version": "copilot-chat/0.26.7",
       },
-    });
+    }, proxyOptions);
 
     if (!response.ok) {
       const error = await response.text();
@@ -206,18 +209,19 @@ function formatGitHubQuotaSnapshot(quota) {
 /**
  * Gemini CLI Usage (Google Cloud)
  */
-async function getGeminiUsage(accessToken) {
+async function getGeminiUsage(accessToken, proxyOptions = null) {
   try {
     // Gemini CLI uses Google Cloud quotas
     // Try to get quota info from Cloud Resource Manager
-    const response = await fetch(
+    const response = await proxyAwareFetch(
       "https://cloudresourcemanager.googleapis.com/v1/projects?filter=lifecycleState:ACTIVE",
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
           Accept: "application/json",
         },
-      }
+      },
+      proxyOptions
     );
 
     if (!response.ok) {
@@ -234,10 +238,10 @@ async function getGeminiUsage(accessToken) {
 /**
  * Antigravity Usage - Fetch quota from Google Cloud Code API
  */
-async function getAntigravityUsage(accessToken, providerSpecificData) {
+async function getAntigravityUsage(accessToken, providerSpecificData, proxyOptions = null) {
   try {
     // Fetch subscription info once — reuse for both projectId and plan
-    const subscriptionInfo = await getAntigravitySubscriptionInfo(accessToken);
+    const subscriptionInfo = await getAntigravitySubscriptionInfo(accessToken, proxyOptions);
     const projectId = subscriptionInfo?.cloudaicompanionProject || null;
 
     // Fetch quota data with timeout
@@ -246,7 +250,7 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
 
     let response;
     try {
-      response = await fetch(ANTIGRAVITY_CONFIG.quotaApiUrl, {
+      response = await proxyAwareFetch(ANTIGRAVITY_CONFIG.quotaApiUrl, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${accessToken}`,
@@ -260,7 +264,7 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
           ...(projectId ? { project: projectId } : {})
         }),
         signal: controller.signal,
-      });
+      }, proxyOptions);
     } finally {
       clearTimeout(timeoutId);
     }
@@ -355,11 +359,11 @@ async function getAntigravityProjectId(accessToken) {
 /**
  * Get Antigravity subscription info
  */
-async function getAntigravitySubscriptionInfo(accessToken) {
+async function getAntigravitySubscriptionInfo(accessToken, proxyOptions = null) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
   try {
-    const response = await fetch(ANTIGRAVITY_CONFIG.loadProjectApiUrl, {
+    const response = await proxyAwareFetch(ANTIGRAVITY_CONFIG.loadProjectApiUrl, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
@@ -369,7 +373,7 @@ async function getAntigravitySubscriptionInfo(accessToken) {
       },
       body: JSON.stringify({ metadata: CLIENT_METADATA, mode: 1 }),
       signal: controller.signal,
-    });
+    }, proxyOptions);
 
     if (!response.ok) return null;
     return await response.json();
@@ -635,17 +639,17 @@ async function getTrollLlmUsage(accessToken) {
 /**
  * Claude Usage - Primary: OAuth endpoint, Fallback: legacy settings/org endpoint
  */
-async function getClaudeUsage(accessToken) {
+async function getClaudeUsage(accessToken, proxyOptions = null) {
   try {
     // Primary: OAuth usage endpoint (Claude Code consumer OAuth tokens)
-    const oauthResponse = await fetch(CLAUDE_CONFIG.oauthUsageUrl, {
+    const oauthResponse = await proxyAwareFetch(CLAUDE_CONFIG.oauthUsageUrl, {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
         "anthropic-beta": "oauth-2025-04-20",
         "anthropic-version": CLAUDE_CONFIG.apiVersion,
       },
-    });
+    }, proxyOptions);
 
     if (oauthResponse.ok) {
       const data = await oauthResponse.json();
@@ -693,7 +697,7 @@ async function getClaudeUsage(accessToken) {
 
     // Fallback: legacy settings + org usage endpoint
     console.warn(`[Claude Usage] OAuth endpoint returned ${oauthResponse.status}, falling back to legacy`);
-    return await getClaudeUsageLegacy(accessToken);
+    return await getClaudeUsageLegacy(accessToken, proxyOptions);
   } catch (error) {
     return { message: `Claude connected. Unable to fetch usage: ${error.message}` };
   }
@@ -702,21 +706,21 @@ async function getClaudeUsage(accessToken) {
 /**
  * Legacy Claude usage for API key / org admin users
  */
-async function getClaudeUsageLegacy(accessToken) {
+async function getClaudeUsageLegacy(accessToken, proxyOptions = null) {
   try {
-    const settingsResponse = await fetch(CLAUDE_CONFIG.settingsUrl, {
+    const settingsResponse = await proxyAwareFetch(CLAUDE_CONFIG.settingsUrl, {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
         "anthropic-version": CLAUDE_CONFIG.apiVersion,
       },
-    });
+    }, proxyOptions);
 
     if (settingsResponse.ok) {
       const settings = await settingsResponse.json();
 
       if (settings.organization_id) {
-        const usageResponse = await fetch(
+        const usageResponse = await proxyAwareFetch(
           CLAUDE_CONFIG.usageUrl.replace("{org_id}", settings.organization_id),
           {
             method: "GET",
@@ -724,7 +728,8 @@ async function getClaudeUsageLegacy(accessToken) {
               "Authorization": `Bearer ${accessToken}`,
               "anthropic-version": CLAUDE_CONFIG.apiVersion,
             },
-          }
+          },
+          proxyOptions
         );
 
         if (usageResponse.ok) {
@@ -753,50 +758,97 @@ async function getClaudeUsageLegacy(accessToken) {
 /**
  * Codex (OpenAI) Usage - Fetch from ChatGPT backend API
  */
-async function getCodexUsage(accessToken) {
+function toFiniteNumber(value, fallback = 0) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+function getCodexRateLimitBody(snapshot) {
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return null;
+  return snapshot.rate_limit && typeof snapshot.rate_limit === "object"
+    ? snapshot.rate_limit
+    : snapshot;
+}
+
+function formatCodexWindow(window) {
+  const used = Math.max(0, Math.min(100, toFiniteNumber(window?.used_percent ?? window?.percent_used, 0)));
+  return {
+    used,
+    total: 100,
+    remaining: Math.max(0, 100 - used),
+    resetAt: parseResetTime(window?.reset_at ?? window?.resets_at ?? window?.resetAt ?? null),
+    unlimited: false,
+  };
+}
+
+function appendCodexQuotaWindows(quotas, prefix, snapshot) {
+  const rateLimit = getCodexRateLimitBody(snapshot);
+  if (!rateLimit) return false;
+
+  const primary = rateLimit.primary_window || rateLimit.primary || snapshot.primary_window || snapshot.primary;
+  const secondary = rateLimit.secondary_window || rateLimit.secondary || snapshot.secondary_window || snapshot.secondary;
+  let added = false;
+
+  if (primary) {
+    quotas[prefix ? `${prefix}_session` : "session"] = formatCodexWindow(primary);
+    added = true;
+  }
+  if (secondary) {
+    quotas[prefix ? `${prefix}_weekly` : "weekly"] = formatCodexWindow(secondary);
+    added = true;
+  }
+
+  return added;
+}
+
+function getCodexReviewRateLimit(data) {
+  if (data.code_review_rate_limit || data.review_rate_limit) {
+    return data.code_review_rate_limit || data.review_rate_limit;
+  }
+
+  const byLimitId = data.rate_limits_by_limit_id;
+  if (byLimitId && typeof byLimitId === "object" && !Array.isArray(byLimitId)) {
+    return byLimitId.code_review || byLimitId.codex_review || byLimitId.review || null;
+  }
+
+  const additional = Array.isArray(data.additional_rate_limits) ? data.additional_rate_limits : [];
+  return additional.find((entry) => {
+    const id = String(entry?.limit_name || entry?.metered_feature || entry?.id || "").toLowerCase();
+    return id === "code_review" || id === "codex_review" || id === "review" || id.includes("review");
+  }) || null;
+}
+
+async function getCodexUsage(accessToken, proxyOptions = null) {
   try {
-    const response = await fetch(CODEX_CONFIG.usageUrl, {
+    const response = await proxyAwareFetch(CODEX_CONFIG.usageUrl, {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
         "Accept": "application/json",
       },
-    });
+    }, proxyOptions);
 
     if (!response.ok) {
       return { message: `Codex connected. Usage API temporarily unavailable (${response.status}).` };
     }
 
     const data = await response.json();
+    const normalRateLimit = data.rate_limit || data.rate_limits || data.rate_limits_by_limit_id?.codex || {};
+    const reviewRateLimit = getCodexReviewRateLimit(data);
+    const quotas = {};
 
-    // Parse rate limit info
-    const rateLimit = data.rate_limit || {};
-    const primaryWindow = rateLimit.primary_window || {};
-    const secondaryWindow = rateLimit.secondary_window || {};
-
-    // Parse reset dates (reset_at is Unix timestamp in seconds, multiply by 1000 for ms)
-    const sessionResetAt = parseResetTime(primaryWindow.reset_at ? primaryWindow.reset_at * 1000 : null);
-    const weeklyResetAt = parseResetTime(secondaryWindow.reset_at ? secondaryWindow.reset_at * 1000 : null);
+    appendCodexQuotaWindows(quotas, "", normalRateLimit);
+    appendCodexQuotaWindows(quotas, "review", reviewRateLimit);
 
     return {
-      plan: data.plan_type || "unknown",
-      limitReached: rateLimit.limit_reached || false,
-      quotas: {
-        session: {
-          used: primaryWindow.used_percent || 0,
-          total: 100,
-          remaining: 100 - (primaryWindow.used_percent || 0),
-          resetAt: sessionResetAt,
-          unlimited: false,
-        },
-        weekly: {
-          used: secondaryWindow.used_percent || 0,
-          total: 100,
-          remaining: 100 - (secondaryWindow.used_percent || 0),
-          resetAt: weeklyResetAt,
-          unlimited: false,
-        },
-      },
+      plan: data.plan_type || data.summary?.plan || "unknown",
+      limitReached: getCodexRateLimitBody(normalRateLimit)?.limit_reached || false,
+      reviewLimitReached: getCodexRateLimitBody(reviewRateLimit)?.limit_reached || false,
+      quotas,
     };
   } catch (error) {
     throw new Error(`Failed to fetch Codex usage: ${error.message}`);
@@ -845,7 +897,7 @@ function parseKiroQuotaData(data) {
   };
 }
 
-async function getKiroUsage(accessToken, providerSpecificData) {
+async function getKiroUsage(accessToken, providerSpecificData, proxyOptions = null) {
   // Default profileArn fallback
   const DEFAULT_PROFILE_ARN = "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
   const profileArn = providerSpecificData?.profileArn || DEFAULT_PROFILE_ARN;
@@ -861,7 +913,7 @@ async function getKiroUsage(accessToken, providerSpecificData) {
   const attempts = [
     {
       name: "codewhisperer-get",
-      run: async () => fetch(
+      run: async () => proxyAwareFetch(
         `https://codewhisperer.us-east-1.amazonaws.com/getUsageLimits?${getUsageParams.toString()}`,
         {
           method: "GET",
@@ -872,11 +924,12 @@ async function getKiroUsage(accessToken, providerSpecificData) {
             "user-agent": "aws-sdk-js/1.0.0 KiroIDE",
           },
         },
+        proxyOptions
       ),
     },
     {
       name: "codewhisperer-post",
-      run: async () => fetch("https://codewhisperer.us-east-1.amazonaws.com", {
+      run: async () => proxyAwareFetch("https://codewhisperer.us-east-1.amazonaws.com", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${accessToken}`,
@@ -889,7 +942,7 @@ async function getKiroUsage(accessToken, providerSpecificData) {
           profileArn,
           resourceType: "AGENTIC_REQUEST",
         }),
-      }),
+      }, proxyOptions),
     },
     {
       name: "q-get",
@@ -899,13 +952,13 @@ async function getKiroUsage(accessToken, providerSpecificData) {
           profileArn,
           resourceType: "AGENTIC_REQUEST",
         });
-        return fetch(`https://q.us-east-1.amazonaws.com/getUsageLimits?${params}`, {
+        return proxyAwareFetch(`https://q.us-east-1.amazonaws.com/getUsageLimits?${params}`, {
           method: "GET",
           headers: {
             "Authorization": `Bearer ${accessToken}`,
             "Accept": "application/json",
           },
-        });
+        }, proxyOptions);
       },
     },
   ];

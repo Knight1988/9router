@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams, notFound } from "next/navigation";
+import { useParams, notFound, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Card, Badge, Button, AddCustomEmbeddingModal } from "@/shared/components";
@@ -43,7 +43,7 @@ function MediaProviderCard({ provider, kind, connections, isCustom }) {
         padding="xs"
         className={`h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer ${allDisabled ? "opacity-50" : ""}`}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <div
             className="size-8 rounded-lg flex items-center justify-center shrink-0"
             style={{ backgroundColor: `${provider.color?.length > 7 ? provider.color : (provider.color ?? "#888") + "15"}` }}
@@ -72,9 +72,17 @@ function MediaProviderCard({ provider, kind, connections, isCustom }) {
 
 export default function MediaProviderKindPage() {
   const { kind } = useParams();
+  const router = useRouter();
   const [connections, setConnections] = useState([]);
   const [customNodes, setCustomNodes] = useState([]);
   const [showAddCustomEmbedding, setShowAddCustomEmbedding] = useState(false);
+
+  // webSearch/webFetch listing pages are merged into /web
+  useEffect(() => {
+    if (kind === "webSearch" || kind === "webFetch") {
+      router.replace("/dashboard/media-providers/web");
+    }
+  }, [kind, router]);
 
   const kindConfig = MEDIA_PROVIDER_KINDS.find((k) => k.id === kind);
   const isEmbedding = kind === "embedding";
