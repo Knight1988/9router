@@ -47,11 +47,6 @@ function resolveSSLCerts() {
   return null;
 }
 
-function splitPemCertificates(pem) {
-  const matches = pem.toString("utf8").match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g);
-  return matches || [];
-}
-
 // ── Next.js standalone server config (copied from .next/standalone/server.js) ─
 const dir = path.join(__dirname);
 process.env.NODE_ENV = "production";
@@ -100,11 +95,11 @@ if (httpsEnabled) {
     (async () => {
       try {
         const certPem = fs.readFileSync(certs.cert, "utf8");
-        const certChain = splitPemCertificates(certPem);
         const httpsServer = https.createServer({
           key: fs.readFileSync(certs.key),
-          cert: certChain[0] || certPem,
-          ca: certChain.length > 1 ? certChain.slice(1) : undefined,
+          cert: certPem,
+          requestCert: false,
+          rejectUnauthorized: false,
         });
 
         const app = next({
