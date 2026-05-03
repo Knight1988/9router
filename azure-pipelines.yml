@@ -25,3 +25,36 @@ steps:
       docker push "$(IMAGE_NAME):$(DOCKER_TAG)"
     displayName: Push Docker image
     condition: and(succeeded(), or(eq(variables['Build.SourceBranchName'], 'latest'), eq(variables['Build.SourceBranchName'], 'beta')))
+
+  - script: |
+      set -euo pipefail
+      PORTAINER_URL="https://dk-server.linkpc.net/portainer"
+      STACK_ID=23
+      ENDPOINT_ID=3
+
+      echo "Fetching current stack file from Portainer..."
+      STACK_FILE=$(curl -fsSL \
+        -H "X-API-Key: $(PORTAINER_API_KEY)" \
+        "${PORTAINER_URL}/api/stacks/${STACK_ID}/file" \
+        | jq -r '.StackFileContent')
+
+      if [ -z "$STACK_FILE" ] || [ "$STACK_FILE" = "null" ]; then
+        echo "Failed to retrieve stack file"; exit 1
+      fi
+
+      echo "Triggering Portainer redeploy with image pull..."
+      PAYLOAD=$(jq -n \
+        --arg file "$STACK_FILE" \
+        '{stackFileContent: $file, env: [], prune: false, pullImage: true}')
+
+      curl -fsSL -X PUT \
+        -H "X-API-Key: $(PORTAINER_API_KEY)" \
+        -H "Content-Type: application/json" \
+        --data "$PAYLOAD" \
+        "${PORTAINER_URL}/api/stacks/${STACK_ID}?endpointId=${ENDPOINT_ID}"
+      echo
+      echo "Portainer redeploy requested."
+    displayName: Redeploy 9router stack via Portainer
+    condition: and(succeeded(), eq(variables['Build.SourceBranchName'], 'beta'))
+    env:
+      PORTAINER_API_KEY: $(PORTAINER_API_KEY)
