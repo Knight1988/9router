@@ -43,7 +43,7 @@ RUN mkdir -p /app/data && chown -R bun:bun /app && \
 
 # Fix permissions at runtime (handles mounted volumes)
 RUN apk --no-cache upgrade && apk --no-cache add su-exec && \
-  printf '#!/bin/sh\nchown -R bun:bun /app/data /app/data-home 2>/dev/null\nexec su-exec bun "$@"\n' > /entrypoint.sh && \
+  printf '#!/bin/sh\nchown -R bun:bun /app/data /app/data-home 2>/dev/null\n[ -n "$DATA_DIR" ] && [ "$DATA_DIR" != "/app/data" ] && mkdir -p "$DATA_DIR" && chown -R bun:bun "$DATA_DIR" 2>/dev/null || true\nexec su-exec bun "$@"\n' > /entrypoint.sh && \
   chmod +x /entrypoint.sh
 
 EXPOSE 20128
