@@ -46,7 +46,9 @@ const TROLL_LLM_CONFIG = {
 };
 
 const DEVGO_CONFIG = {
-  quotaUrl: "https://quota.9router.tools.devgovietnam.io.vn/",
+  baseUrl: "https://quota.9router.tools.devgovietnam.io.vn",
+  loginPath: "/api/customer/login",
+  summaryPath: "/api/customer/summary",
 };
 
 /**
@@ -1054,47 +1056,78 @@ async function getIflowUsage(accessToken) {
 }
 
 /**
- * DevGoVN Usage - Fetches quota from the DevGoVN quota API.
- * The quota endpoint returns a 9router-native-shaped response:
- * { plan, quotas: { [name]: { used, total, remaining, remainingPercentage, resetAt, unlimited, unit } } }
+ * DevGoVN Usage - Logs in with the API key, then fetches quota summary.
+ * The quota page uses cookie-based session after POST /api/customer/login.
  */
 async function getDevGoUsage(accessToken) {
   try {
-    const res = await fetch(DEVGO_CONFIG.quotaUrl, {
+    const baseUrl = DEVGO_CONFIG.baseUrl;
+
+    const loginRes = await fetch(`${baseUrl}${DEVGO_CONFIG.loginPath}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: accessToken }),
+    });
+
+    if (!loginRes.ok) {
+      throw new Error(`DevGoVN login failed: ${loginRes.status}`);
+    }
+
+    const cookieHeader = loginRes.headers.get("set-cookie") || "";
+    const cookieValue = cookieHeader.split(";")[0].trim();
+
+    const summaryRes = await fetch(`${baseUrl}${DEVGO_CONFIG.summaryPath}`, {
       method: "GET",
       headers: {
-        "Authorization": `Bearer ${accessToken}`,
         "Content-Type": "application/json",
+        ...(cookieValue ? { Cookie: cookieValue } : {}),
       },
     });
 
-    if (!res.ok) {
-      throw new Error(`DevGoVN quota API error: ${res.status}`);
+    if (!summaryRes.ok) {
+      throw new Error(`DevGoVN summary API error: ${summaryRes.status}`);
     }
 
-    const data = await res.json();
+    const body = await summaryRes.json();
+    const data = body.data || body;
+    const quota = data.quota || {};
+    const usage = data.usage || {};
 
-    if (data.quotas && typeof data.quotas === "object") {
-      const normalized = {};
-      for (const [key, q] of Object.entries(data.quotas)) {
-        normalized[key] = {
-          used: q.used ?? 0,
-          total: q.total ?? 0,
-          remaining: q.remaining ?? 0,
-          remainingPercentage: q.remainingPercentage ?? (q.total > 0 ? Math.round(((q.remaining ?? 0) / q.total) * 100) : 0),
-          resetAt: q.resetAt ? parseResetTime(q.resetAt) : null,
-          unlimited: q.unlimited ?? false,
-          unit: q.unit ?? "$",
-        };
-      }
-      return {
-        plan: data.plan || "DevGoVN",
-        planExpiresAt: data.planExpiresAt ? parseResetTime(data.planExpiresAt) : null,
-        quotas: normalized,
+    const quotas = {};
+
+    const budgetUsd = quota.isUnlimited ? null : (quota.budgetUsd || 0);
+    const usedUsd = quota.effectiveUsedUsd ?? quota.usedUsd ?? 0;
+    const remainingUsd = quota.remainingUsd ?? (budgetUsd != null ? Math.max(0, budgetUsd - usedUsd) : 0);
+
+    quotas["budget"] = {
+      used: +usedUsd.toFixed(4),
+      total: budgetUsd != null ? +budgetUsd.toFixed(4) : 0,
+      remaining: +Math.max(0, remainingUsd).toFixed(4),
+      remainingPercentage: budgetUsd > 0 ? Math.round((remainingUsd / budgetUsd) * 100) : 0,
+      resetAt: null,
+      unlimited: !!quota.isUnlimited,
+      unit: "$",
+    };
+
+    if (quota.cycleBudgetUsd > 0) {
+      const cycleUsed = quota.cycleUsedUsd || 0;
+      const cycleBudget = quota.cycleBudgetUsd;
+      const cycleRemaining = Math.max(0, cycleBudget - cycleUsed);
+      quotas[`cycle (${quota.resetIntervalHours || 24}h)`] = {
+        used: +cycleUsed.toFixed(4),
+        total: +cycleBudget.toFixed(4),
+        remaining: +cycleRemaining.toFixed(4),
+        remainingPercentage: cycleBudget > 0 ? Math.round((cycleRemaining / cycleBudget) * 100) : 0,
+        resetAt: quota.nextResetAt ? parseResetTime(quota.nextResetAt) : null,
+        unlimited: false,
+        unit: "$",
       };
     }
 
-    return { plan: "DevGoVN", quotas: {}, message: data.message || null };
+    return {
+      plan: quota.creditTier || "DevGoVN",
+      quotas,
+    };
   } catch (error) {
     return { message: `DevGoVN connected. Unable to fetch usage: ${error.message}` };
   }

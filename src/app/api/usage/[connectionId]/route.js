@@ -127,8 +127,10 @@ export async function GET(request, { params }) {
     // API-key providers can still expose usage dashboards. An optional monitor token
     // lets Open Claude use a dedicated bearer without changing the saved connection.
     // For open-claude, saved monitorCreds (username+password) also satisfy this check.
+    // Some providers (e.g. troll-llm, devgo) use API key as bearer for usage endpoints.
     const hasOpenClaudeMonitorCreds = connection.provider === "open-claude" && !!connection.providerSpecificData?.monitorCreds?.username;
-    if (connection.authType !== "oauth" && !monitorToken && !connection.accessToken && !hasOpenClaudeMonitorCreds) {
+    const providerUsesApiKeyForUsage = ["troll-llm", "devgo"].includes(connection.provider) && !!connection.apiKey;
+    if (connection.authType !== "oauth" && !monitorToken && !connection.accessToken && !hasOpenClaudeMonitorCreds && !providerUsesApiKeyForUsage) {
       return Response.json({ message: "Usage not available for API key connections" });
     }
 
@@ -158,7 +160,9 @@ export async function GET(request, { params }) {
     // Override accessToken with monitor token when provided
     const effectiveConnection = monitorToken
       ? { ...connection, accessToken: monitorToken }
-      : connection;
+      : providerUsesApiKeyForUsage && !connection.accessToken
+        ? { ...connection, accessToken: connection.apiKey }
+        : connection;
 
     // Persist a freshly obtained Open Claude session back to the DB
     const onSessionRefreshed = async (newSession) => {

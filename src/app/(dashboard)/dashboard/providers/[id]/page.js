@@ -599,6 +599,7 @@ export default function ProviderDetailPage() {
     // Exclude non-llm models (embedding, tts, etc.) — they have dedicated pages under media-providers
     const displayModels = [
       ...resolvedModels,
+      ...suggestedModels.filter((sm) => !resolvedModels.some((m) => m.id === sm.id)),
       ...kiloFreeModels.filter((fm) => !resolvedModels.some((m) => m.id === fm.id)),
     ].filter((m) => !m.type || m.type === "llm");
     // Custom models added by user (stored as aliases: modelId → providerAlias/modelId)

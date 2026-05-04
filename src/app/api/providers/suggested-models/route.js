@@ -18,6 +18,11 @@ const FILTERS = {
     models
       .filter((m) => m.id?.endsWith("-free"))
       .map((m) => ({ id: m.id, name: m.id })),
+
+  "openai-all": (models) =>
+    models
+      .map((m) => ({ id: m.id, name: m.name || m.id }))
+      .filter((m) => !!m.id),
 };
 
 export async function GET(request) {

@@ -349,6 +349,20 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const fetchAliases = async () => {
+      try {
+        const res = await fetch("/api/models/alias");
+        const data = await res.json();
+        if (res.ok) setModelAliases(data.aliases || {});
+      } catch (error) {
+        console.log("Error fetching aliases:", error);
+      }
+    };
+    fetchAliases();
+  }, [isOpen]);
+
   const validateName = (value) => {
     if (!value.trim()) {
       setNameError("Name is required");
@@ -379,7 +393,9 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const isEdit = !!combo;
 
   const handleAddModel = (model) => {
-    setModels((prev) => [...prev, model]);
+    const modelValue = typeof model === "string" ? model : model?.value;
+    if (!modelValue) return;
+    setModels((prev) => (prev.includes(modelValue) ? prev : [...prev, modelValue]));
     setShowModelSelect(false);
   };
 
