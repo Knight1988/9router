@@ -583,6 +583,7 @@ export const PROVIDER_MODELS = {
     { id: "claude-haiku-4-5",  name: "Claude Haiku 4.5"  },
     { id: "gpt-5.4",           name: "GPT-5.4"           },
   ],
+  devgo: [], // DevGoVN (API Key provider — models fetched live from /v2/models)
 };
 
 export function isValidModel(aliasOrId, modelId, passthroughProviders = new Set()) {
@@ -640,6 +641,7 @@ const OAUTH_ALIASES = {
   "opencode-go": "ocg",
   "open-claude": "oc",
   "troll-llm": "tl",
+  devgo: "devgo",
   vertex: "vertex",
   "vertex-partner": "vertex-partner",
 };

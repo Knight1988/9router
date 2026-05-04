@@ -266,6 +266,11 @@ export const PROVIDERS = {
     baseUrl: "https://chat.trollllm.xyz/v1/chat/completions",
     format: "openai"
   },
+  devgo: {
+    baseUrl: "https://9router.tools.devgovietnam.io.vn/v2/chat/completions",
+    format: "openai",
+    retry: { 503: 3, 429: 2 }
+  },
   deepseek: {
     baseUrl: "https://api.deepseek.com/chat/completions",
     format: "openai"

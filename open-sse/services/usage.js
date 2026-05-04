@@ -45,6 +45,10 @@ const TROLL_LLM_CONFIG = {
   usageStatusUrl: "https://www.trollllm.xyz/api/user/usage/status",
 };
 
+const DEVGO_CONFIG = {
+  quotaUrl: "https://quota.9router.tools.devgovietnam.io.vn/",
+};
+
 /**
  * Get usage data for a provider connection
  * @param {Object} connection - Provider connection with accessToken
@@ -78,6 +82,8 @@ export async function getUsageForProvider(connection, options = {}) {
       return await getOpenClaudeUsage(connection, onSessionRefreshed);
     case "troll-llm":
       return await getTrollLlmUsage(accessToken);
+    case "devgo":
+      return await getDevGoUsage(accessToken);
     case "ollama":
       return await getOllamaUsage(accessToken);
     default:
@@ -1044,6 +1050,53 @@ async function getIflowUsage(accessToken) {
     return { message: "iFlow connected. Usage tracked per request." };
   } catch (error) {
     return { message: "Unable to fetch iFlow usage." };
+  }
+}
+
+/**
+ * DevGoVN Usage - Fetches quota from the DevGoVN quota API.
+ * The quota endpoint returns a 9router-native-shaped response:
+ * { plan, quotas: { [name]: { used, total, remaining, remainingPercentage, resetAt, unlimited, unit } } }
+ */
+async function getDevGoUsage(accessToken) {
+  try {
+    const res = await fetch(DEVGO_CONFIG.quotaUrl, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`DevGoVN quota API error: ${res.status}`);
+    }
+
+    const data = await res.json();
+
+    if (data.quotas && typeof data.quotas === "object") {
+      const normalized = {};
+      for (const [key, q] of Object.entries(data.quotas)) {
+        normalized[key] = {
+          used: q.used ?? 0,
+          total: q.total ?? 0,
+          remaining: q.remaining ?? 0,
+          remainingPercentage: q.remainingPercentage ?? (q.total > 0 ? Math.round(((q.remaining ?? 0) / q.total) * 100) : 0),
+          resetAt: q.resetAt ? parseResetTime(q.resetAt) : null,
+          unlimited: q.unlimited ?? false,
+          unit: q.unit ?? "$",
+        };
+      }
+      return {
+        plan: data.plan || "DevGoVN",
+        planExpiresAt: data.planExpiresAt ? parseResetTime(data.planExpiresAt) : null,
+        quotas: normalized,
+      };
+    }
+
+    return { plan: "DevGoVN", quotas: {}, message: data.message || null };
+  } catch (error) {
+    return { message: `DevGoVN connected. Unable to fetch usage: ${error.message}` };
   }
 }
 

@@ -503,6 +503,14 @@ export async function POST(request) {
           break;
         }
 
+        case "devgo": {
+          const devGoRes = await fetch("https://9router.tools.devgovietnam.io.vn/v2/models", {
+            headers: { "Authorization": `Bearer ${apiKey}` },
+          });
+          isValid = devGoRes.ok;
+          break;
+        }
+
         case "grok-web": {
           const token = apiKey.startsWith("sso=") ? apiKey.slice(4) : apiKey;
           // Cloudflare-bypass: send POST with same browser fingerprint headers as GrokWebExecutor
