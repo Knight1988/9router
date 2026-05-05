@@ -565,7 +565,7 @@ export const PROVIDER_MODELS = {
     { id: "stabilityai/stable-diffusion-xl-base-1.0", name: "SDXL Base 1.0", type: "image", params: [] },
   ],
   // Open Claude (API Key provider, key = provider id)
-  oc: [ // Open Claude (API Key provider)
+  "open-claude": [ // Open Claude (API Key provider)
     { id: "claude-opus-4-7", name: "Claude Opus 4.7" },
     { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
     { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },

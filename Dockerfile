@@ -18,6 +18,8 @@ RUN npm run build
 FROM ${BUN_IMAGE} AS runner
 WORKDIR /app
 
+RUN apk --no-cache upgrade && apk --no-cache add su-exec
+
 LABEL org.opencontainers.image.title="9router"
 
 ENV NODE_ENV=production
@@ -42,8 +44,7 @@ RUN mkdir -p /app/data && chown -R bun:bun /app && \
   ln -sf /app/data-home /root/.9router 2>/dev/null || true
 
 # Fix permissions at runtime (handles mounted volumes)
-RUN apk --no-cache upgrade && apk --no-cache add su-exec && \
-  printf '#!/bin/sh\nchown -R bun:bun /app/data /app/data-home 2>/dev/null\n[ -n "$DATA_DIR" ] && [ "$DATA_DIR" != "/app/data" ] && mkdir -p "$DATA_DIR" && chown -R bun:bun "$DATA_DIR" 2>/dev/null || true\nexec su-exec bun "$@"\n' > /entrypoint.sh && \
+RUN printf '#!/bin/sh\nchown -R bun:bun /app/data /app/data-home 2>/dev/null\n[ -n "$DATA_DIR" ] && [ "$DATA_DIR" != "/app/data" ] && mkdir -p "$DATA_DIR" && chown -R bun:bun "$DATA_DIR" 2>/dev/null || true\nexec su-exec bun "$@"\n' > /entrypoint.sh && \
   chmod +x /entrypoint.sh
 
 EXPOSE 20128
