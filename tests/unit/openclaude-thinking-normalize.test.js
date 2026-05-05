@@ -67,6 +67,44 @@ describe("filterToOpenAIFormat – thinking normalization for open-claude / trol
         const result = filterToOpenAIFormat(body, provider);
         expect(result.thinking).toBeUndefined();
       });
+
+      it("coalesces camelCase budgetTokens into budget_tokens", () => {
+        const body = makeBody({ type: "enabled", budgetTokens: 5000 });
+        const result = filterToOpenAIFormat(body, provider);
+        expect(result.thinking.type).toBe("enabled");
+        expect(result.thinking.budget_tokens).toBe(5000);
+        expect(result.thinking.budgetTokens).toBeUndefined();
+      });
+
+      it("injects default when budgetTokens is 0 (camelCase)", () => {
+        const body = makeBody({ type: "enabled", budgetTokens: 0 });
+        const result = filterToOpenAIFormat(body, provider);
+        expect(result.thinking.budget_tokens).toBe(10000);
+        expect(result.thinking.budgetTokens).toBeUndefined();
+      });
+
+      it("snake_case wins when both budget_tokens and budgetTokens are present", () => {
+        const body = makeBody({ type: "enabled", budget_tokens: 5000, budgetTokens: 8000 });
+        const result = filterToOpenAIFormat(body, provider);
+        expect(result.thinking.budget_tokens).toBe(5000);
+        expect(result.thinking.budgetTokens).toBeUndefined();
+      });
+
+      it("strips budgetTokens when type=disabled", () => {
+        const body = makeBody({ type: "disabled", budgetTokens: 5000 });
+        const result = filterToOpenAIFormat(body, provider);
+        expect(result.thinking.type).toBe("disabled");
+        expect(result.thinking.budget_tokens).toBeUndefined();
+        expect(result.thinking.budgetTokens).toBeUndefined();
+      });
+
+      it("coalesces budgetTokens when type is missing", () => {
+        const body = makeBody({ budgetTokens: 7000 });
+        const result = filterToOpenAIFormat(body, provider);
+        expect(result.thinking.type).toBe("enabled");
+        expect(result.thinking.budget_tokens).toBe(7000);
+        expect(result.thinking.budgetTokens).toBeUndefined();
+      });
     });
   }
 

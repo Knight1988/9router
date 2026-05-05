@@ -103,6 +103,11 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
   //    - missing type → treat as "enabled"
   if (body.thinking && typeof body.thinking === "object") {
     const t = body.thinking;
+    // Coalesce camelCase → snake_case (snake_case wins)
+    if (t.budgetTokens != null) {
+      if (t.budget_tokens == null) t.budget_tokens = t.budgetTokens;
+      delete t.budgetTokens;
+    }
     if (!t.type || t.type === "enabled") {
       t.type = "enabled";
       if (typeof t.budget_tokens !== "number" || t.budget_tokens <= 0) {

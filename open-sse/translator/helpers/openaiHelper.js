@@ -12,9 +12,16 @@ const NO_PREFILL_PROVIDERS = new Set(["open-claude", "troll-llm"]);
 // Mirrors the same logic in claudeHelper.prepareClaudeRequest but applied on the OpenAI-format path.
 // - type "enabled" (or missing type) → ensure budget_tokens > 0 (default 10000)
 // - type "disabled" → strip budget_tokens
+// Also coalesces camelCase budgetTokens (sent by some AI SDK clients) into budget_tokens;
+// snake_case wins when both are present.
 function normalizeOpenAIThinkingBudget(body) {
   if (!body.thinking || typeof body.thinking !== "object") return;
   const t = body.thinking;
+  // Coalesce camelCase → snake_case (snake_case wins)
+  if (t.budgetTokens != null) {
+    if (t.budget_tokens == null) t.budget_tokens = t.budgetTokens;
+    delete t.budgetTokens;
+  }
   if (!t.type || t.type === "enabled") {
     t.type = "enabled";
     if (typeof t.budget_tokens !== "number" || t.budget_tokens <= 0) {
