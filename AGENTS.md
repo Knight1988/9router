@@ -19,11 +19,8 @@ The project uses Azure DevOps Pipelines for CI/CD.
 
 Before concluding work that can affect request routing, translation, provider handling, combo behavior, or streaming, validate against the local dockerized 9router instance when feasible.
 
-- Rebuild/restart local docker if the running container does not include the current code.
+- Run `./test.sh` for standard local docker validation.
 - Prefer testing with the production-like local DB when available.
-- Always smoke test these combo models through local 9router to catch regressions:
-  - `coding`
-  - `planning`
 - Use the local HTTPS endpoint `https://localhost:20129/v1/chat/completions`.
 - Include at least one test that ends with a trailing assistant message when changing OpenAI-format routing for providers such as `open-claude` or `troll-llm`, since these providers can reject assistant prefill.
 - If local validation cannot be run, explicitly state that in the final response.

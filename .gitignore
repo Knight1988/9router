@@ -72,3 +72,4 @@ ecosystem.config.*
 promt.txt
 ~/.9router/
 scripts/agSniffer/*
+test.sh
