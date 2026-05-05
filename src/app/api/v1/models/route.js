@@ -1,5 +1,5 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
-import { getProviderAlias, isAnthropicCompatibleProvider, isOpenAICompatibleProvider } from "@/shared/constants/providers";
+import { AI_PROVIDERS, getProviderAlias, isAnthropicCompatibleProvider, isOpenAICompatibleProvider } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
 
 const parseOpenAIStyleModels = (data) => {
@@ -9,6 +9,39 @@ const parseOpenAIStyleModels = (data) => {
 
 // Matches provider IDs that are upstream/cross-instance connections (contain a UUID suffix)
 const UPSTREAM_CONNECTION_RE = /[-_][0-9a-f]{8,}$/i;
+
+const modelsFetcherCache = new Map();
+const MODELS_FETCHER_TTL_MS = 10 * 60 * 1000;
+
+async function fetchModelsFetcherIds(providerId) {
+  const cached = modelsFetcherCache.get(providerId);
+  if (cached && Date.now() - cached.ts < MODELS_FETCHER_TTL_MS) return cached.ids;
+
+  const providerDef = AI_PROVIDERS[providerId];
+  const fetcher = providerDef?.modelsFetcher;
+  if (!fetcher?.url) return [];
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(fetcher.url, { cache: "no-store", signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) return [];
+
+    const json = await response.json();
+    const raw = json.data ?? json.models ?? json;
+    const models = Array.isArray(raw) ? raw : [];
+    const ids = models
+      .map((m) => m.id || m.name || m.model)
+      .filter((id) => typeof id === "string" && id.trim() !== "");
+
+    modelsFetcherCache.set(providerId, { ids, ts: Date.now() });
+    return ids;
+  } catch {
+    return [];
+  }
+}
 
 async function fetchCompatibleModelIds(connection) {
   if (!connection?.apiKey) return [];
@@ -201,6 +234,10 @@ export async function GET() {
 
         if (isCompatibleProvider && rawModelIds.length === 0 && !UPSTREAM_CONNECTION_RE.test(providerId)) {
           rawModelIds = await fetchCompatibleModelIds(conn);
+        }
+
+        if (rawModelIds.length === 0 && AI_PROVIDERS[providerId]?.modelsFetcher && !UPSTREAM_CONNECTION_RE.test(providerId)) {
+          rawModelIds = await fetchModelsFetcherIds(providerId);
         }
 
         const modelIds = rawModelIds
