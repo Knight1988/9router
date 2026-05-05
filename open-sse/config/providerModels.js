@@ -634,7 +634,7 @@ const OAUTH_ALIASES = {
   cline: "cl",
   opencode: "ocd",
   "opencode-go": "ocg",
-  "open-claude": "oc",
+  "open-claude": "open-claude",
   "troll-llm": "tl",
   devgo: "devgo",
   vertex: "vertex",
