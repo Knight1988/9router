@@ -5,6 +5,7 @@ import PropTypes from "prop-types";
 import Modal from "./Modal";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
+import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
@@ -40,6 +41,7 @@ export default function ModelSelectModal({
   const [combos, setCombos] = useState([]);
   const [providerNodes, setProviderNodes] = useState([]);
   const [customModels, setCustomModels] = useState([]);
+  const [fetchedModels, setFetchedModels] = useState({});
 
   const fetchCombos = async () => {
     try {
@@ -90,6 +92,22 @@ export default function ModelSelectModal({
   }, [isOpen]);
 
   const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS, ...APIKEY_PROVIDERS }), []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    filteredActiveProviders.forEach(({ provider: pid }) => {
+      const info = allProviders[pid];
+      if (!info?.modelsFetcher) return;
+      if (info.passthroughModels) return;
+      if (isOpenAICompatibleProvider(pid) || isAnthropicCompatibleProvider(pid)) return;
+      if (getModelsByProviderId(pid).length > 0) return;
+      fetchSuggestedModels(info.modelsFetcher).then((models) => {
+        if (models?.length > 0) {
+          setFetchedModels((prev) => ({ ...prev, [pid]: models }));
+        }
+      });
+    });
+  }, [isOpen, filteredActiveProviders, allProviders]);
 
   // Group models by provider with priority order
   const groupedModels = useMemo(() => {
@@ -200,10 +218,16 @@ export default function ModelSelectModal({
           .filter((m) => m.providerAlias === alias && !hardcodedIds.has(m.id) && !customAliasIds.has(m.id))
           .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}`, isCustom: true }));
 
+        const existingIds = new Set([...hardcodedIds, ...customAliasIds, ...customRegisteredModels.map(m => m.id)]);
+        const fetchedSuggested = (fetchedModels[providerId] || [])
+          .filter((m) => !existingIds.has(m.id))
+          .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}` }));
+
         const allModels = [
           ...hardcodedModels.map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}` })),
           ...customAliasModels,
           ...customRegisteredModels,
+          ...fetchedSuggested,
         ];
 
         if (allModels.length > 0) {
@@ -218,7 +242,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, kindFilter]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, fetchedModels, kindFilter]);
 
   // Filter combos by search query (and hide combos when kindFilter is set — combos are LLM-only by design)
   const filteredCombos = useMemo(() => {
