@@ -221,7 +221,7 @@ export default function ModelSelectModal({
         const existingIds = new Set([...hardcodedIds, ...customAliasIds, ...customRegisteredModels.map(m => m.id)]);
         const fetchedSuggested = (fetchedModels[providerId] || [])
           .filter((m) => !existingIds.has(m.id))
-          .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}` }));
+          .map((m) => ({ id: m.id, name: `${alias}/${m.name || m.id}`, value: `${alias}/${m.id}` }));
 
         const allModels = [
           ...hardcodedModels.map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}` })),
