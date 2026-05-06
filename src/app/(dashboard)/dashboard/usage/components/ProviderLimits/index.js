@@ -6,18 +6,28 @@ import QuotaTable from "./QuotaTable";
 import Toggle from "@/shared/components/Toggle";
 import { parseQuotaData, calculatePercentage } from "./utils";
 import Card from "@/shared/components/Card";
-import Button from "@/shared/components/Button";
 import { EditConnectionModal } from "@/shared/components";
-import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
+import { USAGE_SUPPORTED_PROVIDERS, USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
+
+// Connection is eligible for the quota page when it uses OAuth or is an apikey provider whitelisted for quota
+const isUsageEligible = (conn) =>
+  USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) &&
+  (conn.authType === "oauth" || USAGE_APIKEY_PROVIDERS.includes(conn.provider));
 
 const REFRESH_INTERVAL_MS = 60000; // 60 seconds
+const DEPLETED_QUOTA_THRESHOLD = 5; // percent
+const AUTO_REFRESH_STORAGE_KEY = "quotaAutoRefresh";
 
 export default function ProviderLimits() {
   const [connections, setConnections] = useState([]);
   const [quotaData, setQuotaData] = useState({});
   const [loading, setLoading] = useState({});
   const [errors, setErrors] = useState({});
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const stored = window.localStorage.getItem(AUTO_REFRESH_STORAGE_KEY);
+    return stored === null ? true : stored === "true";
+  });
   const [lastUpdated, setLastUpdated] = useState(null);
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [countdown, setCountdown] = useState(60);
@@ -33,6 +43,7 @@ export default function ProviderLimits() {
   const [providerFilter, setProviderFilter] = useState("all");
   const [expiringFirst, setExpiringFirst] = useState(false);
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
+  const [bulkToggling, setBulkToggling] = useState(false);
 
   const intervalRef = useRef(null);
   const countdownRef = useRef(null);
@@ -276,12 +287,11 @@ export default function ProviderLimits() {
     try {
       const conns = await fetchConnections();
 
-      const supportedConnections = conns.filter((conn) =>
-        USAGE_SUPPORTED_PROVIDERS.includes(conn.provider),
-      );
+      // Filter eligible connections (OAuth + whitelisted apikey)
+      const eligibleConnections = conns.filter(isUsageEligible);
 
       await Promise.all(
-        supportedConnections.map((conn) =>
+        eligibleConnections.map((conn) =>
           fetchQuota(conn.id, conn.provider, monitorTokens[conn.id]),
         ),
       );
@@ -301,19 +311,17 @@ export default function ProviderLimits() {
       const conns = await fetchConnections();
       setConnectionsLoading(false);
 
-      const supportedConnections = conns.filter((conn) =>
-        USAGE_SUPPORTED_PROVIDERS.includes(conn.provider),
-      );
+      const eligibleConnections = conns.filter(isUsageEligible);
 
       // Mark all as loading before fetching
       const loadingState = {};
-      supportedConnections.forEach((conn) => {
+      eligibleConnections.forEach((conn) => {
         loadingState[conn.id] = true;
       });
       setLoading(loadingState);
 
       await Promise.all(
-        supportedConnections.map((conn) =>
+        eligibleConnections.map((conn) =>
           fetchQuota(conn.id, conn.provider, conn.providerSpecificData?.monitorToken),
         ),
       );
@@ -322,6 +330,12 @@ export default function ProviderLimits() {
 
     initializeData();
   }, [fetchConnections, fetchQuota]);
+
+  // Persist auto-refresh preference
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(AUTO_REFRESH_STORAGE_KEY, String(autoRefresh));
+  }, [autoRefresh]);
 
   // Auto-refresh interval
   useEffect(() => {
@@ -399,11 +413,8 @@ export default function ProviderLimits() {
     return "Just now";
   }, [lastUpdated]);
 
-  // Filter only supported providers
-  const filteredConnections = connections.filter(
-    (conn) =>
-      USAGE_SUPPORTED_PROVIDERS.includes(conn.provider),
-  );
+  // Filter eligible connections (OAuth + whitelisted apikey)
+  const filteredConnections = connections.filter(isUsageEligible);
 
   const providerFilteredConnections = filteredConnections.filter(
     (conn) => providerFilter === "all" || conn.provider === providerFilter,
@@ -428,6 +439,56 @@ export default function ProviderLimits() {
     if (orderA !== orderB) return orderA - orderB;
     return a.provider.localeCompare(b.provider);
   });
+
+  // Connection is depleted when any quota entry hit the threshold
+  const isConnectionDepleted = (conn) => {
+    const quotas = quotaData[conn.id]?.quotas;
+    if (!quotas?.length) return false;
+    return quotas.some((q) => {
+      if (!q.total || q.total <= 0) return false;
+      return calculatePercentage(q.used, q.total) <= DEPLETED_QUOTA_THRESHOLD;
+    });
+  };
+
+  const bulkSetActive = useCallback(
+    async (targetIds, isActive) => {
+      if (!targetIds.length || bulkToggling) return;
+      setBulkToggling(true);
+      try {
+        await Promise.all(
+          targetIds.map((id) =>
+            fetch(`/api/providers/${id}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ isActive }),
+            }),
+          ),
+        );
+        setConnections((prev) =>
+          prev.map((c) => (targetIds.includes(c.id) ? { ...c, isActive } : c)),
+        );
+      } catch (error) {
+        console.error("Error bulk toggling connections:", error);
+      } finally {
+        setBulkToggling(false);
+      }
+    },
+    [bulkToggling],
+  );
+
+  const handleDisableDepleted = () => {
+    const ids = sortedConnections
+      .filter((c) => (c.isActive ?? true) && isConnectionDepleted(c))
+      .map((c) => c.id);
+    bulkSetActive(ids, false);
+  };
+
+  const handleEnableAvailable = () => {
+    const ids = sortedConnections
+      .filter((c) => !(c.isActive ?? true) && !isConnectionDepleted(c))
+      .map((c) => c.id);
+    bulkSetActive(ids, true);
+  };
 
   const providerOptions = Array.from(new Set(filteredConnections.map((conn) => conn.provider))).sort();
   const selectedProviderLabel = providerFilter === "all" ? "All providers" : providerFilter;
@@ -478,36 +539,33 @@ export default function ProviderLimits() {
           <h2 className="text-xl font-semibold text-text-primary">
             Provider Limits
           </h2>
-          <span className="text-sm text-text-muted">
-            Last updated: {formatLastUpdated()}
-          </span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <div className="relative">
             <button
               type="button"
               onClick={() => setProviderMenuOpen((prev) => !prev)}
-              className="flex h-10 min-w-[116px] items-center justify-between gap-2 rounded-xl border border-black/10 bg-black/[0.02] px-3 text-sm text-text-primary transition-colors hover:bg-black/5 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/10 sm:min-w-[180px]"
+              className="flex h-8 items-center justify-between gap-1 rounded-lg border border-black/10 bg-black/[0.02] px-2 text-xs text-text-primary transition-colors hover:bg-black/5 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/10"
               aria-haspopup="menu"
               aria-expanded={providerMenuOpen}
               title="Filter quota providers"
             >
-              <span className="flex min-w-0 items-center gap-2">
+              <span className="flex min-w-0 items-center gap-1.5">
                 {providerFilter === "all" ? (
-                  <span className="material-symbols-outlined text-[20px] text-text-muted">apps</span>
+                  <span className="material-symbols-outlined text-[14px] text-text-muted">apps</span>
                 ) : (
                   <ProviderIcon
                     src={`/providers/${providerFilter}.png`}
                     alt={providerFilter}
-                    size={22}
-                    className="size-[22px] rounded-md object-contain"
+                    size={18}
+                    className="size-[18px] rounded object-contain"
                     fallbackText={providerFilter.slice(0, 2).toUpperCase()}
                   />
                 )}
-                <span className="truncate capitalize hidden sm:inline">{selectedProviderLabel}</span>
+                <span className="truncate capitalize hidden lg:inline">{selectedProviderLabel}</span>
               </span>
-              <span className="material-symbols-outlined text-[18px] text-text-muted">expand_more</span>
+              <span className="material-symbols-outlined text-[14px] text-text-muted">expand_more</span>
             </button>
 
             {providerMenuOpen && (
@@ -556,42 +614,66 @@ export default function ProviderLimits() {
           <button
             type="button"
             onClick={() => setExpiringFirst((prev) => !prev)}
-            className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-sm transition-colors ${expiringFirst ? "border-amber-500/40 bg-amber-500/10 text-amber-500" : "border-black/10 text-text-primary hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"}`}
+            className={`flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2 text-xs transition-colors ${expiringFirst ? "border-amber-500/40 bg-amber-500/10 text-amber-500" : "border-black/10 text-text-primary hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"}`}
             title="Sort accounts by earliest quota reset time"
           >
-            <span className="material-symbols-outlined text-[18px]">hourglass_top</span>
+            <span className="material-symbols-outlined text-[14px]">hourglass_top</span>
             <span className="hidden sm:inline">Expiring first</span>
           </button>
+
+          {/* Bulk: disable depleted */}
+          <button
+            type="button"
+            onClick={handleDisableDepleted}
+            disabled={bulkToggling}
+            className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-red-500/30 px-2 text-xs text-red-500 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+            title="Disable connections with depleted quota (within current filter)"
+          >
+            <span className="material-symbols-outlined text-[14px]">block</span>
+            <span className="hidden sm:inline">Turn off Empty</span>
+          </button>
+
+          {/* Bulk: enable available */}
+          <button
+            type="button"
+            onClick={handleEnableAvailable}
+            disabled={bulkToggling}
+            className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-emerald-500/30 px-2 text-xs text-emerald-500 transition-colors hover:bg-emerald-500/10 disabled:opacity-50"
+            title="Enable connections that still have quota (within current filter)"
+          >
+            <span className="material-symbols-outlined text-[14px]">check_circle</span>
+            <span className="hidden sm:inline">Turn on Available</span>
+          </button>
+
           {/* Auto-refresh toggle */}
           <button
             onClick={() => setAutoRefresh((prev) => !prev)}
-            className="flex shrink-0 items-center gap-2 rounded-lg border border-black/10 px-3 py-2 transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
+            className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-black/10 px-2 text-xs transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
             title={autoRefresh ? "Disable auto-refresh" : "Enable auto-refresh"}
           >
             <span
-              className={`material-symbols-outlined text-[18px] ${
+              className={`material-symbols-outlined text-[14px] ${
                 autoRefresh ? "text-primary" : "text-text-muted"
               }`}
             >
               {autoRefresh ? "toggle_on" : "toggle_off"}
             </span>
-            <span className="hidden text-sm text-text-primary sm:inline">Auto-refresh</span>
+            <span className="hidden text-text-primary sm:inline">Auto-refresh</span>
             {autoRefresh && (
-              <span className="text-xs text-text-muted">({countdown}s)</span>
+              <span className="text-[10px] text-text-muted tabular-nums">({countdown}s)</span>
             )}
           </button>
 
           {/* Refresh all button */}
-          <Button
-            variant="secondary"
-            size="md"
-            icon="refresh"
+          <button
+            type="button"
             onClick={refreshAll}
             disabled={refreshingAll}
-            loading={refreshingAll}
+            className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-black/10 px-2 text-xs text-text-primary transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5 disabled:opacity-50"
+            title="Refresh all"
           >
-            Refresh All
-          </Button>
+            <span className={`material-symbols-outlined text-[14px] ${refreshingAll ? "animate-spin" : ""}`}>refresh</span>
+          </button>
         </div>
       </div>
 
@@ -612,7 +694,7 @@ export default function ProviderLimits() {
               padding="none"
               className={`min-w-0 ${isInactive ? "opacity-60" : ""}`}
             >
-              <div className="px-4 py-3 border-b border-black/10 dark:border-white/10">
+              <div className="px-3 py-2 border-b border-black/10 dark:border-white/10">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <div className="w-8 h-8 shrink-0 rounded-md flex items-center justify-center overflow-hidden">
@@ -727,7 +809,7 @@ export default function ProviderLimits() {
                      </button>
                    </div>
 
-                    {showMonitorInputs[conn.id] && (
+                   {showMonitorInputs[conn.id] && (
                      <div className="space-y-2">
                        {conn.provider === "open-claude" ? (
                          <>
@@ -778,57 +860,55 @@ export default function ProviderLimits() {
                              ? "Credentials are used only for quota monitoring. Leave password blank to keep the saved one."
                              : "Leave empty to use the saved connection token. This only affects quota monitoring requests."}
                          </p>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={async () => {
-                              try {
-                                if (conn.provider === "open-claude") {
-                                  const username = monitorCreds[conn.id]?.username || "";
-                                  const password = monitorCreds[conn.id]?.password || "";
-                                  const existing = conn.providerSpecificData?.monitorCreds || {};
-                                  const newCreds = username
-                                    ? { username, ...(password ? { password } : { password: existing.password || "" }) }
-                                    : null;
-                                  await fetch(`/api/providers/${conn.id}`, {
-                                    method: "PUT",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify({
-                                      providerSpecificData: {
-                                        monitorCreds: newCreds,
-                                        monitorSession: null,
-                                      },
-                                    }),
-                                  });
-                                } else {
-                                  const token = monitorTokens[conn.id] || "";
-                                  await fetch(`/api/providers/${conn.id}`, {
-                                    method: "PUT",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify({
-                                      providerSpecificData: { monitorToken: token || null },
-                                    }),
-                                  });
-                                }
-                              } catch (e) {
-                                console.error("Failed to save monitor credentials:", e);
-                              }
-                              refreshProvider(conn.id, conn.provider);
-                            }}
-                            disabled={isLoading || rowBusy}
-                          >
-                            Apply
-                          </Button>
+                         <Button
+                           variant="secondary"
+                           size="sm"
+                           onClick={async () => {
+                             try {
+                               if (conn.provider === "open-claude") {
+                                 const username = monitorCreds[conn.id]?.username || "";
+                                 const password = monitorCreds[conn.id]?.password || "";
+                                 const existing = conn.providerSpecificData?.monitorCreds || {};
+                                 const newCreds = username
+                                   ? { username, ...(password ? { password } : { password: existing.password || "" }) }
+                                   : null;
+                                 await fetch(`/api/providers/${conn.id}`, {
+                                   method: "PUT",
+                                   headers: { "Content-Type": "application/json" },
+                                   body: JSON.stringify({
+                                     providerSpecificData: {
+                                       monitorCreds: newCreds,
+                                       monitorSession: null,
+                                     },
+                                   }),
+                                 });
+                               } else {
+                                 const token = monitorTokens[conn.id] || "";
+                                 await fetch(`/api/providers/${conn.id}`, {
+                                   method: "PUT",
+                                   headers: { "Content-Type": "application/json" },
+                                   body: JSON.stringify({
+                                     providerSpecificData: { monitorToken: token || null },
+                                   }),
+                                 });
+                               }
+                             } catch (e) {
+                               console.error("Failed to save monitor credentials:", e);
+                             }
+                             refreshProvider(conn.id, conn.provider);
+                           }}
+                           disabled={isLoading || rowBusy}
+                         >
+                           Apply
+                         </Button>
                        </div>
                      </div>
                    )}
-
                  </div>
                )}
 
                <div className="px-3 py-3">
                  {isLoading ? (
-
                   <div className="text-center py-5 text-text-muted">
                     <span className="material-symbols-outlined text-[28px] animate-spin">
                       progress_activity

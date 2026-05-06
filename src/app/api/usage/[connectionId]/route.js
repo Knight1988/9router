@@ -6,6 +6,7 @@ import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
@@ -124,14 +125,19 @@ export async function GET(request, { params }) {
       return Response.json({ message: `Usage API not implemented for ${connection.provider}` });
     }
 
+    // Allow OAuth connections, plus whitelisted apikey providers (glm/minimax/...)
     // API-key providers can still expose usage dashboards. An optional monitor token
     // lets Open Claude use a dedicated bearer without changing the saved connection.
     // For open-claude, saved monitorCreds (username+password) also satisfy this check.
     // Some providers (e.g. troll-llm, devgo) use API key as bearer for usage endpoints.
+    const isOAuth = connection.authType === "oauth";
+    const isApikeyEligible =
+      connection.authType === "apikey" &&
+      USAGE_APIKEY_PROVIDERS.includes(connection.provider);
     const hasOpenClaudeMonitorCreds = connection.provider === "open-claude" && !!connection.providerSpecificData?.monitorCreds?.username;
     const providerUsesApiKeyForUsage = ["troll-llm", "devgo"].includes(connection.provider) && !!connection.apiKey;
-    if (connection.authType !== "oauth" && !monitorToken && !connection.accessToken && !hasOpenClaudeMonitorCreds && !providerUsesApiKeyForUsage) {
-      return Response.json({ message: "Usage not available for API key connections" });
+    if (!isOAuth && !isApikeyEligible && !monitorToken && !connection.accessToken && !hasOpenClaudeMonitorCreds && !providerUsesApiKeyForUsage) {
+      return Response.json({ message: "Usage not available for this connection" });
     }
 
     // Resolve connection proxy config; force strictProxy=false so quota/refresh fall back to direct on failure
@@ -145,7 +151,7 @@ export async function GET(request, { params }) {
     };
 
     // Refresh OAuth credentials when needed. API-key providers skip refresh.
-    if (connection.authType === "oauth" && !monitorToken) {
+    if (isOAuth && !monitorToken) {
       try {
         const result = await refreshAndUpdateCredentials(connection, false, proxyOptions);
         connection = result.connection;
@@ -183,7 +189,7 @@ export async function GET(request, { params }) {
 
     // If provider returned an auth-expired message instead of throwing,
     // force-refresh token and retry once (only for OAuth)
-    if (isAuthExpiredMessage(usage) && connection.refreshToken && !monitorToken) {
+    if (isOAuth && isAuthExpiredMessage(usage) && connection.refreshToken && !monitorToken) {
       try {
         const retryResult = await refreshAndUpdateCredentials(connection, true, proxyOptions);
         connection = retryResult.connection;

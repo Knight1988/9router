@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.7
 ARG BUN_IMAGE=oven/bun:1.3.2-alpine
 FROM ${BUN_IMAGE} AS base
 WORKDIR /app
