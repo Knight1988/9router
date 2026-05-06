@@ -31,14 +31,16 @@ const mockDbInstance = {
   __throwOnConstruct: false,
 };
 
-// Mock sqliteAdapter
-vi.mock("../../src/lib/sqliteAdapter.js", () => ({
-  openDatabase: vi.fn((path, options) => {
-    if (mockDbInstance.__throwOnConstruct) {
-      throw new Error("SQLITE_CANTOPEN");
+// Mock better-sqlite3 as a class so `new Database(...)` works
+vi.mock("better-sqlite3", () => ({
+  default: class MockDatabase {
+    constructor() {
+      if (mockDbInstance.__throwOnConstruct) {
+        throw new Error("SQLITE_CANTOPEN");
+      }
+      return mockDbInstance;
     }
-    return mockDbInstance;
-  }),
+  },
 }));
 
 // We need to dynamically import after mocks are registered

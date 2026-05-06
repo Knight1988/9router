@@ -1,7 +1,6 @@
 import path from "node:path";
 import fs from "node:fs";
 import { DATA_DIR } from "@/lib/dataDir.js";
-import { openDatabase } from "@/lib/sqliteAdapter.js";
 
 const isCloud = typeof caches !== "undefined" && typeof caches === "object";
 
@@ -23,7 +22,8 @@ function getDb() {
   if (isCloud) return null;
   if (dbInstance) return dbInstance;
 
-  const db = openDatabase(DB_FILE);
+  const Database = require("better-sqlite3");
+  const db = new Database(DB_FILE);
 
   // WAL mode for better concurrent read performance
   db.pragma("journal_mode = WAL");
@@ -123,6 +123,54 @@ function migrateLegacyJson(db) {
     console.log(`[requestDetailsDb] Migrated ${records.length} records from JSON to SQLite`);
   } catch (err) {
     console.error("[requestDetailsDb] Migration failed:", err);
+  }
+}
+
+function backfillDenormalizedColumns(db) {
+  try {
+    const rowsToUpdate = db.prepare(`
+      SELECT id, response, latency
+      FROM request_details
+      WHERE response_status IS NULL OR latency_total IS NULL OR latency_ttft IS NULL
+      LIMIT 1000
+    `).all();
+
+    if (rowsToUpdate.length === 0) return;
+
+    const update = db.prepare(`
+      UPDATE request_details
+      SET response_status = @response_status,
+          latency_total = @latency_total,
+          latency_ttft = @latency_ttft
+      WHERE id = @id
+    `);
+
+    const updateMany = db.transaction((rows) => {
+      for (const row of rows) {
+        let responseObj = {};
+        let latencyObj = {};
+        
+        try {
+          if (row.response) responseObj = JSON.parse(row.response);
+        } catch {}
+        
+        try {
+          if (row.latency) latencyObj = JSON.parse(row.latency);
+        } catch {}
+
+        update.run({
+          id: row.id,
+          response_status: responseObj.status != null ? Number(responseObj.status) : null,
+          latency_total: latencyObj.total != null ? Number(latencyObj.total) : null,
+          latency_ttft: latencyObj.ttft != null ? Number(latencyObj.ttft) : null,
+        });
+      }
+    });
+
+    updateMany(rowsToUpdate);
+    console.log(`[requestDetailsDb] Backfilled ${rowsToUpdate.length} rows with denormalized columns`);
+  } catch (err) {
+    console.error("[requestDetailsDb] Backfill failed:", err);
   }
 }
 
