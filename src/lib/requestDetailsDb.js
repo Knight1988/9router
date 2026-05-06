@@ -1,6 +1,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import { DATA_DIR } from "@/lib/dataDir.js";
+import { openDatabase } from "@/lib/sqliteAdapter.js";
 
 const isCloud = typeof caches !== "undefined" && typeof caches === "object";
 
@@ -22,8 +23,7 @@ function getDb() {
   if (isCloud) return null;
   if (dbInstance) return dbInstance;
 
-  const Database = require("better-sqlite3");
-  const db = new Database(DB_FILE);
+  const db = openDatabase(DB_FILE);
 
   // WAL mode for better concurrent read performance
   db.pragma("journal_mode = WAL");

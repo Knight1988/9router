@@ -4,6 +4,7 @@ import { homedir } from "os";
 import { join } from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { openDatabase } from "@/lib/sqliteAdapter.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -73,14 +74,11 @@ const normalize = (value) => {
 };
 
 /**
- * Extract tokens via better-sqlite3 (bundled dependency).
+ * Extract tokens via sqliteAdapter (bun:sqlite or better-sqlite3).
  * This is the preferred strategy — no external CLI required.
  */
 function extractTokensViaBetterSqlite(dbPath) {
-  // Dynamic require so the route stays importable even if native bindings fail
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const Database = require("better-sqlite3");
-  const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+  const db = openDatabase(dbPath, { readonly: true, fileMustExist: true });
 
   const query = (key) => {
     const row = db.prepare("SELECT value FROM itemTable WHERE key=? LIMIT 1").get(key);
@@ -218,7 +216,7 @@ export async function GET() {
       }
     }
 
-    // Strategy 1: better-sqlite3 (bundled — no external tools required)
+    // Strategy 1: sqliteAdapter (bun:sqlite or better-sqlite3 — no external tools required)
     try {
       const tokens = extractTokensViaBetterSqlite(dbPath);
       if (tokens.accessToken && tokens.machineId) {
