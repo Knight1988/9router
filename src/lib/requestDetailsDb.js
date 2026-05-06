@@ -8,6 +8,8 @@ const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_BATCH_SIZE = 20;
 const DEFAULT_FLUSH_INTERVAL_MS = 5000;
 const DEFAULT_MAX_JSON_SIZE = 5 * 1024;
+const DEFAULT_RETENTION_DAYS = 3;
+const DEFAULT_CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const CONFIG_CACHE_TTL_MS = 5000;
 const DB_FILE = isCloud ? null : path.join(DATA_DIR, "request-details.db");
 const LEGACY_JSON_FILE = isCloud ? null : path.join(DATA_DIR, "request-details.json");
@@ -71,11 +73,11 @@ function getDb() {
 
   dbInstance = db;
 
-  // Migrate from legacy JSON file if it exists
   migrateLegacyJson(db);
 
-  // Backfill denormalized columns for existing rows
   backfillDenormalizedColumns(db);
+
+  scheduleCleanup(db);
 
   return db;
 }
@@ -174,6 +176,48 @@ function backfillDenormalizedColumns(db) {
   }
 }
 
+async function cleanupOldRecords(db) {
+  try {
+    const config = await getObservabilityConfig();
+    const retentionDays = config.retentionDays;
+    
+    if (retentionDays <= 0) {
+      return;
+    }
+
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
+    const cutoffIso = cutoffDate.toISOString();
+
+    const result = db.prepare("DELETE FROM request_details WHERE timestamp < ?").run(cutoffIso);
+    
+    if (result.changes > 0) {
+      console.log(`[requestDetailsDb] Cleaned up ${result.changes} records older than ${retentionDays} days`);
+      
+      db.pragma("wal_checkpoint(TRUNCATE)");
+    }
+  } catch (err) {
+    console.error("[requestDetailsDb] Cleanup failed:", err);
+  }
+}
+
+let cleanupInterval = null;
+
+async function scheduleCleanup(db) {
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval);
+  }
+
+  await cleanupOldRecords(db);
+
+  const intervalMs = parseInt(process.env.RETENTION_CLEANUP_INTERVAL_MS || String(DEFAULT_CLEANUP_INTERVAL_MS), 10);
+  cleanupInterval = setInterval(() => {
+    cleanupOldRecords(db).catch(err => {
+      console.error("[requestDetailsDb] Scheduled cleanup error:", err);
+    });
+  }, intervalMs);
+}
+
 // Config cache
 let cachedConfig = null;
 let cachedConfigTs = 0;
@@ -196,6 +240,9 @@ async function getObservabilityConfig() {
       batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
       flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
       maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
+      retentionDays: settings.requestDetailsRetentionDays != null
+        ? Number(settings.requestDetailsRetentionDays)
+        : parseInt(process.env.REQUEST_DETAILS_RETENTION_DAYS || String(DEFAULT_RETENTION_DAYS), 10),
     };
   } catch {
     cachedConfig = {
@@ -203,6 +250,7 @@ async function getObservabilityConfig() {
       batchSize: DEFAULT_BATCH_SIZE,
       flushIntervalMs: DEFAULT_FLUSH_INTERVAL_MS,
       maxJsonSize: DEFAULT_MAX_JSON_SIZE,
+      retentionDays: DEFAULT_RETENTION_DAYS,
     };
   }
 
@@ -464,6 +512,7 @@ export async function getDistinctProviders() {
 // Graceful shutdown
 const _shutdownHandler = async () => {
   if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+  if (cleanupInterval) { clearInterval(cleanupInterval); cleanupInterval = null; }
   if (writeBuffer.length > 0) await flushToDatabase();
   if (dbInstance) { dbInstance.close(); dbInstance = null; }
 };
