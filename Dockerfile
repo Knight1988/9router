@@ -1,7 +1,7 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
 
-RUN apk --no-cache upgrade && apk --no-cache add python3 make g++ linux-headers
+RUN apk update && apk --no-cache upgrade && apk --no-cache add python3 make g++ linux-headers
 
 COPY package.json ./
 RUN --mount=type=cache,target=/root/.npm \
@@ -14,7 +14,7 @@ RUN npm run build
 FROM node:22-alpine AS runner
 WORKDIR /app
 
-RUN apk --no-cache upgrade && apk --no-cache add su-exec
+RUN apk update && apk --no-cache upgrade && apk --no-cache add su-exec
 
 LABEL org.opencontainers.image.title="9router"
 
