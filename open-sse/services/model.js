@@ -17,6 +17,8 @@ const ALIAS_TO_PROVIDER_ID = {
   // TTS providers
   el: "elevenlabs",
   // API Key providers
+  tl: "troll-llm",
+  "troll-llm": "troll-llm",
   openai: "openai",
   anthropic: "anthropic",
   gemini: "gemini",
