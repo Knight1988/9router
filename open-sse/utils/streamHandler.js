@@ -93,6 +93,9 @@ export function createDisconnectAwareStream(transformStream, streamController) {
   return new ReadableStream({
     async pull(controller) {
       if (!streamController.isConnected()) {
+        if (process.env.DEBUG === "1") {
+          console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] 🔍 [DEBUG-disconnectStream] isConnected=false → closing stream`);
+        }
         controller.close();
         return;
       }
@@ -103,6 +106,10 @@ export function createDisconnectAwareStream(transformStream, streamController) {
           streamController.handleComplete();
           controller.close();
           return;
+        }
+        if (process.env.DEBUG === "1") {
+          const text = new TextDecoder().decode(value);
+          console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] 🔍 [DEBUG-disconnectStream] pull: valueLen=${value.byteLength} text=${JSON.stringify(text.slice(0, 200))}`);
         }
         controller.enqueue(value);
       } catch (error) {

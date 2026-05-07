@@ -111,7 +111,11 @@ export function createSSEStream(options = {}) {
                 }
               }
 
-              if (!hasValuableContent(parsed, FORMATS.OPENAI)) {
+              const hasValuable = hasValuableContent(parsed, FORMATS.OPENAI);
+              if (process.env.DEBUG === "1") {
+                console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] 🔍 [DEBUG-passthrough] hasValuable=${hasValuable} chunk=${JSON.stringify(parsed).slice(0, 200)}`);
+              }
+              if (!hasValuable) {
                 continue;
               }
 
@@ -119,6 +123,7 @@ export function createSSEStream(options = {}) {
               const content = delta?.content;
               const reasoning = delta?.reasoning_content;
               const toolCallsInDelta = delta?.tool_calls?.length > 0;
+              const hasRole = delta?.role;
               if (content && typeof content === "string") {
                 totalContentLength += content.length;
                 accumulatedContent += content;
@@ -127,7 +132,11 @@ export function createSSEStream(options = {}) {
                 totalContentLength += reasoning.length;
                 accumulatedThinking += reasoning;
               }
-              if ((content || reasoning || toolCallsInDelta) && onFirstContent && !firstContentFired) {
+              if (toolCallsInDelta) hasToolCalls = true;
+              if ((content || reasoning || toolCallsInDelta || hasRole) && onFirstContent && !firstContentFired) {
+                if (process.env.DEBUG === "1") {
+                  console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] 🔍 [DEBUG-passthrough] onFirstContent firing: content=${!!content} reasoning=${!!reasoning} toolCalls=${toolCallsInDelta} hasRole=${!!hasRole}`);
+                }
                 firstContentFired = true;
                 onFirstContent();
               }
@@ -280,12 +289,62 @@ export function createSSEStream(options = {}) {
 
         if (mode === STREAM_MODE.PASSTHROUGH) {
           if (buffer) {
-            let output = buffer;
-            if (buffer.startsWith("data:") && !buffer.startsWith("data: ")) {
-              output = "data: " + buffer.slice(5);
+            if (process.env.DEBUG === "1") {
+              console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] 🔍 [DEBUG-passthrough-flush] buffer=${JSON.stringify(buffer.slice(0, 300))} firstContentFired=${firstContentFired} totalContentLength=${totalContentLength}`);
             }
-            reqLogger?.appendConvertedChunk?.(output);
-            controller.enqueue(sharedEncoder.encode(output));
+
+            // Detect non-streaming JSON response in passthrough mode.
+            // Some providers (e.g. troll-llm) occasionally return a completed
+            // chat.completion JSON body instead of SSE even when stream=true.
+            // Convert it to a proper SSE chunk so detectContent sees real content.
+            const trimmedBuffer = buffer.trim();
+            if (!firstContentFired && trimmedBuffer.startsWith("{")) {
+              try {
+                const parsed = JSON.parse(trimmedBuffer);
+                if (parsed.choices?.[0]?.message?.content) {
+                  const content = parsed.choices[0].message.content;
+                  const finishReason = parsed.choices[0].finish_reason || "stop";
+                  const chunk = {
+                    id: parsed.id || `chatcmpl-${Date.now()}`,
+                    object: "chat.completion.chunk",
+                    created: parsed.created || Math.floor(Date.now() / 1000),
+                    model: parsed.model || model,
+                    choices: [{ index: 0, delta: { role: "assistant", content }, finish_reason: null }]
+                  };
+                  const finishChunk = {
+                    id: chunk.id, object: "chat.completion.chunk", created: chunk.created, model: chunk.model,
+                    choices: [{ index: 0, delta: {}, finish_reason: finishReason }],
+                    usage: parsed.usage || null
+                  };
+                  totalContentLength += content.length;
+                  accumulatedContent += content;
+                  const chunkOutput = `data: ${JSON.stringify(chunk)}\n`;
+                  const finishOutput = `data: ${JSON.stringify(finishChunk)}\n`;
+                  reqLogger?.appendConvertedChunk?.(chunkOutput);
+                  controller.enqueue(sharedEncoder.encode(chunkOutput));
+                  reqLogger?.appendConvertedChunk?.(finishOutput);
+                  controller.enqueue(sharedEncoder.encode(finishOutput));
+                  firstContentFired = true;
+                  onFirstContent?.();
+                  // Skip normal buffer output below — we've already converted it
+                  buffer = "";
+                  if (process.env.DEBUG === "1") {
+                    console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] 🔍 [DEBUG-passthrough-flush] converted non-streaming JSON to SSE, content=${content.slice(0, 80)}`);
+                  }
+                }
+              } catch {
+                // Not valid JSON — fall through to normal buffer output
+              }
+            }
+
+            if (buffer) {
+              let output = buffer;
+              if (buffer.startsWith("data:") && !buffer.startsWith("data: ")) {
+                output = "data: " + buffer.slice(5);
+              }
+              reqLogger?.appendConvertedChunk?.(output);
+              controller.enqueue(sharedEncoder.encode(output));
+            }
           }
 
           if (!hasValidUsage(usage) && totalContentLength > 0) {

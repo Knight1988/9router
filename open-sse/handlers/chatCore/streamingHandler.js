@@ -53,6 +53,8 @@ async function detectContent(transformedBody, timeoutMs, onFirstContentSignal) {
   const buffered = [];
   let settled = false;
   let contentDetected = false;
+  let loopResolve;
+  const loopDone = new Promise((res) => { loopResolve = res; });
 
   const result = await new Promise((resolve) => {
     const timer = setTimeout(() => {
@@ -67,6 +69,9 @@ async function detectContent(transformedBody, timeoutMs, onFirstContentSignal) {
       clearTimeout(timer);
       if (!settled) {
         settled = true;
+        if (process.env.DEBUG === "1") {
+          console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] 🔍 [DEBUG-detectContent] onFirstContent callback fired → resolving {kind:"content"}`);
+        }
         resolve({ kind: "content" });
       }
     };
@@ -75,14 +80,28 @@ async function detectContent(transformedBody, timeoutMs, onFirstContentSignal) {
       try {
         while (true) {
           const { done, value } = await reader.read();
+          if (process.env.DEBUG === "1") {
+            console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] 🔍 [DEBUG-detectContent] read: done=${done} settled=${settled} buffered=${buffered.length} valueLen=${value?.byteLength ?? "n/a"}`);
+          }
           if (done) {
             clearTimeout(timer);
             if (!settled) {
               settled = true;
-              resolve(contentDetected ? { kind: "content" } : { kind: "empty", reason: "end-of-stream" });
+              // If we buffered chunks but onFirstContent never fired (race condition:
+              // transform flush() completed before detectContent started), treat as content.
+              // The transform already filtered via hasValuableContent, so buffered chunks ARE valuable.
+              const hasBufferedContent = buffered.length > 0;
+              const r = (contentDetected || hasBufferedContent) ? { kind: "content" } : { kind: "empty", reason: "end-of-stream" };
+              if (process.env.DEBUG === "1") {
+                console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] 🔍 [DEBUG-detectContent] loop-done: resolving ${JSON.stringify(r)} (contentDetected=${contentDetected} hasBufferedContent=${hasBufferedContent})`);
+              }
+              resolve(r);
             }
             break;
           }
+          // Stop buffering once content has been detected — buildReplayStream will
+          // continue reading the remainder directly from this reader.
+          if (settled) break;
           buffered.push(value);
         }
       } catch (err) {
@@ -91,9 +110,19 @@ async function detectContent(transformedBody, timeoutMs, onFirstContentSignal) {
           settled = true;
           resolve({ kind: "empty", reason: `read-error: ${err.message}` });
         }
+      } finally {
+        loopResolve();
       }
     })();
   });
+
+  // Wait for the background loop to fully exit before returning the reader,
+  // so buildReplayStream has exclusive access with no concurrent reads.
+  await loopDone;
+
+  if (process.env.DEBUG === "1") {
+    console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] 🔍 [DEBUG-detectContent] final result=${JSON.stringify(result)} buffered=${buffered.length}`);
+  }
 
   return { result, reader, buffered };
 }
