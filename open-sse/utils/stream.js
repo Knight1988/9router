@@ -44,7 +44,8 @@ export function createSSEStream(options = {}) {
     connectionId = null,
     body = null,
     onStreamComplete = null,
-    apiKey = null
+    apiKey = null,
+    onFirstContent = null
   } = options;
 
   let buffer = "";
@@ -61,6 +62,7 @@ export function createSSEStream(options = {}) {
   let ttftAt = null;
   let hasToolCalls = false;
   let hasEmittedContent = false;
+  let firstContentFired = false;
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -116,6 +118,7 @@ export function createSSEStream(options = {}) {
               const delta = parsed.choices?.[0]?.delta;
               const content = delta?.content;
               const reasoning = delta?.reasoning_content;
+              const toolCallsInDelta = delta?.tool_calls?.length > 0;
               if (content && typeof content === "string") {
                 totalContentLength += content.length;
                 accumulatedContent += content;
@@ -123,6 +126,10 @@ export function createSSEStream(options = {}) {
               if (reasoning && typeof reasoning === "string") {
                 totalContentLength += reasoning.length;
                 accumulatedThinking += reasoning;
+              }
+              if ((content || reasoning || toolCallsInDelta) && onFirstContent && !firstContentFired) {
+                firstContentFired = true;
+                onFirstContent();
               }
 
               const extracted = extractUsage(parsed, body);
@@ -230,6 +237,12 @@ export function createSSEStream(options = {}) {
         if (parsed.choices?.[0]?.delta?.tool_calls?.length > 0) hasToolCalls = true;
         if (parsed.type === "content_block_start" && parsed.content_block?.type === "tool_use") hasToolCalls = true;
 
+        // Fire first-content signal as soon as we see any meaningful content or thinking
+        if (onFirstContent && !firstContentFired && (accumulatedThinking || hasToolCalls)) {
+          firstContentFired = true;
+          onFirstContent();
+        }
+
         if (translated?.length > 0) {
           for (const item of translated) {
             // Filter empty chunks
@@ -253,6 +266,7 @@ export function createSSEStream(options = {}) {
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
             hasEmittedContent = true;
+            if (onFirstContent && !firstContentFired) { firstContentFired = true; onFirstContent(); }
           }
         }
       }
@@ -296,7 +310,7 @@ export function createSSEStream(options = {}) {
             onStreamComplete({
               content: accumulatedContent,
               thinking: accumulatedThinking,
-              emptyStream: totalContentLength === 0
+              emptyStream: totalContentLength === 0 && !accumulatedThinking
             }, usage, ttftAt);
           }
           return;
@@ -359,7 +373,7 @@ export function createSSEStream(options = {}) {
         }
         
         if (onStreamComplete) {
-          const emptyStream = !hasEmittedContent && totalContentLength === 0 && !hasToolCalls;
+          const emptyStream = !hasEmittedContent && totalContentLength === 0 && !hasToolCalls && !accumulatedThinking;
           onStreamComplete({
             content: accumulatedContent,
             thinking: accumulatedThinking,
@@ -373,7 +387,7 @@ export function createSSEStream(options = {}) {
   });
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, onFirstContent = null) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -385,11 +399,12 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    onFirstContent
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, onFirstContent = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
@@ -398,6 +413,7 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    onFirstContent
   });
 }
