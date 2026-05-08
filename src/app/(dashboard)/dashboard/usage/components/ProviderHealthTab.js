@@ -207,7 +207,7 @@ export default function ProviderHealthTab() {
                 type="button"
                 onClick={() => handlePeriodChange(p.value)}
                 className={cn(
-                  "px-3 py-1 rounded-md text-xs font-medium transition-colors",
+                  "px-3 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer",
                   period === p.value
                     ? "bg-primary text-white"
                     : "text-text-muted hover:bg-bg-subtle/60"
