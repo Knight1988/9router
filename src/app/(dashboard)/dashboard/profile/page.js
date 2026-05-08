@@ -27,6 +27,7 @@ export default function ProfilePage() {
   const [proxyStatus, setProxyStatus] = useState({ type: "", message: "" });
   const [proxyLoading, setProxyLoading] = useState(false);
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
+  const [observabilityHealth, setObservabilityHealth] = useState(null);
 
   // SSL state
   const [sslStatus, setSslStatus] = useState(null);
@@ -67,6 +68,11 @@ export default function ProfilePage() {
         console.error("Failed to fetch settings:", err);
         setLoading(false);
       });
+    
+    fetch("/api/health/observability")
+      .then((res) => res.json())
+      .then((data) => setObservabilityHealth(data))
+      .catch((err) => console.error("Failed to fetch observability health:", err));
   }, []);
 
   const updateOutboundProxy = async (e) => {
@@ -1041,6 +1047,19 @@ export default function ProfilePage() {
               <p className="text-xs sm:text-sm text-text-muted">
                 Record request details for inspection in the logs view
               </p>
+              {observabilityHealth && observabilityHealth.databaseInitialized && (
+                <p className="text-xs text-text-muted mt-1">
+                  {observabilityHealth.recordCount > 0 ? (
+                    <span className="text-green-600 dark:text-green-400">
+                      ✓ {observabilityHealth.recordCount} records tracked
+                    </span>
+                  ) : (
+                    <span className="text-yellow-600 dark:text-yellow-400">
+                      Database initialized, waiting for requests
+                    </span>
+                  )}
+                </p>
+              )}
             </div>
             <Toggle
               checked={observabilityEnabled}

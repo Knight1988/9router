@@ -17,6 +17,7 @@ import {
   WATCHDOG_INTERVAL_MS, NETWORK_CHECK_INTERVAL_MS,
 } from "@/lib/tunnel/tunnelConfig";
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
+import { initializeDatabase } from "@/lib/requestDetailsDb";
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
@@ -45,6 +46,7 @@ const g = global.__appSingleton ??= {
 
 export async function initializeApp() {
   try {
+    initializeDatabase();
     await cleanupProviderConnections();
     const settings = await getSettings();
 

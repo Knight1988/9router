@@ -20,7 +20,7 @@ if (!fs.existsSync(DATA_DIR)) {
 
 let dbInstance = null;
 
-function getDb() {
+export function getDb() {
   if (isCloud) return null;
   if (dbInstance) return dbInstance;
 
@@ -533,3 +533,13 @@ function ensureShutdownHandler() {
 }
 
 ensureShutdownHandler();
+
+export function initializeDatabase() {
+  if (isCloud) return;
+  try {
+    getDb();
+    console.log("[requestDetailsDb] Database initialized on startup");
+  } catch (err) {
+    console.error("[requestDetailsDb] Failed to initialize database:", err);
+  }
+}
