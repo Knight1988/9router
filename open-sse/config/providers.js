@@ -257,6 +257,16 @@ export const PROVIDERS = {
     format: "claude",
     headers: { ...CLAUDE_API_HEADERS }
   },
+  "cc-claudible": {
+    baseUrl: "https://cc.claudible.io/v1/messages",
+    format: "claude",
+    headers: { ...CLAUDE_API_HEADERS }
+  },
+  "claude-claudible": {
+    baseUrl: "https://claude.claudible.io/v1/messages",
+    format: "claude",
+    headers: { ...CLAUDE_API_HEADERS }
+  },
   "open-claude": {
     baseUrl: "https://open-claude.com/v1/chat/completions",
     format: "openai",

@@ -69,6 +69,10 @@ const DEVGO_CONFIG = {
   summaryPath: "/api/customer/summary",
 };
 
+const CLAUDIBLE_CONFIG = {
+  lookupUrl: "https://claudible.io/dashboard/lookup",
+};
+
 /**
  * Get usage data for a provider connection
  * @param {Object} connection - Provider connection with accessToken
@@ -112,6 +116,9 @@ export async function getUsageForProvider(connection, options = {}) {
     case "minimax":
     case "minimax-cn":
       return await getMiniMaxUsage(apiKey, provider, proxyOptions);
+    case "cc-claudible":
+    case "claude-claudible":
+      return await getClaudibleUsage(apiKey, proxyOptions);
     default:
       return { message: `Usage API not implemented for ${provider}` };
   }
@@ -1464,4 +1471,57 @@ async function getMiniMaxUsage(apiKey, provider, proxyOptions = null) {
   }
 
   return { message: lastErrorMessage ? `MiniMax connected. Unable to fetch usage: ${lastErrorMessage}` : "MiniMax connected. Unable to fetch usage." };
+}
+
+/**
+ * Get Claudible usage (CC Claudible, Claude Claudible)
+ */
+async function getClaudibleUsage(apiKey, proxyOptions = null) {
+  try {
+    const response = await proxyAwareFetch(
+      CLAUDIBLE_CONFIG.lookupUrl,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: apiKey }),
+      },
+      proxyOptions
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return {
+        error: `Claudible API error: ${response.status} ${response.statusText}`,
+        details: errorText,
+      };
+    }
+
+    const data = await response.json();
+
+    if (!data.valid) {
+      return { error: "Invalid API key" };
+    }
+
+    // Parse subscription expiration
+    const subscriptionExpiresAt = data.subscriptionExpiresAt
+      ? parseResetTime(data.subscriptionExpiresAt)
+      : null;
+
+    return {
+      balance: data.balance,
+      dailyQuota: data.dailyQuota,
+      accountType: data.accountType,
+      status: data.status,
+      subscriptionActive: data.subscriptionActive,
+      subscriptionExpiresAt,
+      totalRequests: data.stats?.totalRequests || 0,
+      totalCost: data.stats?.totalCost || 0,
+      userEmail: data.userEmail,
+      userName: data.userName,
+    };
+  } catch (error) {
+    return {
+      error: `Failed to fetch Claudible usage: ${error.message}`,
+    };
+  }
 }
