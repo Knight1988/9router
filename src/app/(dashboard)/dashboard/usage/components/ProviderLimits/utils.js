@@ -189,6 +189,32 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "cc-claudible":
+      case "claude-claudible":
+        if (data.error) {
+          normalizedQuotas.push({
+            name: "error",
+            used: 0,
+            total: 0,
+            resetAt: null,
+            message: data.error,
+          });
+        } else if (data.dailyQuota !== undefined) {
+          // Claudible returns balance and dailyQuota
+          const used = Math.max(0, (data.dailyQuota || 0) - (data.balance || 0));
+          normalizedQuotas.push({
+            name: "Daily Quota",
+            used: used,
+            total: data.dailyQuota || 0,
+            resetAt: null, // Claudible doesn't provide reset time in the current API
+            accountType: data.accountType,
+            status: data.status,
+            subscriptionActive: data.subscriptionActive,
+            subscriptionExpiresAt: data.subscriptionExpiresAt,
+          });
+        }
+        break;
+
       default:
         // Generic fallback for unknown providers
         if (data.quotas) {
