@@ -265,6 +265,42 @@ export async function POST(request) {
           isValid = anthropicRes.status !== 401;
           break;
 
+        case "cc-claudible": {
+          const ccClaudibleRes = await fetch("https://cc.claudible.io/v1/messages", {
+            method: "POST",
+            headers: {
+              "x-api-key": apiKey,
+              "anthropic-version": "2023-06-01",
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "claude-3-haiku-20240307",
+              max_tokens: 1,
+              messages: [{ role: "user", content: "test" }],
+            }),
+          });
+          isValid = ccClaudibleRes.status !== 401 && ccClaudibleRes.status !== 403;
+          break;
+        }
+
+        case "claude-claudible": {
+          const claudeClaudibleRes = await fetch("https://claude.claudible.io/v1/messages", {
+            method: "POST",
+            headers: {
+              "x-api-key": apiKey,
+              "anthropic-version": "2023-06-01",
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "claude-3-haiku-20240307",
+              max_tokens: 1,
+              messages: [{ role: "user", content: "test" }],
+            }),
+          });
+          isValid = claudeClaudibleRes.status !== 401 && claudeClaudibleRes.status !== 403;
+          break;
+        }
+
         case "gemini":
           const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${apiKey}`);
           isValid = geminiRes.ok;

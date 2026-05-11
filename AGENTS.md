@@ -19,6 +19,7 @@ The project uses Azure DevOps Pipelines for CI/CD.
 
 Before concluding work that can affect request routing, translation, provider handling, combo behavior, or streaming, validate against the local dockerized 9router instance when feasible.
 
+- Rebuild Docker Compose before testing with `docker compose build`.
 - Run `./test.sh` for standard local docker validation.
 - Prefer testing with the production-like local DB when available.
 - Use the local HTTPS endpoint `https://localhost:20129/v1/chat/completions`.

@@ -480,6 +480,24 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const valid = res.status !== 401;
         return { valid, error: valid ? null : "Invalid API key" };
       }
+      case "cc-claudible": {
+        const res = await fetchWithConnectionProxy("https://cc.claudible.io/v1/messages", {
+          method: "POST",
+          headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+          body: JSON.stringify({ model: "claude-3-haiku-20240307", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid API key" };
+      }
+      case "claude-claudible": {
+        const res = await fetchWithConnectionProxy("https://claude.claudible.io/v1/messages", {
+          method: "POST",
+          headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+          body: JSON.stringify({ model: "claude-3-haiku-20240307", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid API key" };
+      }
       case "gemini": {
         const res = await fetchWithConnectionProxy(`https://generativelanguage.googleapis.com/v1/models?key=${connection.apiKey}`, {}, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
