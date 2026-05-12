@@ -281,6 +281,14 @@ export async function buildModelsList(kindFilter) {
         rawModelIds = await fetchCompatibleModelIds(conn);
       }
 
+      // Fetch models from modelsFetcher for non-compatible providers (matches ModelSelectModal logic)
+      if (!isCompatibleProvider && rawModelIds.length === 0 && !UPSTREAM_CONNECTION_RE.test(providerId)) {
+        const providerDef = AI_PROVIDERS[providerId];
+        if (providerDef?.modelsFetcher?.url && !providerDef.passthroughModels) {
+          rawModelIds = await fetchModelsFetcherIds(providerId);
+        }
+      }
+
       const modelIds = rawModelIds
         .map((modelId) => {
           if (modelId.startsWith(`${outputAlias}/`)) {
