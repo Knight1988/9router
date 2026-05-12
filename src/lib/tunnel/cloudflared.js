@@ -12,6 +12,8 @@ const IS_WINDOWS = os.platform() === "win32";
 const BIN_NAME = IS_WINDOWS ? `${BINARY_NAME}.exe` : BINARY_NAME;
 const BIN_PATH = path.join(BIN_DIR, BIN_NAME);
 const POWERSHELL_HIDDEN_COMMAND = "powershell -NoProfile -NonInteractive -WindowStyle Hidden -Command";
+const DEFAULT_QUICK_TUNNEL_PROTOCOL = "http2";
+const QUICK_TUNNEL_PROTOCOLS = new Set(["http2", "quic", "auto"]);
 
 const GITHUB_BASE_URL = "https://github.com/cloudflare/cloudflared/releases/latest/download";
 
@@ -195,6 +197,7 @@ export async function spawnCloudflared(tunnelToken) {
   const child = spawn(binaryPath, ["tunnel", "run", "--dns-resolver-addrs", "1.1.1.1:53", "--token", tunnelToken], {
     detached: false,
     windowsHide: true,
+    cwd: os.tmpdir(),
     stdio: ["ignore", "pipe", "pipe"]
   });
 
@@ -284,10 +287,17 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
     } catch (e) { /* ignore */ }
   };
 
-  const child = spawn(binaryPath, ["tunnel", "--url", `http://localhost:${localPort}`, "--config", configPath, "--no-autoupdate"], {
+  const requestedProtocol = String(process.env.TUNNEL_TRANSPORT_PROTOCOL || process.env.CLOUDFLARED_PROTOCOL || DEFAULT_QUICK_TUNNEL_PROTOCOL).trim().toLowerCase();
+  const tunnelProtocol = QUICK_TUNNEL_PROTOCOLS.has(requestedProtocol) ? requestedProtocol : DEFAULT_QUICK_TUNNEL_PROTOCOL;
+  const child = spawn(binaryPath, ["tunnel", "--url", `http://127.0.0.1:${localPort}`, "--config", configPath, "--no-autoupdate"], {
     detached: false,
     windowsHide: true,
-    stdio: ["ignore", "pipe", "pipe"]
+    cwd: os.tmpdir(),
+    env: {
+      ...process.env,
+      TUNNEL_TRANSPORT_PROTOCOL: tunnelProtocol,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
   });
 
   cloudflaredProcess = child;
@@ -332,12 +342,14 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
         lastUrl = tunnelUrl;
         clearTimeout(timeout);
         cleanup();
+        console.log(`[Tunnel] cloudflared URL: ${tunnelUrl}`);
         resolve({ child, tunnelUrl });
         return;
       }
 
       // URL changed after initial connect — notify caller to re-register
       if (tunnelUrl !== lastUrl) {
+        console.log(`[Tunnel] cloudflared URL changed: ${tunnelUrl}`);
         lastUrl = tunnelUrl;
         if (onUrlUpdate) onUrlUpdate(tunnelUrl);
       }
@@ -357,6 +369,7 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
     child.on("exit", (code, signal) => {
       cloudflaredProcess = null;
       clearPid();
+      console.log(`[Tunnel] cloudflared exit code=${code} signal=${signal}`);
       if (!resolved) {
         resolved = true;
         clearTimeout(timeout);

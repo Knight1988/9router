@@ -15,7 +15,6 @@ export default function CombosPage() {
   const [editingCombo, setEditingCombo] = useState(null);
   const [activeProviders, setActiveProviders] = useState([]);
   const [comboStrategies, setComboStrategies] = useState({});
-  const [availableModelIds, setAvailableModelIds] = useState(new Set());
   const { copied, copy } = useCopyToClipboard();
 
   useEffect(() => {
@@ -24,21 +23,14 @@ export default function CombosPage() {
 
   const fetchData = async () => {
     try {
-      const [combosRes, providersRes, settingsRes, modelsRes] = await Promise.all([
+      const [combosRes, providersRes, settingsRes] = await Promise.all([
         fetch("/api/combos"),
         fetch("/api/providers"),
         fetch("/api/settings"),
-        fetch("/api/v1/models"),
       ]);
       const combosData = await combosRes.json();
       const providersData = await providersRes.json();
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
-      
-      if (modelsRes.ok) {
-        const modelsData = await modelsRes.json();
-        const ids = new Set((modelsData.data || []).map(m => m.id));
-        setAvailableModelIds(ids);
-      }
       
       // Only LLM combos here — webSearch/webFetch combos belong to media-providers/web
       if (combosRes.ok) setCombos((combosData.combos || []).filter(c => !c.kind));
@@ -174,7 +166,6 @@ export default function CombosPage() {
               onDelete={() => handleDelete(combo.id)}
               roundRobinEnabled={comboStrategies[combo.name]?.fallbackStrategy === "round-robin"}
               onToggleRoundRobin={(enabled) => handleToggleRoundRobin(combo.name, enabled)}
-              availableModelIds={availableModelIds}
             />
           ))}
         </div>
@@ -187,7 +178,6 @@ export default function CombosPage() {
         onClose={() => setShowCreateModal(false)}
         onSave={handleCreate}
         activeProviders={activeProviders}
-        availableModelIds={availableModelIds}
       />
 
       {/* Edit Modal - Use key to force remount and reset state */}
@@ -198,14 +188,12 @@ export default function CombosPage() {
         onClose={() => setEditingCombo(null)}
         onSave={(data) => handleUpdate(editingCombo.id, data)}
         activeProviders={activeProviders}
-        availableModelIds={availableModelIds}
       />
     </div>
   );
 }
 
-function ComboCard({ combo, copied, onCopy, onEdit, onDelete, roundRobinEnabled, onToggleRoundRobin, availableModelIds }) {
-  const hasInvalidModels = availableModelIds.size > 0 && combo.models.some(m => !availableModelIds.has(m));
+function ComboCard({ combo, copied, onCopy, onEdit, onDelete, roundRobinEnabled, onToggleRoundRobin }) {
   return (
     <Card padding="sm" className="group">
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -214,7 +202,7 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete, roundRobinEnabled,
             <span className="material-symbols-outlined text-primary text-[18px]">layers</span>
           </div>
           <div className="min-w-0 flex-1">
-            <code className="block truncate font-mono text-sm font-medium">{combo.name}{hasInvalidModels && <span className="text-red-500 ml-0.5">*</span>}</code>
+            <code className="block truncate font-mono text-sm font-medium">{combo.name}</code>
             <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
               {combo.models.length === 0 ? (
                 <span className="text-xs text-text-muted italic">No models</span>
@@ -279,7 +267,7 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete, roundRobinEnabled,
 }
 
 // Inline editable model item
-function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove, isInvalid }) {
+function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(model);
 
@@ -312,9 +300,9 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
         />
       ) : (
         <div
-          className={`min-w-0 flex-1 cursor-text truncate rounded px-1.5 py-0.5 font-mono text-xs hover:bg-black/5 dark:hover:bg-white/5 ${isInvalid ? "text-red-500" : "text-text-main"}`}
+          className="min-w-0 flex-1 cursor-text truncate rounded px-1.5 py-0.5 font-mono text-xs text-text-main hover:bg-black/5 dark:hover:bg-white/5"
           onClick={() => setEditing(true)}
-          title={isInvalid ? "Model no longer exists" : "Click to edit"}
+          title="Click to edit"
         >
           {model}
         </div>
@@ -352,27 +340,28 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
   );
 }
 
-function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null, availableModelIds = new Set() }) {
+function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
+  const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
-  const [showModelSelect, setShowModelSelect] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
 
+  const fetchModalData = async () => {
+    try {
+      const aliasesRes = await fetch("/api/models/alias");
+      if (!aliasesRes.ok) return;
+      const aliasesData = await aliasesRes.json();
+      setModelAliases(aliasesData.aliases || {});
+    } catch (error) {
+      console.error("Error fetching modal data:", error);
+    }
+  };
+
   useEffect(() => {
-    if (!isOpen) return;
-    const fetchAliases = async () => {
-      try {
-        const res = await fetch("/api/models/alias");
-        const data = await res.json();
-        if (res.ok) setModelAliases(data.aliases || {});
-      } catch (error) {
-        console.log("Error fetching aliases:", error);
-      }
-    };
-    fetchAliases();
+    if (isOpen) fetchModalData();
   }, [isOpen]);
 
   const validateName = (value) => {
@@ -395,6 +384,34 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
     else setNameError("");
   };
 
+  const handleAddModel = (model) => {
+    if (!models.includes(model.value)) {
+      setModels([...models, model.value]);
+    }
+  };
+
+  const handleDeselectModel = (model) => {
+    setModels(models.filter((m) => m !== model.value));
+  };
+
+  const handleRemoveModel = (index) => {
+    setModels(models.filter((_, i) => i !== index));
+  };
+
+  const handleMoveUp = (index) => {
+    if (index === 0) return;
+    const newModels = [...models];
+    [newModels[index - 1], newModels[index]] = [newModels[index], newModels[index - 1]];
+    setModels(newModels);
+  };
+
+  const handleMoveDown = (index) => {
+    if (index === models.length - 1) return;
+    const newModels = [...models];
+    [newModels[index], newModels[index + 1]] = [newModels[index + 1], newModels[index]];
+    setModels(newModels);
+  };
+
   const handleSave = async () => {
     if (!validateName(name)) return;
     setSaving(true);
@@ -403,35 +420,6 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   };
 
   const isEdit = !!combo;
-
-  const handleAddModel = (model) => {
-    const modelValue = typeof model === "string" ? model : model?.value;
-    if (!modelValue) return;
-    setModels((prev) => (prev.includes(modelValue) ? prev : [...prev, modelValue]));
-    setShowModelSelect(false);
-  };
-
-  const handleMoveUp = (index) => {
-    if (index === 0) return;
-    setModels((prev) => {
-      const next = [...prev];
-      [next[index - 1], next[index]] = [next[index], next[index - 1]];
-      return next;
-    });
-  };
-
-  const handleMoveDown = (index) => {
-    setModels((prev) => {
-      if (index === prev.length - 1) return prev;
-      const next = [...prev];
-      [next[index], next[index + 1]] = [next[index + 1], next[index]];
-      return next;
-    });
-  };
-
-  const handleRemoveModel = (index) => {
-    setModels((prev) => prev.filter((_, i) => i !== index));
-  };
 
   return (
     <>
@@ -473,7 +461,6 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
                     model={model}
                     isFirst={index === 0}
                     isLast={index === models.length - 1}
-                    isInvalid={availableModelIds.size > 0 && !availableModelIds.has(model)}
                     onEdit={(newVal) => {
                       const updated = [...models];
                       updated[index] = newVal;
@@ -513,15 +500,19 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
           </div>
         </div>
       </Modal>
+
       {/* Model Select Modal */}
       <ModelSelectModal
         isOpen={showModelSelect}
         onClose={() => setShowModelSelect(false)}
         onSelect={handleAddModel}
+        onDeselect={handleDeselectModel}
         activeProviders={activeProviders}
         modelAliases={modelAliases}
         title="Add Model to Combo"
         kindFilter={kindFilter}
+        addedModelValues={models}
+        closeOnSelect={false}
       />
     </>
   );

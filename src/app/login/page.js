@@ -1,39 +1,18 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Card, Button, Input } from "@/shared/components";
 import { useRouter } from "next/navigation";
-
-function formatRetryTime(seconds) {
-  if (!seconds) return "";
-  const min = Math.ceil(seconds / 60);
-  return min === 1 ? "1 minute" : `${min} minutes`;
-}
 
 export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [hasPassword, setHasPassword] = useState(null);
-  const [remaining, setRemaining] = useState(null);
-  const [retryAfter, setRetryAfter] = useState(null);
+  const [authMode, setAuthMode] = useState("password");
+  const [oidcConfigured, setOidcConfigured] = useState(false);
+  const [oidcLoginLabel, setOidcLoginLabel] = useState("Sign in with OIDC");
   const router = useRouter();
-
-  // Countdown timer for lockout
-  useEffect(() => {
-    if (!retryAfter || retryAfter <= 0) return;
-    const timer = setInterval(() => {
-      setRetryAfter((prev) => {
-        if (prev <= 1) {
-          setError("");
-          setRemaining(null);
-          return null;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [retryAfter]);
 
   useEffect(() => {
     async function checkAuth() {
@@ -42,7 +21,7 @@ export default function LoginPage() {
       const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
 
       try {
-        const res = await fetch(`${baseUrl}/api/settings`, {
+        const res = await fetch(`${baseUrl}/api/auth/status`, {
           signal: controller.signal,
         });
         clearTimeout(timeoutId);
@@ -55,6 +34,9 @@ export default function LoginPage() {
             return;
           }
           setHasPassword(!!data.hasPassword);
+          setAuthMode(data.authMode || "password");
+          setOidcConfigured(data.oidcConfigured === true);
+          setOidcLoginLabel(data.oidcLoginLabel || "Sign in with OIDC");
         } else {
           // Safe fallback on non-OK response to avoid infinite loading state.
           setHasPassword(true);
@@ -84,17 +66,7 @@ export default function LoginPage() {
         router.refresh();
       } else {
         const data = await res.json();
-        if (res.status === 429) {
-          setRetryAfter(data.retryAfter);
-          setError(
-            `Too many failed attempts. Try again in ${formatRetryTime(data.retryAfter)}.`
-          );
-          setRemaining(0);
-        } else {
-          setError(data.error || "Invalid password");
-          setRemaining(data.remaining ?? null);
-          setRetryAfter(null);
-        }
+        setError(data.error || "Invalid password");
       }
     } catch (err) {
       setError("An error occurred. Please try again.");
@@ -102,6 +74,13 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  const handleOidcLogin = () => {
+    window.location.href = "/api/auth/oidc/start";
+  };
+
+  const oidcAvailable = oidcConfigured && ["oidc", "both"].includes(authMode);
+  const passwordAvailable = authMode !== "oidc" || !oidcConfigured;
 
   // Show loading state while checking password
   if (hasPassword === null) {
@@ -122,44 +101,72 @@ export default function LoginPage() {
       <div className="relative z-10 w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-primary mb-2">9Router</h1>
-          <p className="text-text-muted">Enter your password to access the dashboard</p>
+          <p className="text-text-muted">
+            {authMode === "oidc" && oidcConfigured
+              ? "Sign in with your OIDC provider to access the dashboard"
+              : "Enter your password to access the dashboard"}
+          </p>
         </div>
 
         <Card>
-          <form onSubmit={handleLogin} className="flex flex-col gap-4">
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Password</label>
-              <Input
-                type="password"
-                placeholder="Enter password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                autoFocus
-              />
-              {error && <p className="text-xs text-red-500">{error}</p>}
-              {remaining !== null && remaining > 0 && remaining <= 3 && (
-                <p className="text-xs text-amber-500">
-                  {remaining} attempt{remaining !== 1 ? "s" : ""} remaining
-                  before lockout
+          <div className="flex flex-col gap-4">
+            {oidcAvailable && (
+              <Button type="button" variant="primary" className="w-full" onClick={handleOidcLogin}>
+                {oidcLoginLabel}
+              </Button>
+            )}
+
+            {oidcAvailable && passwordAvailable && <div className="h-px bg-border/60" />}
+
+            {passwordAvailable ? (
+              <form onSubmit={handleLogin} className="flex flex-col gap-4">
+                {((authMode === "oidc" && !oidcConfigured) || (authMode === "both" && !oidcConfigured)) && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 text-center">
+                    OIDC login is enabled, but the issuer/client fields are not configured yet. Password login is still available for recovery.
+                  </p>
+                )}
+
+                {authMode === "both" && oidcConfigured && (
+                  <p className="text-xs text-text-muted text-center">
+                    Password and OIDC login are both enabled.
+                  </p>
+                )}
+
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium">Password</label>
+                  <Input
+                    type="password"
+                    placeholder="Enter password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    autoFocus={!oidcAvailable}
+                  />
+                  {error && <p className="text-xs text-red-500">{error}</p>}
+                </div>
+
+                <Button
+                  type="submit"
+                  variant="primary"
+                  className="w-full"
+                  loading={loading}
+                >
+                  Login
+                </Button>
+
+                <p className="text-xs text-center text-text-muted mt-2">
+                  Default password is <code className="bg-sidebar px-1 rounded">123456</code>
                 </p>
-              )}
-            </div>
-
-            <Button
-              type="submit"
-              variant="primary"
-              className="w-full"
-              loading={loading}
-              disabled={!!retryAfter}
-            >
-              Login
-            </Button>
-
-            <p className="text-xs text-center text-text-muted mt-2">
-              Default password is <code className="bg-sidebar px-1 rounded">123456</code>
-            </p>
-          </form>
+                {hasPassword === false && (
+                  <p className="text-xs text-center text-text-muted">
+                    No custom password is set yet. The default password above will work until you change it.
+                  </p>
+                )}
+              </form>
+            ) : (
+              error && <p className="text-xs text-red-500">{error}</p>
+            )}
+          </div>
         </Card>
       </div>
     </div>

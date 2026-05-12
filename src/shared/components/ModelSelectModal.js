@@ -3,9 +3,9 @@
 import { useState, useMemo, useEffect } from "react";
 import PropTypes from "prop-types";
 import Modal from "./Modal";
+import Button from "./Button";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
-import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
@@ -22,11 +22,14 @@ export default function ModelSelectModal({
   isOpen,
   onClose,
   onSelect,
+  onDeselect,
   selectedModel,
   activeProviders = [],
   title = "Select Model",
   modelAliases = {},
   kindFilter = null,
+  addedModelValues = [],
+  closeOnSelect = true,
 }) {
   // Filter activeProviders by serviceKinds when kindFilter set (e.g. "webSearch", "webFetch")
   const filteredActiveProviders = useMemo(() => {
@@ -41,7 +44,6 @@ export default function ModelSelectModal({
   const [combos, setCombos] = useState([]);
   const [providerNodes, setProviderNodes] = useState([]);
   const [customModels, setCustomModels] = useState([]);
-  const [fetchedModels, setFetchedModels] = useState({});
   const [disabledModels, setDisabledModels] = useState({});
 
   const fetchCombos = async () => {
@@ -109,22 +111,6 @@ export default function ModelSelectModal({
   }, [isOpen]);
 
   const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS, ...APIKEY_PROVIDERS }), []);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    filteredActiveProviders.forEach(({ provider: pid }) => {
-      const info = allProviders[pid];
-      if (!info?.modelsFetcher) return;
-      if (info.passthroughModels) return;
-      if (isOpenAICompatibleProvider(pid) || isAnthropicCompatibleProvider(pid)) return;
-      if (getModelsByProviderId(pid).length > 0) return;
-      fetchSuggestedModels(info.modelsFetcher).then((models) => {
-        if (models?.length > 0) {
-          setFetchedModels((prev) => ({ ...prev, [pid]: models }));
-        }
-      });
-    });
-  }, [isOpen, filteredActiveProviders, allProviders]);
 
   // Group models by provider with priority order
   const groupedModels = useMemo(() => {
@@ -276,16 +262,10 @@ export default function ModelSelectModal({
           .filter((m) => m.providerAlias === alias && !hardcodedIds.has(m.id) && !customAliasIds.has(m.id))
           .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}`, isCustom: true }));
 
-        const existingIds = new Set([...hardcodedIds, ...customAliasIds, ...customRegisteredModels.map(m => m.id)]);
-        const fetchedSuggested = (fetchedModels[providerId] || [])
-          .filter((m) => !existingIds.has(m.id))
-          .map((m) => ({ id: m.id, name: `${alias}/${m.name || m.id}`, value: `${alias}/${m.id}` }));
-
         const merged = [
           ...hardcodedModels.map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, type: m.type })),
           ...customAliasModels,
           ...customRegisteredModels,
-          ...fetchedSuggested,
         ];
         // Dedupe by value (alias may equal hardcoded id, causing React key collision)
         const seen = new Set();
@@ -328,7 +308,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, fetchedModels, disabledModels, kindFilter, activeProviders]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders]);
 
   // Filter combos by search query (and hide combos when kindFilter is set — combos are LLM-only by design)
   const filteredCombos = useMemo(() => {
@@ -366,9 +346,19 @@ export default function ModelSelectModal({
   }, [groupedModels, searchQuery]);
 
   const handleSelect = (model) => {
-    onSelect(model);
-    onClose();
-    setSearchQuery("");
+    const value = model?.value || model?.name || model;
+    const isAdded = addedModelValues.includes(value);
+
+    if (isAdded && onDeselect) {
+      onDeselect(model);
+    } else {
+      onSelect(model);
+    }
+
+    if (closeOnSelect) {
+      onClose();
+      setSearchQuery("");
+    }
   };
 
   return (
@@ -381,121 +371,145 @@ export default function ModelSelectModal({
       title={title}
       size="md"
       className="p-4!"
-      bodyClassName="p-4"
-      bodyScrollable={false}
+      footer={
+        !closeOnSelect ? (
+          <Button
+            onClick={() => {
+              onClose();
+              setSearchQuery("");
+            }}
+            fullWidth
+          >
+            Done
+          </Button>
+        ) : null
+      }
     >
-      <div className="max-h-[400px] overflow-y-auto space-y-3 pr-1">
-        {/* Search - stays visible while scrolling */}
-        <div className="sticky top-0 z-10 bg-surface pb-2">
-          <div className="relative">
-            <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted text-[16px]">
-              search
-            </span>
-            <input
-              type="text"
-              placeholder="Search..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 bg-surface border border-border rounded text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
-            />
-          </div>
+      {/* Search - compact */}
+      <div className="mb-3">
+        <div className="relative">
+          <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted text-[16px]">
+            search
+          </span>
+          <input
+            type="text"
+            placeholder="Search..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-8 pr-3 py-1.5 bg-surface border border-border rounded text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+          />
         </div>
+      </div>
 
-        {/* Models grouped by provider - compact */}
-        <div className="space-y-3">
-          {/* Combos section - always first */}
-          {filteredCombos.length > 0 && (
-            <div>
-              <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
-                <span className="material-symbols-outlined text-primary text-[14px]">layers</span>
-                <span className="text-xs font-medium text-primary">Combos</span>
-                <span className="text-[10px] text-text-muted">({filteredCombos.length})</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {filteredCombos.map((combo) => {
-                  const isSelected = selectedModel === combo.name;
-                  return (
-                    <button
-                      key={combo.id}
-                      onClick={() => handleSelect({ id: combo.name, name: combo.name, value: combo.name })}
-                      className={`
-                        px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer
-                        ${isSelected
-                          ? "bg-primary text-white border-primary"
-                          : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
-                        }
-                      `}
-                    >
-                      {combo.name}
-                    </button>
-                  );
-                })}
-              </div>
+      {/* Models grouped by provider - compact */}
+      <div className="max-h-[400px] overflow-y-auto space-y-3">
+        {/* Combos section - always first */}
+        {filteredCombos.length > 0 && (
+          <div>
+            <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
+              <span className="material-symbols-outlined text-primary text-[14px]">layers</span>
+              <span className="text-xs font-medium text-primary">Combos</span>
+              <span className="text-[10px] text-text-muted">({filteredCombos.length})</span>
             </div>
-          )}
+            <div className="flex flex-wrap gap-1.5">
+              {filteredCombos.map((combo) => {
+                const isSelected = selectedModel === combo.name;
+                return (
+                  <button
+                    key={combo.id}
+                    onClick={() => handleSelect({ id: combo.name, name: combo.name, value: combo.name })}
+                    className={`
+                      px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer flex items-center gap-1
+                      ${isSelected
+                        ? "bg-primary text-white border-primary"
+                        : addedModelValues.includes(combo.name)
+                          ? "bg-green-500/10 border-green-500/30 text-green-700 dark:text-green-400 hover:border-green-500/50"
+                          : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
+                      }
+                    `}
+                  >
+                    {addedModelValues.includes(combo.name) && (
+                      <span className="material-symbols-outlined text-[12px]">check_circle</span>
+                    )}
+                    {combo.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
-          {/* Provider models */}
-          {Object.entries(filteredGroups).map(([providerId, group]) => (
-            <div key={providerId}>
-              <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
-                <div
-                  className="w-2 h-2 rounded-full"
-                  style={{ backgroundColor: group.color }}
-                />
-                <span className="text-xs font-medium text-primary">
-                  {group.name}
-                </span>
-                <span className="text-[10px] text-text-muted">
-                  ({group.models.length})
-                </span>
-              </div>
+        {/* Provider models */}
+        {Object.entries(filteredGroups).map(([providerId, group]) => (
+          <div key={providerId}>
+            {/* Provider header */}
+            <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
+              <div
+                className="w-2 h-2 rounded-full"
+                style={{ backgroundColor: group.color }}
+              />
+              <span className="text-xs font-medium text-primary">
+                {group.name}
+              </span>
+              <span className="text-[10px] text-text-muted">
+                ({group.models.length})
+              </span>
+            </div>
 
-              <div className="flex flex-wrap gap-1.5">
-                {group.models.map((model) => {
-                  const isSelected = selectedModel === model.value;
-                  const isPlaceholder = model.isPlaceholder;
-                  return (
-                    <button
-                      key={model.id}
-                      onClick={() => handleSelect(model)}
-                      title={isPlaceholder ? "Select to pre-fill, then edit model ID in the input" : undefined}
-                      className={`
-                        px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer
-                        ${isPlaceholder
-                          ? "border-dashed border-border text-text-muted hover:border-primary/50 hover:text-primary bg-surface italic"
-                          : isSelected
-                            ? "bg-primary text-white border-primary"
+            <div className="flex flex-wrap gap-1.5">
+              {group.models.map((model) => {
+                const isSelected = selectedModel === model.value;
+                const isPlaceholder = model.isPlaceholder;
+                return (
+                  <button
+                    key={model.value}
+                    onClick={() => handleSelect(model)}
+                    title={isPlaceholder ? "Select to pre-fill, then edit model ID in the input" : undefined}
+                    className={`
+                      px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer
+                      ${isPlaceholder
+                        ? "border-dashed border-border text-text-muted hover:border-primary/50 hover:text-primary bg-surface italic"
+                        : isSelected
+                          ? "bg-primary text-white border-primary"
+                          : addedModelValues.includes(model.value)
+                            ? "bg-green-500/10 border-green-500/30 text-green-700 dark:text-green-400 hover:border-green-500/50"
                             : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
-                        }
-                      `}
-                    >
+                      }
+                    `}
+                  >
+                    <span className="flex items-center gap-1">
+                      {addedModelValues.includes(model.value) && !isPlaceholder && (
+                        <span className="material-symbols-outlined text-[12px]">check_circle</span>
+                      )}
                       {isPlaceholder ? (
-                        <span className="flex items-center gap-1">
+                        <>
                           <span className="material-symbols-outlined text-[11px]">edit</span>
                           {model.name}
-                        </span>
+                        </>
                       ) : model.isCustom ? (
-                        <span className="flex items-center gap-1">
+                        <>
                           {model.name}
                           <span className="text-[9px] opacity-60 font-normal">custom</span>
-                        </span>
-                      ) : model.name}
-                    </button>
-                  );
-                })}
-              </div>
+                        </>
+                      ) : (
+                        model.name
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-          ))}
+          </div>
+        ))}
 
-          {Object.keys(filteredGroups).length === 0 && filteredCombos.length === 0 && (
-            <div className="text-center py-4 text-text-muted">
-              <span className="material-symbols-outlined text-2xl mb-1 block">
-                search_off
-              </span>
-              <p className="text-xs">No models found</p>
-            </div>
-          )}
-        </div>
+        {Object.keys(filteredGroups).length === 0 && filteredCombos.length === 0 && (
+          <div className="text-center py-4 text-text-muted">
+            <span className="material-symbols-outlined text-2xl mb-1 block">
+              search_off
+            </span>
+            <p className="text-xs">No models found</p>
+          </div>
+        )}
       </div>
     </Modal>
   );
@@ -505,6 +519,7 @@ ModelSelectModal.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
   onSelect: PropTypes.func.isRequired,
+  onDeselect: PropTypes.func,
   selectedModel: PropTypes.string,
   activeProviders: PropTypes.arrayOf(
     PropTypes.shape({
@@ -514,5 +529,7 @@ ModelSelectModal.propTypes = {
   title: PropTypes.string,
   modelAliases: PropTypes.object,
   kindFilter: PropTypes.string,
+  addedModelValues: PropTypes.arrayOf(PropTypes.string),
+  closeOnSelect: PropTypes.bool,
 };
 

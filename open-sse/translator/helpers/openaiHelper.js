@@ -1,7 +1,7 @@
 // OpenAI helper functions for translator
 
 // Valid OpenAI content block types
-export const VALID_OPENAI_CONTENT_TYPES = ["text", "image_url", "image"];
+export const VALID_OPENAI_CONTENT_TYPES = ["text", "image_url", "image", "input_audio", "audio_url"];
 export const VALID_OPENAI_MESSAGE_TYPES = ["text", "image_url", "image", "tool_calls", "tool_result"];
 
 // Providers that do not support assistant prefill (last message must be from "user")
@@ -38,6 +38,9 @@ export function filterToOpenAIFormat(body, provider = null) {
   if (!body.messages || !Array.isArray(body.messages)) return body;
   
   body.messages = body.messages.map(msg => {
+    // Normalize developer role to system (many providers don't support developer)
+    if (msg.role === "developer") msg = { ...msg, role: "system" };
+    
     // Keep tool messages as-is (OpenAI format)
     if (msg.role === "tool") return msg;
     

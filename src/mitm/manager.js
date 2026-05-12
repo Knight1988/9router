@@ -549,6 +549,15 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
   }
 
   // Step 2: Spawn server (Root CA already installed in Step 1.5)
+  // Verify server.js exists — recopy if runtime file was deleted (antivirus/cleanup)
+  let effectiveServerPath = SERVER_PATH;
+  if (!effectiveServerPath || !fs.existsSync(effectiveServerPath)) {
+    log(`[MITM] server.js missing at ${effectiveServerPath} → recopying`);
+    effectiveServerPath = ensureRuntimeServer(resolveBundledServerPath());
+    if (!effectiveServerPath || !fs.existsSync(effectiveServerPath)) {
+      throw new Error(`MITM server.js not found at ${effectiveServerPath}. Reinstall 9router.`);
+    }
+  }
   const mitmRouterBase = await resolveMitmRouterBaseUrl();
   log(`🚀 Starting server... (router: ${mitmRouterBase})`);
   if (IS_WIN) {
@@ -567,12 +576,14 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
     }
 
     // Spawn directly — process already has admin rights
+    // cwd=tmpdir so process doesn't lock the install dir on Windows (EBUSY on update)
     serverProcess = spawn(
       process.execPath,
-      [SERVER_PATH],
+      [effectiveServerPath],
       {
         detached: false,
         windowsHide: true,
+        cwd: os.tmpdir(),
         stdio: ["ignore", "pipe", "pipe"],
         env: {
           ...process.env,
@@ -593,7 +604,7 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
       `MITM_ROUTER_BASE=${shellQuoteSingle(mitmRouterBase)}`,
       "NODE_ENV=production",
       shellQuoteSingle(process.execPath),
-      shellQuoteSingle(SERVER_PATH),
+      shellQuoteSingle(effectiveServerPath),
     ].join(" ");
     serverProcess = spawn(
       "sudo", ["-S", "-E", "sh", "-c", inlineCmd],
@@ -603,9 +614,10 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
     serverProcess.stdin.end();
   } else {
     // Docker/minimal images: no sudo — same as Windows-style direct spawn
-    serverProcess = spawn(process.execPath, [SERVER_PATH], {
+    serverProcess = spawn(process.execPath, [effectiveServerPath], {
       detached: false,
       windowsHide: true,
+      cwd: os.tmpdir(),
       stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...process.env,

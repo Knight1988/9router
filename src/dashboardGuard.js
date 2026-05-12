@@ -1,34 +1,7 @@
 import { NextResponse } from "next/server";
-import { jwtVerify, SignJWT } from "jose";
 import { getSettings } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-
-const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "9router-default-secret-change-me"
-);
-
-const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
-
-async function refreshAuthCookie(response, request) {
-  try {
-    const token = await new SignJWT({ authenticated: true })
-      .setProtectedHeader({ alg: "HS256" })
-      .setExpirationTime("7d")
-      .sign(SECRET);
-    const forwardedProto = request.headers.get("x-forwarded-proto");
-    const useSecureCookie =
-      process.env.AUTH_COOKIE_SECURE === "true" || forwardedProto === "https";
-    response.cookies.set("auth_token", token, {
-      httpOnly: true,
-      secure: useSecureCookie,
-      sameSite: "lax",
-      path: "/",
-      maxAge: SESSION_MAX_AGE_SECONDS,
-    });
-  } catch {
-  }
-  return response;
-}
+import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
@@ -45,11 +18,13 @@ async function hasValidCliToken(request) {
   return token === await getCliToken();
 }
 
+// Always require JWT token regardless of requireLogin setting
 const ALWAYS_PROTECTED = [
   "/api/shutdown",
   "/api/settings/database",
 ];
 
+// Require auth, but allow through if requireLogin is disabled
 const PROTECTED_API_PATHS = [
   "/api/settings",
   "/api/keys",
@@ -57,23 +32,12 @@ const PROTECTED_API_PATHS = [
   "/api/provider-nodes/validate",
 ];
 
-function isLocalRequest(request) {
-  const host = request.headers.get("host") || "";
-  const hostname = host.split(":")[0];
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
-}
-
 async function hasValidToken(request) {
   const token = request.cookies.get("auth_token")?.value;
-  if (!token) return false;
-  try {
-    await jwtVerify(token, SECRET);
-    return true;
-  } catch {
-    return false;
-  }
+  return await verifyDashboardAuthToken(token);
 }
 
+// Read settings directly from DB to avoid self-fetch deadlock in proxy
 async function loadSettings() {
   try {
     return await getSettings();
@@ -91,22 +55,23 @@ async function isAuthenticated(request) {
 
 export async function proxy(request) {
   const { pathname } = request.nextUrl;
-  const isLocal = isLocalRequest(request);
 
+  // Always protected - require valid JWT or local CLI token (machineId-based)
   if (ALWAYS_PROTECTED.some((p) => pathname.startsWith(p))) {
-    if (isLocal || await hasValidCliToken(request)) return NextResponse.next();
-    if (await hasValidToken(request)) return refreshAuthCookie(NextResponse.next(), request);
+    if (await hasValidCliToken(request) || await hasValidToken(request))
+      return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Protect sensitive API endpoints (allow CLI token, JWT, or requireLogin=false)
   if (PROTECTED_API_PATHS.some((p) => pathname.startsWith(p))) {
     if (pathname === "/api/settings/require-login") return NextResponse.next();
-    if (isLocal || await hasValidCliToken(request)) return NextResponse.next();
-    if (await hasValidToken(request)) return refreshAuthCookie(NextResponse.next(), request);
-    if (await isAuthenticated(request)) return NextResponse.next();
+    if (await hasValidCliToken(request) || await isAuthenticated(request))
+      return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Protect all dashboard routes
   if (pathname.startsWith("/dashboard")) {
     let requireLogin = true;
     let tunnelDashboardAccess = true;
@@ -117,6 +82,7 @@ export async function proxy(request) {
         requireLogin = settings.requireLogin !== false;
         tunnelDashboardAccess = settings.tunnelDashboardAccess === true;
 
+        // Block tunnel/tailscale access if disabled (redirect to login)
         if (!tunnelDashboardAccess) {
           const host = (request.headers.get("host") || "").split(":")[0].toLowerCase();
           const tunnelHost = settings.tunnelUrl ? new URL(settings.tunnelUrl).hostname.toLowerCase() : "";
@@ -127,16 +93,18 @@ export async function proxy(request) {
         }
       }
     } catch {
+      // On error, keep defaults (require login, block tunnel)
     }
 
+    // If login not required, allow through
     if (!requireLogin) return NextResponse.next();
 
+    // Verify JWT token
     const token = request.cookies.get("auth_token")?.value;
     if (token) {
-      try {
-        await jwtVerify(token, SECRET);
-        return refreshAuthCookie(NextResponse.next(), request);
-      } catch {
+      if (await verifyDashboardAuthToken(token)) {
+        return NextResponse.next();
+      } else {
         return NextResponse.redirect(new URL("/login", request.url));
       }
     }
@@ -144,6 +112,7 @@ export async function proxy(request) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
+  // Redirect / to /dashboard if logged in, or /dashboard if it's the root
   if (pathname === "/") {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }

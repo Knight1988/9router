@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { Card, Button, Toggle, Input, Modal, ModelListEditor } from "@/shared/components";
+import { useState, useEffect, useRef } from "react";
+import { Card, Button, Toggle, Input } from "@/shared/components";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
@@ -10,14 +10,25 @@ export default function ProfilePage() {
   const { theme, setTheme, isDark } = useTheme();
   const [settings, setSettings] = useState({ fallbackStrategy: "fill-first" });
   const [loading, setLoading] = useState(true);
-  const [showSummarizerModal, setShowSummarizerModal] = useState(false);
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
   const [passStatus, setPassStatus] = useState({ type: "", message: "" });
   const [passLoading, setPassLoading] = useState(false);
-  const [passRemaining, setPassRemaining] = useState(null);
-  const [passRetryAfter, setPassRetryAfter] = useState(null);
   const [dbLoading, setDbLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState({ type: "", message: "" });
+  const [oidcForm, setOidcForm] = useState({
+    authMode: "password",
+    oidcIssuerUrl: "",
+    oidcClientId: "",
+    oidcScopes: "openid profile email",
+    oidcLoginLabel: "Sign in with OIDC",
+  });
+  const [oidcClientSecret, setOidcClientSecret] = useState("");
+  const [oidcStatus, setOidcStatus] = useState({ type: "", message: "" });
+  const [oidcLoading, setOidcLoading] = useState(false);
+  const [oidcTestLoading, setOidcTestLoading] = useState(false);
+  const [oidcTestStatus, setOidcTestStatus] = useState({ type: "", message: "" });
+  const [oidcRedirectUri, setOidcRedirectUri] = useState("/api/auth/oidc/callback");
+  const [oidcExpanded, setOidcExpanded] = useState(false);
   const importFileRef = useRef(null);
   const [proxyForm, setProxyForm] = useState({
     outboundProxyEnabled: false,
@@ -27,36 +38,21 @@ export default function ProfilePage() {
   const [proxyStatus, setProxyStatus] = useState({ type: "", message: "" });
   const [proxyLoading, setProxyLoading] = useState(false);
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
-  const [observabilityHealth, setObservabilityHealth] = useState(null);
-
-  // SSL state
-  const [sslStatus, setSslStatus] = useState(null);
-  const [sslLoading, setSslLoading] = useState(false);
-  const [sslStatus2, setSslStatus2] = useState({ type: "", message: "" });
-  const certFileRef = useRef(null);
-  const keyFileRef = useRef(null);
-
-  // Countdown timer for password change lockout
-  useEffect(() => {
-    if (!passRetryAfter || passRetryAfter <= 0) return;
-    const timer = setInterval(() => {
-      setPassRetryAfter((prev) => {
-        if (prev <= 1) {
-          setPassStatus({ type: "", message: "" });
-          setPassRemaining(null);
-          return null;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [passRetryAfter]);
 
   useEffect(() => {
     fetch("/api/settings")
       .then((res) => res.json())
       .then((data) => {
         setSettings(data);
+        setOidcForm({
+          authMode: data?.authMode || "password",
+          oidcIssuerUrl: data?.oidcIssuerUrl || "",
+          oidcClientId: data?.oidcClientId || "",
+          oidcScopes: data?.oidcScopes || "openid profile email",
+          oidcLoginLabel: data?.oidcLoginLabel || "Sign in with OIDC",
+        });
+        setOidcClientSecret("");
+        if (data?.authMode === "oidc" || data?.authMode === "both") setOidcExpanded(true);
         setProxyForm({
           outboundProxyEnabled: data?.outboundProxyEnabled === true,
           outboundProxyUrl: data?.outboundProxyUrl || "",
@@ -68,11 +64,12 @@ export default function ProfilePage() {
         console.error("Failed to fetch settings:", err);
         setLoading(false);
       });
-    
-    fetch("/api/health/observability")
-      .then((res) => res.json())
-      .then((data) => setObservabilityHealth(data))
-      .catch((err) => console.error("Failed to fetch observability health:", err));
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setOidcRedirectUri(`${window.location.origin}/api/auth/oidc/callback`);
+    }
   }, []);
 
   const updateOutboundProxy = async (e) => {
@@ -197,19 +194,8 @@ export default function ProfilePage() {
       if (res.ok) {
         setPassStatus({ type: "success", message: "Password updated successfully" });
         setPasswords({ current: "", new: "", confirm: "" });
-        setPassRemaining(null);
-        setPassRetryAfter(null);
-      } else if (res.status === 429) {
-        setPassRetryAfter(data.retryAfter);
-        setPassStatus({
-          type: "error",
-          message: `Too many failed attempts. Try again in ${Math.ceil(data.retryAfter / 60)} minutes.`,
-        });
-        setPassRemaining(0);
       } else {
         setPassStatus({ type: "error", message: data.error || "Failed to update password" });
-        setPassRemaining(data.remaining ?? null);
-        setPassRetryAfter(null);
       }
     } catch (err) {
       setPassStatus({ type: "error", message: "An error occurred" });
@@ -299,6 +285,143 @@ export default function ProfilePage() {
     }
   };
 
+  const updateOidcForm = (field, value) => {
+    setOidcForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const saveOidcSettings = async (authMode = oidcForm.authMode || "password") => {
+    const issuerUrl = oidcForm.oidcIssuerUrl.trim();
+    const clientId = oidcForm.oidcClientId.trim();
+    const scopes = oidcForm.oidcScopes.trim();
+    const loginLabel = oidcForm.oidcLoginLabel.trim();
+    const secret = oidcClientSecret.trim();
+
+    if (authMode !== "password" && (!issuerUrl || !clientId || !secret) && !settings.oidcConfigured) {
+      setOidcStatus({ type: "error", message: "Issuer URL, client ID, and client secret are required to enable OIDC." });
+      return;
+    }
+
+    setOidcLoading(true);
+    setOidcStatus({ type: "", message: "" });
+    setOidcTestStatus({ type: "", message: "" });
+
+    try {
+      const payload = {
+        authMode,
+        oidcIssuerUrl: issuerUrl,
+        oidcClientId: clientId,
+        oidcScopes: scopes || "openid profile email",
+        oidcLoginLabel: loginLabel || "Sign in with OIDC",
+      };
+      if (secret) {
+        payload.oidcClientSecret = secret;
+      }
+
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setSettings((prev) => ({ ...prev, ...data }));
+        setOidcForm({
+          authMode: data?.authMode || authMode,
+          oidcIssuerUrl: data?.oidcIssuerUrl || issuerUrl,
+          oidcClientId: data?.oidcClientId || clientId,
+          oidcScopes: data?.oidcScopes || scopes || "openid profile email",
+          oidcLoginLabel: data?.oidcLoginLabel || loginLabel || "Sign in with OIDC",
+        });
+        setOidcClientSecret("");
+        setOidcStatus({
+          type: "success",
+          message:
+            authMode === "oidc"
+              ? "OIDC login enabled"
+              : authMode === "both"
+                ? "Password and OIDC login enabled"
+                : "OIDC settings saved",
+        });
+      } else {
+        setOidcStatus({ type: "error", message: data.error || "Failed to save OIDC settings" });
+      }
+    } catch (err) {
+      setOidcStatus({ type: "error", message: "An error occurred" });
+    } finally {
+      setOidcLoading(false);
+    }
+  };
+
+  const testOidcConnection = async () => {
+    const issuerUrl = oidcForm.oidcIssuerUrl.trim();
+    const clientId = oidcForm.oidcClientId.trim();
+    const scopes = oidcForm.oidcScopes.trim();
+    const secret = oidcClientSecret.trim();
+
+    if (!issuerUrl || !clientId) {
+      setOidcTestStatus({ type: "error", message: "Issuer URL and client ID are required to test the connection." });
+      return;
+    }
+
+    setOidcTestLoading(true);
+    setOidcStatus({ type: "", message: "" });
+    setOidcTestStatus({ type: "", message: "" });
+
+    try {
+      const saveRes = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          authMode: oidcForm.authMode || settings.authMode || "password",
+          oidcIssuerUrl: issuerUrl,
+          oidcClientId: clientId,
+          oidcScopes: scopes || "openid profile email",
+          oidcLoginLabel: oidcForm.oidcLoginLabel.trim() || "Sign in with OIDC",
+          ...(secret ? { oidcClientSecret: secret } : {}),
+        }),
+      });
+
+      const saved = await saveRes.json().catch(() => ({}));
+      if (!saveRes.ok) {
+        setOidcTestStatus({
+          type: "error",
+          message: saved.error || "Failed to save OIDC settings before testing",
+        });
+        return;
+      }
+
+      const res = await fetch("/api/auth/oidc/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          issuerUrl: saved.oidcIssuerUrl || issuerUrl,
+          clientId: saved.oidcClientId || clientId,
+          scopes: saved.oidcScopes || scopes || "openid profile email",
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        const statusMessage = data.clientSecretTested
+          ? data.clientSecretValid === true
+            ? `Connection OK. Discovery loaded from ${data.issuerUrl}. Client secret validated too.`
+            : `Connection OK. Discovery loaded from ${data.issuerUrl}. Client secret was not checked.`
+          : `Connection OK. Discovery loaded from ${data.issuerUrl}.`;
+        setOidcTestStatus({
+          type: "success",
+          message: statusMessage,
+        });
+      } else {
+        setOidcTestStatus({ type: "error", message: data.error || "OIDC connection test failed" });
+      }
+    } catch (err) {
+      setOidcTestStatus({ type: "error", message: "An error occurred" });
+    } finally {
+      setOidcTestLoading(false);
+    }
+  };
+
   const updateObservabilityEnabled = async (enabled) => {
     try {
       const res = await fetch("/api/settings", {
@@ -311,122 +434,6 @@ export default function ProfilePage() {
       }
     } catch (err) {
       console.error("Failed to update enableObservability:", err);
-    }
-  };
-
-  const updateAutoCompactEnabled = async (enabled) => {
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ autoCompactEnabled: enabled }),
-      });
-      if (res.ok) setSettings((prev) => ({ ...prev, autoCompactEnabled: enabled }));
-    } catch (err) {
-      console.error("Failed to update autoCompactEnabled:", err);
-    }
-  };
-
-  const updateAutoCompactThreshold = async (value) => {
-    const num = parseInt(value, 10);
-    if (isNaN(num) || num < 1000) return;
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ autoCompactTokenThreshold: num }),
-      });
-      if (res.ok) setSettings((prev) => ({ ...prev, autoCompactTokenThreshold: num }));
-    } catch (err) {
-      console.error("Failed to update autoCompactTokenThreshold:", err);
-    }
-  };
-
-  const updateAutoCompactTailTurns = async (value) => {
-    const num = parseInt(value, 10);
-    if (isNaN(num) || num < 0) return;
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ autoCompactTailTurns: num }),
-      });
-      if (res.ok) setSettings((prev) => ({ ...prev, autoCompactTailTurns: num }));
-    } catch (err) {
-      console.error("Failed to update autoCompactTailTurns:", err);
-    }
-  };
-
-  const updateAutoCompactSummarizerModel = async (models) => {
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ autoCompactSummarizerModel: models }),
-      });
-      if (res.ok) setSettings((prev) => ({ ...prev, autoCompactSummarizerModel: models }));
-    } catch (err) {
-      console.error("Failed to update autoCompactSummarizerModel:", err);
-    }
-  };
-
-  useEffect(() => {
-    fetch("/api/settings/ssl")
-      .then((res) => res.json())
-      .then((data) => setSslStatus(data))
-      .catch(() => {});
-  }, []);
-
-  const handleCertUpload = async () => {
-    const certFile = certFileRef.current?.files?.[0];
-    const keyFile = keyFileRef.current?.files?.[0];
-    if (!certFile || !keyFile) {
-      setSslStatus2({ type: "error", message: "Please select both a certificate and a private key file" });
-      return;
-    }
-    setSslLoading(true);
-    setSslStatus2({ type: "", message: "" });
-    try {
-      const cert = await certFile.text();
-      const key = await keyFile.text();
-      const res = await fetch("/api/settings/ssl", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cert, key }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setSslStatus2({ type: "success", message: "Certificate uploaded. Restart the server to apply HTTPS." });
-        const statusRes = await fetch("/api/settings/ssl");
-        if (statusRes.ok) setSslStatus(await statusRes.json());
-        if (certFileRef.current) certFileRef.current.value = "";
-        if (keyFileRef.current) keyFileRef.current.value = "";
-      } else {
-        setSslStatus2({ type: "error", message: data.error || "Upload failed" });
-      }
-    } catch {
-      setSslStatus2({ type: "error", message: "An error occurred" });
-    } finally {
-      setSslLoading(false);
-    }
-  };
-
-  const handleCertDelete = async () => {
-    setSslLoading(true);
-    setSslStatus2({ type: "", message: "" });
-    try {
-      const res = await fetch("/api/settings/ssl", { method: "DELETE" });
-      if (res.ok) {
-        setSslStatus2({ type: "success", message: "Certificate removed. Restart the server to apply changes." });
-        const statusRes = await fetch("/api/settings/ssl");
-        if (statusRes.ok) setSslStatus(await statusRes.json());
-      } else {
-        setSslStatus2({ type: "error", message: "Failed to remove certificate" });
-      }
-    } catch {
-      setSslStatus2({ type: "error", message: "An error occurred" });
-    } finally {
-      setSslLoading(false);
     }
   };
 
@@ -509,7 +516,6 @@ export default function ProfilePage() {
   const observabilityEnabled = settings.enableObservability === true;
 
   return (
-    <>
     <div className="max-w-2xl mx-auto px-4 sm:px-0">
       <div className="flex flex-col gap-6">
         {/* Local Mode Info */}
@@ -549,7 +555,7 @@ export default function ProfilePage() {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 rounded-lg bg-bg border border-border gap-2">
               <div>
                 <p className="font-medium text-sm sm:text-base">Database Location</p>
-                <p className="text-xs sm:text-sm text-text-muted font-mono break-all">~/.9router/db.json</p>
+                <p className="text-xs sm:text-sm text-text-muted font-mono break-all">~/.9router/db/data.sqlite</p>
               </div>
             </div>
             <div className="flex flex-col sm:flex-row gap-2">
@@ -658,14 +664,9 @@ export default function ProfilePage() {
                     {passStatus.message}
                   </p>
                 )}
-                {passRemaining !== null && passRemaining > 0 && passRemaining <= 3 && (
-                  <p className="text-sm text-amber-500">
-                    {passRemaining} attempt{passRemaining !== 1 ? "s" : ""} remaining before lockout
-                  </p>
-                )}
 
                 <div className="pt-2">
-                  <Button type="submit" variant="primary" loading={passLoading} disabled={!!passRetryAfter} className="w-full sm:w-auto">
+                  <Button type="submit" variant="primary" loading={passLoading} className="w-full sm:w-auto">
                     {settings.hasPassword ? "Update Password" : "Set Password"}
                   </Button>
                 </div>
@@ -674,110 +675,167 @@ export default function ProfilePage() {
           </div>
         </Card>
 
-        {/* SSL / HTTPS */}
+        {/* OIDC */}
         <Card>
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-teal-500/10 text-teal-500">
-              <span className="material-symbols-outlined text-[20px]">lock</span>
+          <button
+            type="button"
+            onClick={() => setOidcExpanded((v) => !v)}
+            className="w-full flex items-center gap-3 text-left"
+          >
+            <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-500 shrink-0">
+              <span className="material-symbols-outlined text-[20px]">lock_open</span>
             </div>
-            <h3 className="text-lg font-semibold">SSL / HTTPS</h3>
-          </div>
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">HTTPS Status</p>
-                <p className="text-sm text-text-muted">
-                  Controlled by <code className="bg-bg px-1 rounded">HTTPS_ENABLED</code> env var
-                </p>
-              </div>
-              <span className={`text-sm font-medium px-2 py-1 rounded-full ${sslStatus?.httpsEnabled ? "bg-green-500/10 text-green-500" : "bg-text-muted/10 text-text-muted"}`}>
-                {sslStatus?.httpsEnabled ? "Enabled" : "Disabled"}
-              </span>
-            </div>
-
-            <div className="pt-2 border-t border-border/50">
-              <p className="font-medium mb-2">Certificate</p>
-              {sslStatus?.hasCert ? (
-                <div className="flex flex-col gap-2">
-                  <div className="p-3 rounded-lg bg-bg border border-border text-sm font-mono">
-                    {sslStatus.certSource === "env" && (
-                      <p className="text-text-muted mb-1">Source: env var paths</p>
-                    )}
-                    {sslStatus.certSource === "uploaded" && (
-                      <p className="text-text-muted mb-1">Source: uploaded</p>
-                    )}
-                    {sslStatus.certInfo ? (
-                      <>
-                        <p className="truncate">Subject: {sslStatus.certInfo.subject}</p>
-                        <p className="truncate">Issuer: {sslStatus.certInfo.issuer}</p>
-                        <p>Valid until: {new Date(sslStatus.certInfo.validTo).toLocaleDateString()}</p>
-                        {sslStatus.certInfo.expired && (
-                          <p className="text-red-500 font-semibold mt-1">⚠ Certificate expired</p>
-                        )}
-                      </>
-                    ) : (
-                      <p className="text-text-muted">Certificate present (metadata unavailable)</p>
-                    )}
-                  </div>
-                  {sslStatus.certSource === "uploaded" && (
-                    <Button
-                      variant="outline"
-                      icon="delete"
-                      onClick={handleCertDelete}
-                      loading={sslLoading}
-                    >
-                      Remove Certificate
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                <p className="text-sm text-text-muted">No certificate installed. Running on HTTP.</p>
-              )}
-            </div>
-
-            <div className="pt-2 border-t border-border/50">
-              <p className="font-medium mb-2">Upload Certificate</p>
-              <p className="text-sm text-text-muted mb-3">
-                Upload a PEM-encoded certificate and private key. Restart the server after uploading.
+            <div className="flex-1 min-w-0">
+              <h3 className="text-base sm:text-lg font-semibold">OIDC Dashboard Login</h3>
+              <p className="text-xs text-text-muted">
+                {settings.authMode === "oidc" ? "OIDC active" : settings.authMode === "both" ? "Password + OIDC active" : "Optional SSO via Authentik/Keycloak/Google"}
               </p>
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-col gap-1">
-                  <label className="text-sm font-medium">Certificate (.crt / .pem)</label>
-                  <input
-                    ref={certFileRef}
-                    type="file"
-                    accept=".crt,.pem,.cer"
-                    className="text-sm text-text-muted file:mr-3 file:py-1 file:px-3 file:rounded file:border file:border-border file:text-sm file:bg-bg file:text-text-main hover:file:bg-bg-hover cursor-pointer"
-                    disabled={sslLoading}
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <label className="text-sm font-medium">Private Key (.key / .pem)</label>
-                  <input
-                    ref={keyFileRef}
-                    type="file"
-                    accept=".key,.pem"
-                    className="text-sm text-text-muted file:mr-3 file:py-1 file:px-3 file:rounded file:border file:border-border file:text-sm file:bg-bg file:text-text-main hover:file:bg-bg-hover cursor-pointer"
-                    disabled={sslLoading}
-                  />
-                </div>
-                <Button
-                  variant="primary"
-                  icon="upload"
-                  onClick={handleCertUpload}
-                  loading={sslLoading}
-                >
-                  Upload Certificate
-                </Button>
+            </div>
+            <span className="material-symbols-outlined text-text-muted shrink-0">
+              {oidcExpanded ? "expand_less" : "expand_more"}
+            </span>
+          </button>
+          {oidcExpanded && (
+          <div className="flex flex-col gap-4 mt-4">
+            <p className="text-xs sm:text-sm text-text-muted">
+              Use Authentik or any OIDC provider to sign in to the dashboard. You can enable password-only, OIDC-only, or both for the dashboard; model API access still uses API keys.
+            </p>
+
+            <div className="flex flex-col gap-2">
+              <label className="font-medium text-sm sm:text-base">Auth Mode</label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {[
+                  {
+                    value: "password",
+                    title: "Password only",
+                    desc: "Keep the legacy password login.",
+                  },
+                  {
+                    value: "oidc",
+                    title: "OIDC only",
+                    desc: "Require OIDC for dashboard access.",
+                  },
+                  {
+                    value: "both",
+                    title: "Both",
+                    desc: "Allow either password or OIDC.",
+                  },
+                ].map((option) => {
+                  const active = oidcForm.authMode === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => updateOidcForm("authMode", option.value)}
+                      className={cn(
+                        "text-left rounded-lg border p-3 transition-colors",
+                        active
+                          ? "border-primary bg-primary/5"
+                          : "border-border bg-bg hover:bg-black/5 dark:hover:bg-white/5"
+                      )}
+                      disabled={loading || oidcLoading}
+                    >
+                      <p className="font-medium text-sm sm:text-base">{option.title}</p>
+                      <p className="text-xs sm:text-sm text-text-muted mt-1">{option.desc}</p>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            {sslStatus2.message && (
-              <p className={`text-sm ${sslStatus2.type === "error" ? "text-red-500" : "text-green-500"}`}>
-                {sslStatus2.message}
+            <div className="grid grid-cols-1 gap-4">
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-sm sm:text-base">Issuer URL</label>
+                <Input
+                  placeholder="https://auth.example.com/application/o/9router/"
+                  value={oidcForm.oidcIssuerUrl}
+                  onChange={(e) => updateOidcForm("oidcIssuerUrl", e.target.value)}
+                  disabled={loading || oidcLoading}
+                />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-sm sm:text-base">Client ID</label>
+                <Input
+                  placeholder="9router-dashboard"
+                  value={oidcForm.oidcClientId}
+                  onChange={(e) => updateOidcForm("oidcClientId", e.target.value)}
+                  disabled={loading || oidcLoading}
+                />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-sm sm:text-base">Client Secret</label>
+                <Input
+                  type="password"
+                  placeholder="Leave blank to keep existing secret"
+                  value={oidcClientSecret}
+                  onChange={(e) => setOidcClientSecret(e.target.value)}
+                  disabled={loading || oidcLoading}
+                />
+                <p className="text-xs sm:text-sm text-text-muted">This value is write-only after saving.</p>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-sm sm:text-base">Scopes</label>
+                <Input
+                  placeholder="openid profile email"
+                  value={oidcForm.oidcScopes}
+                  onChange={(e) => updateOidcForm("oidcScopes", e.target.value)}
+                  disabled={loading || oidcLoading}
+                />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-sm sm:text-base">Login Button Label</label>
+                <Input
+                  placeholder="Sign in with OIDC"
+                  value={oidcForm.oidcLoginLabel}
+                  onChange={(e) => updateOidcForm("oidcLoginLabel", e.target.value)}
+                  disabled={loading || oidcLoading}
+                />
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border bg-bg p-3 text-xs sm:text-sm text-text-muted">
+              <p className="font-medium text-text-main mb-1">Redirect URI</p>
+              <code className="block break-all font-mono">{oidcRedirectUri}</code>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-border/50">
+              <Button type="button" variant="primary" loading={oidcLoading} onClick={() => saveOidcSettings()} className="w-full sm:w-auto">
+                Save auth mode
+              </Button>
+              <Button type="button" variant="outline" loading={oidcTestLoading} onClick={testOidcConnection} className="w-full sm:w-auto">
+                Test connection
+              </Button>
+            </div>
+
+            {oidcTestStatus.message && (
+              <p className={`text-xs sm:text-sm ${oidcTestStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
+                {oidcTestStatus.message}
+              </p>
+            )}
+
+            {oidcStatus.message && (
+              <p className={`text-xs sm:text-sm ${oidcStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
+                {oidcStatus.message}
+              </p>
+            )}
+
+            {settings.authMode === "oidc" && (
+              <p className="text-xs sm:text-sm text-amber-600 dark:text-amber-400">
+                OIDC login is currently active. Password login is disabled until you switch back.
+              </p>
+            )}
+
+            {settings.authMode === "both" && (
+              <p className="text-xs sm:text-sm text-amber-600 dark:text-amber-400">
+                Password and OIDC login are both active.
               </p>
             )}
           </div>
+          )}
         </Card>
 
         {/* Routing Preferences */}
@@ -871,96 +929,6 @@ export default function ProfilePage() {
           </div>
         </Card>
 
-        {/* Context Management */}
-        <Card>
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-teal-500/10 text-teal-500">
-              <span className="material-symbols-outlined text-[20px]">compress</span>
-            </div>
-            <h3 className="text-lg font-semibold">Context Management</h3>
-          </div>
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Auto Compact Context</p>
-                <p className="text-sm text-text-muted">
-                  Summarize older messages when estimated input tokens exceed the threshold
-                </p>
-              </div>
-              <Toggle
-                checked={settings.autoCompactEnabled === true || settings.autoCompactEnabled === undefined}
-                onChange={() => updateAutoCompactEnabled(!(settings.autoCompactEnabled === true || settings.autoCompactEnabled === undefined))}
-                disabled={loading}
-              />
-            </div>
-
-            {(settings.autoCompactEnabled === true || settings.autoCompactEnabled === undefined) && (
-              <div className="flex flex-col gap-4 pt-2 border-t border-border/50">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Token Threshold</p>
-                    <p className="text-sm text-text-muted">Compact when estimated tokens exceed this limit</p>
-                  </div>
-                  <Input
-                    type="number"
-                    min="1000"
-                    step="1000"
-                    value={settings.autoCompactTokenThreshold ?? 150000}
-                    onChange={(e) => updateAutoCompactThreshold(e.target.value)}
-                    disabled={loading}
-                    className="w-28 text-center"
-                  />
-                </div>
-
-                <div className="flex items-center justify-between pt-2 border-t border-border/50">
-                  <div>
-                    <p className="font-medium">Tail Turns to Keep</p>
-                    <p className="text-sm text-text-muted">Recent user turns preserved verbatim after compaction</p>
-                  </div>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="20"
-                    value={settings.autoCompactTailTurns ?? 2}
-                    onChange={(e) => updateAutoCompactTailTurns(e.target.value)}
-                    disabled={loading}
-                    className="w-20 text-center"
-                  />
-                </div>
-
-                <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
-                  <div className="flex items-center justify-between">
-                    <p className="font-medium">Summarizer Model</p>
-                    <Button size="sm" variant="ghost" icon="edit" onClick={() => setShowSummarizerModal(true)} disabled={loading}>
-                      Edit
-                    </Button>
-                  </div>
-                  {/* Display selected models, or placeholder */}
-                  {(settings.autoCompactSummarizerModel?.length ?? 0) === 0 ? (
-                    <p className="text-sm text-text-muted italic">Same as request model (default)</p>
-                  ) : (
-                    <div className="flex flex-col gap-1">
-                      {(Array.isArray(settings.autoCompactSummarizerModel)
-                        ? settings.autoCompactSummarizerModel
-                        : [settings.autoCompactSummarizerModel].filter(Boolean)
-                      ).map((m, i) => (
-                        <code key={i} className="text-xs font-mono bg-black/5 dark:bg-white/5 px-2 py-1 rounded text-text-main">
-                          {i + 1}. {m}
-                        </code>
-                      ))}
-                    </div>
-                  )}
-                  <p className="text-sm text-text-muted">
-                    Model(s) used to generate the summary, tried in order on failure. Leave empty to use the same model as the request.
-                    Use a cheaper model (e.g. <code className="font-mono text-xs">haiku</code>) to reduce cost.
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-        </Card>
-
-
         {/* Network */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
@@ -1047,19 +1015,6 @@ export default function ProfilePage() {
               <p className="text-xs sm:text-sm text-text-muted">
                 Record request details for inspection in the logs view
               </p>
-              {observabilityHealth && observabilityHealth.databaseInitialized && (
-                <p className="text-xs text-text-muted mt-1">
-                  {observabilityHealth.recordCount > 0 ? (
-                    <span className="text-green-600 dark:text-green-400">
-                      ✓ {observabilityHealth.recordCount} records tracked
-                    </span>
-                  ) : (
-                    <span className="text-yellow-600 dark:text-yellow-400">
-                      Database initialized, waiting for requests
-                    </span>
-                  )}
-                </p>
-              )}
             </div>
             <Toggle
               checked={observabilityEnabled}
@@ -1076,61 +1031,5 @@ export default function ProfilePage() {
         </div>
       </div>
     </div>
-    <SummarizerModelModal
-      isOpen={showSummarizerModal}
-      onClose={() => setShowSummarizerModal(false)}
-      initialModels={
-        Array.isArray(settings.autoCompactSummarizerModel)
-          ? settings.autoCompactSummarizerModel
-          : settings.autoCompactSummarizerModel
-            ? [settings.autoCompactSummarizerModel]
-            : []
-      }
-      onSave={async (models) => {
-        await updateAutoCompactSummarizerModel(models);
-        setShowSummarizerModal(false);
-      }}
-    />
-    </>
-  );
-}
-
-function SummarizerModelModal({ isOpen, onClose, initialModels, onSave }) {
-  const [models, setModels] = useState(initialModels);
-  const [saving, setSaving] = useState(false);
-
-  // Sync when modal opens with fresh initialModels
-  useEffect(() => {
-    if (isOpen) setModels(initialModels);
-  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleSave = async () => {
-    setSaving(true);
-    await onSave(models);
-    setSaving(false);
-  };
-
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Summarizer Model">
-      <div className="flex flex-col gap-3">
-        <p className="text-sm text-text-muted">
-          Models tried in order on failure. Leave empty to use the same model as the request.
-        </p>
-        <ModelListEditor
-          models={models}
-          onChange={setModels}
-          emptyIcon="smart_toy"
-          emptyLabel="No models — uses the request model"
-          addLabel="Add Model"
-          modalTitle="Select Summarizer Model"
-        />
-        <div className="flex gap-2 pt-1">
-          <Button onClick={onClose} variant="ghost" fullWidth size="sm">Cancel</Button>
-          <Button onClick={handleSave} fullWidth size="sm" disabled={saving}>
-            {saving ? "Saving..." : "Save"}
-          </Button>
-        </div>
-      </div>
-    </Modal>
   );
 }
