@@ -25,15 +25,22 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATA_DIR=/app/data
 
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/open-sse ./open-sse
 # Next file tracing can omit sibling files; MITM runs server.js as a separate process.
 COPY --from=builder /app/src/mitm ./src/mitm
 # Standalone node_modules may omit deps only required by the MITM child process.
 COPY --from=builder /app/node_modules/node-forge ./node_modules/node-forge
-# HTTPS support: custom server wrapper and ssl utility
+# HTTPS support: custom server wrapper requires full Next.js + React dependencies
 COPY --from=builder /app/server-https.js ./server-https.js
+COPY --from=builder /app/node_modules/next ./node_modules/next
+COPY --from=builder /app/node_modules/@swc ./node_modules/@swc
+COPY --from=builder /app/node_modules/@next ./node_modules/@next
+COPY --from=builder /app/node_modules/react ./node_modules/react
+COPY --from=builder /app/node_modules/react-dom ./node_modules/react-dom
+COPY --from=builder /app/node_modules/styled-jsx ./node_modules/styled-jsx
+COPY --from=builder /app/node_modules/scheduler ./node_modules/scheduler
 
 RUN mkdir -p /app/data && chown -R node:node /app && \
   mkdir -p /app/data-home && chown node:node /app/data-home && \
