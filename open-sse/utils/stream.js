@@ -259,6 +259,12 @@ export function createSSEStream(options = {}) {
               continue; // Skip this empty chunk
             }
 
+            // Fire onFirstContent BEFORE emitting message_start to ensure detectContent buffers it
+            if (item.type === "message_start" && onFirstContent && !firstContentFired) {
+              firstContentFired = true;
+              onFirstContent();
+            }
+
             // Inject estimated usage if finish chunk has no valid usage
             const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
             if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && totalContentLength > 0) {
@@ -361,9 +367,13 @@ export function createSSEStream(options = {}) {
           // Some clients (e.g. OpenClaw) expect the OpenAI-style sentinel:
           //   data: [DONE]\n\n
           // Without it they can hang until timeout and trigger failover.
-          const doneOutput = "data: [DONE]\n\n";
-          reqLogger?.appendConvertedChunk?.(doneOutput);
-          controller.enqueue(sharedEncoder.encode(doneOutput));
+          // However, Claude format clients expect the stream to end after message_stop
+          // and do not expect [DONE].
+          if (sourceFormat !== FORMATS.CLAUDE) {
+            const doneOutput = "data: [DONE]\n\n";
+            reqLogger?.appendConvertedChunk?.(doneOutput);
+            controller.enqueue(sharedEncoder.encode(doneOutput));
+          }
 
           if (onStreamComplete) {
             onStreamComplete({
@@ -414,9 +424,12 @@ export function createSSEStream(options = {}) {
           }
         }
 
-        const doneOutput = "data: [DONE]\n\n";
-        reqLogger?.appendConvertedChunk?.(doneOutput);
-        controller.enqueue(sharedEncoder.encode(doneOutput));
+        // Only add [DONE] for OpenAI format. Claude format ends with message_stop event.
+        if (sourceFormat !== FORMATS.CLAUDE) {
+          const doneOutput = "data: [DONE]\n\n";
+          reqLogger?.appendConvertedChunk?.(doneOutput);
+          controller.enqueue(sharedEncoder.encode(doneOutput));
+        }
 
         console.log("[USAGE-TRANSLATE] Before estimation check - state.usage:", state?.usage ? JSON.stringify(state.usage) : "null", "hasValidUsage:", hasValidUsage(state?.usage), "needsInputEstimation:", needsInputEstimation(state?.usage), "totalContentLength:", totalContentLength);
         if ((!hasValidUsage(state?.usage) || needsInputEstimation(state?.usage)) && totalContentLength > 0) {
@@ -463,7 +476,7 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, onFirstContent = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, onFirstContent = null, sourceFormat = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
@@ -473,6 +486,7 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     body,
     onStreamComplete,
     apiKey,
-    onFirstContent
+    onFirstContent,
+    sourceFormat
   });
 }

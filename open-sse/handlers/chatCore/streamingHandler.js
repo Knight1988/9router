@@ -35,7 +35,7 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
     return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, onFirstContent);
   }
 
-  return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey, onFirstContent);
+  return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey, onFirstContent, sourceFormat);
 }
 
 /**
@@ -69,9 +69,6 @@ async function detectContent(transformedBody, timeoutMs, onFirstContentSignal) {
       clearTimeout(timer);
       if (!settled) {
         settled = true;
-        if (process.env.DEBUG === "1") {
-          console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] 🔍 [DEBUG-detectContent] onFirstContent callback fired → resolving {kind:"content"}`);
-        }
         resolve({ kind: "content" });
       }
     };
@@ -80,9 +77,6 @@ async function detectContent(transformedBody, timeoutMs, onFirstContentSignal) {
       try {
         while (true) {
           const { done, value } = await reader.read();
-          if (process.env.DEBUG === "1") {
-            console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] 🔍 [DEBUG-detectContent] read: done=${done} settled=${settled} buffered=${buffered.length} valueLen=${value?.byteLength ?? "n/a"}`);
-          }
           if (done) {
             clearTimeout(timer);
             if (!settled) {
@@ -92,17 +86,18 @@ async function detectContent(transformedBody, timeoutMs, onFirstContentSignal) {
               // The transform already filtered via hasValuableContent, so buffered chunks ARE valuable.
               const hasBufferedContent = buffered.length > 0;
               const r = (contentDetected || hasBufferedContent) ? { kind: "content" } : { kind: "empty", reason: "end-of-stream" };
-              if (process.env.DEBUG === "1") {
-                console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] 🔍 [DEBUG-detectContent] loop-done: resolving ${JSON.stringify(r)} (contentDetected=${contentDetected} hasBufferedContent=${hasBufferedContent})`);
-              }
               resolve(r);
             }
             break;
           }
+          // Buffer the current chunk first, then check if we should stop buffering.
+          // This ensures we don't lose chunks that were enqueued before onFirstContent fired.
+          buffered.push(value);
           // Stop buffering once content has been detected — buildReplayStream will
           // continue reading the remainder directly from this reader.
-          if (settled) break;
-          buffered.push(value);
+          if (settled) {
+            break;
+          }
         }
       } catch (err) {
         clearTimeout(timer);
@@ -119,10 +114,6 @@ async function detectContent(transformedBody, timeoutMs, onFirstContentSignal) {
   // Wait for the background loop to fully exit before returning the reader,
   // so buildReplayStream has exclusive access with no concurrent reads.
   await loopDone;
-
-  if (process.env.DEBUG === "1") {
-    console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] 🔍 [DEBUG-detectContent] final result=${JSON.stringify(result)} buffered=${buffered.length}`);
-  }
 
   return { result, reader, buffered };
 }
