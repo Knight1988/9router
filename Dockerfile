@@ -41,6 +41,7 @@ COPY --from=builder /app/node_modules/react ./node_modules/react
 COPY --from=builder /app/node_modules/react-dom ./node_modules/react-dom
 COPY --from=builder /app/node_modules/styled-jsx ./node_modules/styled-jsx
 COPY --from=builder /app/node_modules/scheduler ./node_modules/scheduler
+COPY --from=builder /app/node_modules/material-symbols ./node_modules/material-symbols
 
 RUN mkdir -p /app/data && chown -R node:node /app && \
   mkdir -p /app/data-home && chown node:node /app/data-home && \
