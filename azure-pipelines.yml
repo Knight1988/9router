@@ -31,9 +31,11 @@ steps:
       PORTAINER_URL="https://dk-server.linkpc.net/portainer"
       STACK_ID=23
       ENDPOINT_ID=3
+      MAX_RETRIES=3
+      RETRY_DELAY=10
 
       echo "Fetching current stack file from Portainer..."
-      STACK_FILE=$(curl -fsSL \
+      STACK_FILE=$(curl -fsSL --max-time 30 \
         -H "X-API-Key: $(PORTAINER_API_KEY)" \
         "${PORTAINER_URL}/api/stacks/${STACK_ID}/file" \
         | jq -r '.StackFileContent')
@@ -47,13 +49,27 @@ steps:
         --arg file "$STACK_FILE" \
         '{stackFileContent: $file, env: [], prune: false, pullImage: true}')
 
-      curl -fsSL -X PUT \
-        -H "X-API-Key: $(PORTAINER_API_KEY)" \
-        -H "Content-Type: application/json" \
-        --data "$PAYLOAD" \
-        "${PORTAINER_URL}/api/stacks/${STACK_ID}?endpointId=${ENDPOINT_ID}"
-      echo
-      echo "Portainer redeploy requested."
+      for i in $(seq 1 $MAX_RETRIES); do
+        echo "Attempt $i of $MAX_RETRIES..."
+        if curl -fsSL -X PUT --max-time 120 \
+          -H "X-API-Key: $(PORTAINER_API_KEY)" \
+          -H "Content-Type: application/json" \
+          --data "$PAYLOAD" \
+          "${PORTAINER_URL}/api/stacks/${STACK_ID}?endpointId=${ENDPOINT_ID}"; then
+          echo
+          echo "Portainer redeploy successful."
+          exit 0
+        else
+          EXIT_CODE=$?
+          echo "Attempt $i failed with exit code $EXIT_CODE"
+          if [ $i -lt $MAX_RETRIES ]; then
+            echo "Waiting ${RETRY_DELAY}s before retry..."
+            sleep $RETRY_DELAY
+          fi
+        fi
+      done
+      echo "All retry attempts failed."
+      exit 1
     displayName: Redeploy 9router stack via Portainer
     condition: and(succeeded(), eq(variables['Build.SourceBranchName'], 'beta'))
     env:
