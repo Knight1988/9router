@@ -35,18 +35,51 @@ export function parseSSELine(line, format = null) {
 
 // Check if chunk has valuable content (not empty)
 export function hasValuableContent(chunk, format) {
-  // OpenAI format
-  if (format === FORMATS.OPENAI && chunk.choices?.[0]?.delta) {
-    const delta = chunk.choices[0].delta;
-    const result = delta.content && delta.content !== "" ||
-           delta.reasoning_content && delta.reasoning_content !== "" ||
-           delta.tool_calls && delta.tool_calls.length > 0 ||
-           chunk.choices[0].finish_reason ||
-           delta.role;
-    if (process.env.DEBUG === "1") {
-      console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] 🔍 [DEBUG-hasValuableContent] delta=${JSON.stringify(delta)} result=${result}`);
+  // AGGRESSIVE FIX: Reject any chunk with an empty delta object and finish_reason
+  // This catches the devgo empty response bug regardless of format detection
+  if (chunk.choices?.[0]) {
+    const choice = chunk.choices[0];
+    const delta = choice.delta;
+    const hasFinishReason = choice.finish_reason;
+
+    if (delta && hasFinishReason) {
+      const deltaKeys = Object.keys(delta);
+      const isEmpty = deltaKeys.length === 0 ||
+                      (!delta.content && !delta.reasoning_content && !delta.tool_calls && !delta.role);
+      if (isEmpty) {
+        return false;
+      }
     }
-    return result;
+  }
+
+  // OpenAI format
+  if (format === FORMATS.OPENAI && chunk.choices?.[0]) {
+    const choice = chunk.choices[0];
+    const delta = choice.delta;
+    const hasFinishReason = choice.finish_reason;
+
+    // If there's no delta at all, but there's a finish_reason, it's an empty finish chunk
+    if (!delta && hasFinishReason) {
+      return false;
+    }
+
+    // If delta exists, check its contents
+    if (delta) {
+      const hasContent = delta.content && delta.content !== "";
+      const hasReasoning = delta.reasoning_content && delta.reasoning_content !== "";
+      const hasToolCalls = delta.tool_calls && delta.tool_calls.length > 0;
+      const hasRole = delta.role;
+
+      // A finish chunk with empty delta (no content, reasoning, tool calls, or role) is not valuable
+      if (hasFinishReason && !hasContent && !hasReasoning && !hasToolCalls && !hasRole) {
+        return false;
+      }
+
+      return hasContent || hasReasoning || hasToolCalls || hasFinishReason || hasRole;
+    }
+
+    // No delta and no finish_reason - skip
+    return false;
   }
 
   // Claude format
@@ -55,11 +88,21 @@ export function hasValuableContent(chunk, format) {
     const hasText = chunk.delta?.text && chunk.delta.text !== "";
     const hasThinking = chunk.delta?.thinking && chunk.delta.thinking !== "";
     const hasInputJson = chunk.delta?.partial_json && chunk.delta.partial_json !== "";
-    
+
     if (isContentBlockDelta && !hasText && !hasThinking && !hasInputJson) {
       return false;
     }
     return true;
+  }
+
+  // Catch-all: reject any chunk with empty delta and finish_reason (regardless of format)
+  if (chunk.choices?.[0]?.delta && chunk.choices[0].finish_reason) {
+    const delta = chunk.choices[0].delta;
+    const isEmpty = Object.keys(delta).length === 0 ||
+                    (!delta.content && !delta.reasoning_content && !delta.tool_calls && !delta.role);
+    if (isEmpty) {
+      return false;
+    }
   }
 
   return true; // Other formats: keep all chunks
