@@ -8,6 +8,7 @@ import ProviderHealthTab from "./components/ProviderHealthTab";
 import ApiKeyUsageTab from "./components/ApiKeyUsageTab";
 
 const PERIODS = [
+  { value: "today", label: "Today" },
   { value: "24h", label: "24h" },
   { value: "7d", label: "7D" },
   { value: "30d", label: "30D" },
@@ -26,8 +27,7 @@ function UsageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const [tabLoading, setTabLoading] = useState(false);
-  const [period, setPeriod] = useState("7d");
+  const [period, setPeriod] = useState("today");
 
   const tabFromUrl = searchParams.get("tab");
   const activeTab = tabFromUrl && ["overview", "logs", "details", "health", "apikeys"].includes(tabFromUrl)
@@ -39,15 +39,13 @@ function UsageContent() {
 
   const handleTabChange = (value) => {
     if (value === activeTab) return;
-    setTabLoading(true);
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(searchParams);
     params.set("tab", value);
     // Remove tab-specific params when switching away from their owning tab
     for (const paramList of Object.values(TAB_OWNED_PARAMS)) {
       for (const param of paramList) params.delete(param);
     }
     router.push(`/dashboard/usage?${params.toString()}`, { scroll: false });
-    setTimeout(() => setTabLoading(false), 300);
   };
 
   return (
@@ -63,21 +61,15 @@ function UsageContent() {
         onChange={handleTabChange}
       />
 
-      {tabLoading ? (
-        <CardSkeleton />
-      ) : (
-        <>
-          {activeTab === "overview" && (
-            <Suspense fallback={<CardSkeleton />}>
-              <UsageStats period={period} setPeriod={setPeriod} hidePeriodSelector />
-            </Suspense>
-          )}
-          {activeTab === "logs" && <RequestLogger />}
-          {activeTab === "details" && <RequestDetailsTab />}
-          {activeTab === "apikeys" && <ApiKeyUsageTab />}
-          {activeTab === "health" && <ProviderHealthTab />}
-        </>
+      {activeTab === "overview" && (
+        <Suspense fallback={<CardSkeleton />}>
+          <UsageStats period={period} setPeriod={setPeriod} hidePeriodSelector />
+        </Suspense>
       )}
+      {activeTab === "logs" && <RequestLogger />}
+      {activeTab === "details" && <RequestDetailsTab />}
+      {activeTab === "apikeys" && <ApiKeyUsageTab />}
+      {activeTab === "health" && <ProviderHealthTab />}
     </div>
   );
 }
