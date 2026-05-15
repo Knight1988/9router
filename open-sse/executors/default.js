@@ -92,12 +92,6 @@ export class DefaultExecutor extends BaseExecutor {
           : (headers["Authorization"] = `Bearer ${credentials.accessToken}`);
         break;
       }
-      case "zunef-unlimited":
-        headers["x-api-key"] = credentials._zunefToken || credentials.apiKey;
-        break;
-      case "zunef":
-        headers["x-api-key"] = credentials.apiKey;
-        break;
       case "glm":
       case "kimi":
       case "minimax":

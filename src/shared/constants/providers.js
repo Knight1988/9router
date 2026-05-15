@@ -69,7 +69,6 @@ export const APIKEY_PROVIDERS = {
   "claude-claudible": { id: "claude-claudible", alias: "claude-claudible", name: "Claude Claudible", icon: "smart_toy", color: "#D97757", textIcon: "CL", website: "https://claudible.io", notice: { text: "Premium Claude API with smart optimizations. Track usage at dashboard.", apiKeyUrl: "https://claudible.io/dashboard" } },
   "open-claude": { id: "open-claude", alias: "open-claude", name: "Open Claude", icon: "smart_toy", color: "#D97757", textIcon: "OC", website: "https://open-claude.com", notice: { text: "OpenAI-compatible Claude gateway with usage dashboard and budget tracking.", apiKeyUrl: "https://open-claude.com/keys" } },
   "troll-llm": { id: "troll-llm", alias: "tl", name: "Troll LLM", icon: "smart_toy", color: "#7C3AED", textIcon: "TL", website: "https://www.trollllm.xyz", notice: { text: "OpenAI-compatible multi-model gateway with Claude, GPT, and Gemini.", apiKeyUrl: "https://www.trollllm.xyz/dashboard/keys" } },
-  zunef: { id: "zunef", alias: "zn", name: "Zunef", icon: "hub", color: "#0EA5E9", textIcon: "ZN", website: "https://claude.zunef.com" },
   "opencode-go": { id: "opencode-go", alias: "ocg", name: "OpenCode Go", icon: "terminal", color: "#E87040", textIcon: "OC", website: "https://opencode.ai/auth", notice: { text: "OpenCode Go subscription: $5/mo (then $10/mo). Access to Kimi, GLM, Qwen, MiMo, MiniMax models.", apiKeyUrl: "https://opencode.ai/auth" } },
   azure: { id: "azure", alias: "azure", name: "Azure OpenAI", icon: "cloud", color: "#0078D4", textIcon: "AZ", website: "https://azure.microsoft.com/en-us/products/ai-services/openai-service", notice: { apiKeyUrl: "https://portal.azure.com/#view/Microsoft_Azure_ProjectOxford/CognitiveServicesHub/~/OpenAI" }, hasProviderSpecificData: true },
 
@@ -267,6 +266,8 @@ export const USAGE_SUPPORTED_PROVIDERS = [
   "minimax-cn",
   "cc-claudible",
   "claude-claudible",
+  "open-claude",
+  "troll-llm",
 ];
 
 // Subset that uses apikey auth (still surfaced on quota page)

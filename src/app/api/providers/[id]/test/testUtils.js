@@ -506,18 +506,6 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy("https://openrouter.ai/api/v1/auth/key", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
-      case "zunef-unlimited": {
-        const res = await fetchWithConnectionProxy(
-          `https://claude.zunef.com/api/claude-code/${encodeURIComponent(connection.apiKey)}/auth`,
-          { headers: { Accept: "text/plain" } }, effectiveProxy);
-        return { valid: res.ok, error: res.ok ? null : "Invalid install token" };
-      }
-      case "zunef": {
-        const res = await fetchWithConnectionProxy(
-          "https://claude.zunef.com/v1/ai/v1/models",
-          { headers: { "x-api-key": connection.apiKey, "Anthropic-Version": "2023-06-01" } }, effectiveProxy);
-        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
-      }
       case "glm": {
         const res = await fetchWithConnectionProxy("https://api.z.ai/api/anthropic/v1/messages", {
           method: "POST",

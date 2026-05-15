@@ -10,7 +10,7 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/sha
 import Toggle from "@/shared/components/Toggle";
 
 // Providers whose outgoing requests target Claude API format (Anthropic prompt caching applies)
-const CLAUDE_TARGET_PROVIDERS = new Set(["claude", "anthropic", "glm", "zunef", "kiro", "qwen"]);
+const CLAUDE_TARGET_PROVIDERS = new Set(["claude", "anthropic", "glm", "kiro", "qwen"]);
 
 function isClaudeTargetProvider(providerId) {
   if (!providerId) return false;
