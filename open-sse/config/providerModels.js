@@ -247,15 +247,35 @@ export const PROVIDER_MODELS = {
     { id: "claude-opus-4-20250514", name: "Claude Opus 4" },
     { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet" },
   ],
-  "cc-claudible": [
-    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
-    { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
-  ],
-  "claude-claudible": [
+  "vip-claudible": [
+    { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
+    { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5 (2025-10-01)" },
+    { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
     { id: "claude-opus-4-7", name: "Claude Opus 4.7" },
     { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
-    { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
-    { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5 (2025-10-01)" },
+    { id: "claudible", name: "Claudible" },
+  ],
+  "cc-claudible": [
+    { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
+    { id: "claude-opus-4-7", name: "Claude Opus 4.7" },
+    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
+  ],
+  "cn-claudible": [
+    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
+    { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" },
+    { id: "glm-5.1", name: "GLM 5.1" },
+    { id: "kimi-k2.6", name: "Kimi K2.6" },
+    { id: "qwen3.6-plus", name: "Qwen 3.6 Plus" },
+  ],
+  "minimax-claudible": [
+    { id: "MiniMax-CodingPlan", name: "MiniMax CodingPlan" },
+    { id: "MiniMax-M2.7", name: "MiniMax M2.7" },
+    { id: "MiniMax-M2.7-highspeed", name: "MiniMax M2.7 Highspeed" },
+  ],
+  "claude-claudible": [
+    { id: "gpt-5.4", name: "GPT 5.4" },
+    { id: "gpt-5.4-mini", name: "GPT 5.4 Mini" },
+    { id: "gpt-5.5", name: "GPT 5.5" },
   ],
   gemini: [
     // Gemini 3.1 series

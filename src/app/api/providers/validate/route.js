@@ -268,6 +268,24 @@ export async function POST(request) {
           isValid = anthropicRes.status !== 401;
           break;
 
+        case "vip-claudible": {
+          const vipClaudibleRes = await fetch("https://vip.claudible.io/v1/messages", {
+            method: "POST",
+            headers: {
+              "x-api-key": apiKey,
+              "anthropic-version": "2023-06-01",
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "claude-3-haiku-20240307",
+              max_tokens: 1,
+              messages: [{ role: "user", content: "test" }],
+            }),
+          });
+          isValid = vipClaudibleRes.status !== 401 && vipClaudibleRes.status !== 403;
+          break;
+        }
+
         case "cc-claudible": {
           const ccClaudibleRes = await fetch("https://cc.claudible.io/v1/messages", {
             method: "POST",
@@ -283,6 +301,41 @@ export async function POST(request) {
             }),
           });
           isValid = ccClaudibleRes.status !== 401 && ccClaudibleRes.status !== 403;
+          break;
+        }
+
+        case "cn-claudible": {
+          const cnClaudibleRes = await fetch("https://cn.claudible.io/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "x-api-key": apiKey,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "deepseek-v4-flash",
+              max_tokens: 1,
+              messages: [{ role: "user", content: "test" }],
+            }),
+          });
+          isValid = cnClaudibleRes.status !== 401 && cnClaudibleRes.status !== 403;
+          break;
+        }
+
+        case "minimax-claudible": {
+          const minimaxClaudibleRes = await fetch("https://minimax.claudible.io/v1/messages", {
+            method: "POST",
+            headers: {
+              "x-api-key": apiKey,
+              "anthropic-version": "2023-06-01",
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "MiniMax-M2.7",
+              max_tokens: 1,
+              messages: [{ role: "user", content: "test" }],
+            }),
+          });
+          isValid = minimaxClaudibleRes.status !== 401 && minimaxClaudibleRes.status !== 403;
           break;
         }
 

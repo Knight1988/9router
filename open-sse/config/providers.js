@@ -250,8 +250,22 @@ export const PROVIDERS = {
     format: "claude",
     headers: { ...CLAUDE_API_HEADERS }
   },
+  "vip-claudible": {
+    baseUrl: "https://vip.claudible.io/v1/messages",
+    format: "claude",
+    headers: { ...CLAUDE_API_HEADERS }
+  },
   "cc-claudible": {
     baseUrl: "https://cc.claudible.io/v1/messages",
+    format: "claude",
+    headers: { ...CLAUDE_API_HEADERS }
+  },
+  "cn-claudible": {
+    baseUrl: "https://cn.claudible.io/v1/chat/completions",
+    format: "openai"
+  },
+  "minimax-claudible": {
+    baseUrl: "https://minimax.claudible.io/v1/messages",
     format: "claude",
     headers: { ...CLAUDE_API_HEADERS }
   },

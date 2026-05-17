@@ -480,11 +480,38 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const valid = res.status !== 401;
         return { valid, error: valid ? null : "Invalid API key" };
       }
+      case "vip-claudible": {
+        const res = await fetchWithConnectionProxy("https://vip.claudible.io/v1/messages", {
+          method: "POST",
+          headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+          body: JSON.stringify({ model: "claude-3-haiku-20240307", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid API key" };
+      }
       case "cc-claudible": {
         const res = await fetchWithConnectionProxy("https://cc.claudible.io/v1/messages", {
           method: "POST",
           headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
           body: JSON.stringify({ model: "claude-3-haiku-20240307", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid API key" };
+      }
+      case "cn-claudible": {
+        const res = await fetchWithConnectionProxy("https://cn.claudible.io/v1/chat/completions", {
+          method: "POST",
+          headers: { "x-api-key": connection.apiKey, "content-type": "application/json" },
+          body: JSON.stringify({ model: "deepseek-v4-flash", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid API key" };
+      }
+      case "minimax-claudible": {
+        const res = await fetchWithConnectionProxy("https://minimax.claudible.io/v1/messages", {
+          method: "POST",
+          headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+          body: JSON.stringify({ model: "MiniMax-M2.7", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
         }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };

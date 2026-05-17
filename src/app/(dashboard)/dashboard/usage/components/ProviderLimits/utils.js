@@ -189,7 +189,10 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "vip-claudible":
       case "cc-claudible":
+      case "cn-claudible":
+      case "minimax-claudible":
       case "claude-claudible":
         if (data.error) {
           normalizedQuotas.push({

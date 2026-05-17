@@ -13,16 +13,18 @@ const cache = new Map(); // key: fetcher.url → { data, expiresAt }
 export async function fetchSuggestedModels(fetcher) {
   if (!fetcher?.url || !fetcher?.type) return [];
 
-  const cached = cache.get(fetcher.url);
+  const cacheKey = fetcher.endpointId ? `${fetcher.url}::${fetcher.endpointId}` : fetcher.url;
+  const cached = cache.get(cacheKey);
   if (cached && Date.now() < cached.expiresAt) return cached.data;
 
   try {
     const params = new URLSearchParams({ url: fetcher.url, type: fetcher.type });
+    if (fetcher.endpointId) params.set("endpointId", fetcher.endpointId);
     const res = await fetch(`/api/providers/suggested-models?${params}`);
     if (!res.ok) return [];
     const json = await res.json();
     const data = json.data ?? [];
-    cache.set(fetcher.url, { data, expiresAt: Date.now() + CACHE_TTL_MS });
+    cache.set(cacheKey, { data, expiresAt: Date.now() + CACHE_TTL_MS });
     return data;
   } catch {
     return [];
