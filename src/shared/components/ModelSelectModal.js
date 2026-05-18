@@ -178,7 +178,15 @@ export default function ModelSelectModal({
           }));
 
         // For typed kinds, only include hardcoded typed models (aliases are typically LLM-only and lack type info)
-        let combined = aliasModels;
+        const hardcodedFallback = getModelsByProviderId(providerId)
+          .filter((m) => !m.type || m.type === "llm")
+          .map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}` }));
+        const aliasIds = new Set(aliasModels.map((m) => m.id));
+        const combined_base = [
+          ...aliasModels,
+          ...hardcodedFallback.filter((m) => !aliasIds.has(m.id)),
+        ];
+        let combined = combined_base;
         if (kindFilter && TYPED_KINDS.has(kindFilter)) {
           combined = getModelsByProviderId(providerId)
             .filter((m) => m.type === kindFilter)

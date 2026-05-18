@@ -247,7 +247,18 @@ export const PROVIDER_MODELS = {
     { id: "claude-opus-4-20250514", name: "Claude Opus 4" },
     { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet" },
   ],
-  techopenclaw: [], // Techopenclaw (passthrough — models fetched live from /v1/models)
+  techopenclaw: [
+    { id: "claude-opus-4.7", name: "Claude Opus 4.7" },
+    { id: "claude-opus-4.6", name: "Claude Opus 4.6" },
+    { id: "toc-claude-opus-4.6", name: "TOC Claude Opus 4.6" },
+    { id: "claude-sonnet-4.6", name: "Claude Sonnet 4.6" },
+    { id: "gpt-5.5", name: "GPT-5.5" },
+    { id: "gpt-5.4", name: "GPT-5.4" },
+    { id: "gpt-5.3", name: "GPT-5.3" },
+    { id: "gpt-5.2", name: "GPT-5.2" },
+    { id: "glm-5.1", name: "GLM 5.1" },
+    { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro" },
+  ],
   "vip-claudible": [
     { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
     { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5 (2025-10-01)" },
