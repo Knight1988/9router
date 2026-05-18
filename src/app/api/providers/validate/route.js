@@ -268,6 +268,14 @@ export async function POST(request) {
           isValid = anthropicRes.status !== 401;
           break;
 
+        case "techopenclaw": {
+          const techOpenClawRes = await fetch("https://api.techopenclaw.com/v1/models", {
+            headers: { "Authorization": `Bearer ${apiKey}` },
+          });
+          isValid = techOpenClawRes.ok;
+          break;
+        }
+
         case "vip-claudible": {
           const vipClaudibleRes = await fetch("https://vip.claudible.io/v1/messages", {
             method: "POST",

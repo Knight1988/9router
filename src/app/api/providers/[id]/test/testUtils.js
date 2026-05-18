@@ -480,6 +480,12 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const valid = res.status !== 401;
         return { valid, error: valid ? null : "Invalid API key" };
       }
+      case "techopenclaw": {
+        const res = await fetchWithConnectionProxy("https://api.techopenclaw.com/v1/models", { 
+          headers: { Authorization: `Bearer ${connection.apiKey}` } 
+        }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
       case "vip-claudible": {
         const res = await fetchWithConnectionProxy("https://vip.claudible.io/v1/messages", {
           method: "POST",

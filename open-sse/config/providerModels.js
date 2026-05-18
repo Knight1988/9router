@@ -247,6 +247,7 @@ export const PROVIDER_MODELS = {
     { id: "claude-opus-4-20250514", name: "Claude Opus 4" },
     { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet" },
   ],
+  techopenclaw: [], // Techopenclaw (passthrough — models fetched live from /v1/models)
   "vip-claudible": [
     { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
     { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5 (2025-10-01)" },

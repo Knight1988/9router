@@ -250,6 +250,11 @@ export const PROVIDERS = {
     format: "claude",
     headers: { ...CLAUDE_API_HEADERS }
   },
+  techopenclaw: {
+    baseUrl: "https://api.techopenclaw.com/v1/messages",
+    format: "claude",
+    headers: { ...CLAUDE_API_HEADERS }
+  },
   "vip-claudible": {
     baseUrl: "https://vip.claudible.io/v1/messages",
     format: "claude",
