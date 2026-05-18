@@ -46,7 +46,7 @@ stages:
                 echo "=== $label ==="
                 echo "$response"
 
-                content=$(echo "$response" | grep "content_block_delta" | grep -o '"text":"[^"]*"' | sed 's/"text":"//g' | sed 's/"//g' | tr -d '\n')
+                content=$(echo "$response" | grep "content_block_delta" | grep -oE '"text"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/"text"[[:space:]]*:[[:space:]]*"//g' | sed 's/"//g' | tr -d '\n')
 
                 if [ -n "$content" ]; then
                   echo "PASS: $content"
