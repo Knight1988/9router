@@ -286,6 +286,7 @@ export const USAGE_SUPPORTED_PROVIDERS = [
   "claude-claudible",
   "open-claude",
   "troll-llm",
+  "techopenclaw",
 ];
 
 // Subset that uses apikey auth (still surfaced on quota page)
@@ -301,4 +302,5 @@ export const USAGE_APIKEY_PROVIDERS = [
   "cn-claudible",
   "minimax-claudible",
   "claude-claudible",
+  "techopenclaw",
 ];

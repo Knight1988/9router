@@ -73,6 +73,10 @@ const CLAUDIBLE_CONFIG = {
   lookupUrl: "https://claudible.io/dashboard/lookup",
 };
 
+const TECHOPENCLAW_CONFIG = {
+  infoUrl: "https://api.techopenclaw.com/v1/user/info",
+};
+
 /**
  * Get usage data for a provider connection
  * @param {Object} connection - Provider connection with accessToken
@@ -106,6 +110,8 @@ export async function getUsageForProvider(connection, options = {}) {
       return await getOpenClaudeUsage(connection, onSessionRefreshed);
     case "troll-llm":
       return await getTrollLlmUsage(accessToken);
+    case "techopenclaw":
+      return await getTechOpenClawUsage(apiKey, proxyOpts);
     case "devgo":
       return await getDevGoUsage(accessToken);
     case "ollama":
@@ -1497,6 +1503,80 @@ async function getMiniMaxUsage(apiKey, provider, proxyOptions = null) {
   }
 
   return { message: lastErrorMessage ? `MiniMax connected. Unable to fetch usage: ${lastErrorMessage}` : "MiniMax connected. Unable to fetch usage." };
+}
+
+/**
+ * Techopenclaw Usage - Fetches daily plan quota and top-up wallet via user/info API.
+ * The API key is used directly as a Bearer token (same value returned by /v1/user/login).
+ */
+async function getTechOpenClawUsage(apiKey, proxyOptions = null) {
+  if (!apiKey) {
+    return { message: "Techopenclaw API key not available." };
+  }
+
+  try {
+    const response = await proxyAwareFetch(TECHOPENCLAW_CONFIG.infoUrl, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+        Referer: "https://techopenclaw.com/",
+      },
+    }, proxyOptions);
+
+    if (response.status === 401 || response.status === 403) {
+      return { message: "Techopenclaw API key invalid or expired." };
+    }
+
+    if (!response.ok) {
+      return { message: `Techopenclaw usage API error (${response.status}).` };
+    }
+
+    const data = await response.json();
+    const quotas = {};
+
+    const dailyLimit = Number(data.daily_limit ?? data.plan?.daily_limit ?? 0);
+    const dailyUsed = Number(data.plan_used_today ?? data.daily_used ?? 0);
+    const planRemaining = Number(data.plan_remaining ?? data.plan?.daily_remaining ?? Math.max(0, dailyLimit - dailyUsed));
+    const resetInSeconds = Number(data.plan?.reset_in_seconds ?? 0);
+    const planResetAt = resetInSeconds > 0
+      ? new Date(Date.now() + resetInSeconds * 1000).toISOString()
+      : null;
+
+    quotas["plan (rolling)"] = {
+      used: +dailyUsed.toFixed(4),
+      total: +dailyLimit.toFixed(4),
+      remaining: +planRemaining.toFixed(4),
+      remainingPercentage: dailyLimit > 0 ? Math.round((planRemaining / dailyLimit) * 100) : 0,
+      resetAt: planResetAt,
+      unlimited: false,
+      unit: "credit",
+    };
+
+    const topupTotal = Number(data.total_topup ?? 0);
+    const topupUsed = Number(data.topup_credits ?? 0);
+    const topupBalance = Number(data.topup_balance ?? Math.max(0, topupTotal - topupUsed));
+
+    if (topupTotal > 0 || topupUsed > 0) {
+      quotas["top-up credits"] = {
+        used: +topupUsed.toFixed(4),
+        total: +topupTotal.toFixed(4),
+        remaining: +topupBalance.toFixed(4),
+        remainingPercentage: topupTotal > 0 ? Math.round((topupBalance / topupTotal) * 100) : 0,
+        resetAt: null,
+        unlimited: false,
+        unit: "credit",
+      };
+    }
+
+    return {
+      plan: data.plan?.name || "Techopenclaw",
+      planExpiresAt: data.plan?.expires_at ? parseResetTime(data.plan.expires_at) : null,
+      quotas,
+    };
+  } catch (error) {
+    return { message: `Techopenclaw connected. Unable to fetch usage: ${error.message}` };
+  }
 }
 
 /**
