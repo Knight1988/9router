@@ -11,66 +11,148 @@ variables:
   IMAGE_NAME: knight1988/9router
   DOCKER_TAG: $(Build.SourceBranchName)
 
-steps:
-  - checkout: self
-    displayName: Checkout source
+stages:
+  - stage: Test
+    displayName: Build and Test
+    jobs:
+      - job: Test
+        displayName: Build Docker and Run Tests
+        steps:
+          - checkout: self
+            displayName: Checkout source
 
-  - script: |
-      echo "Building Docker image $(IMAGE_NAME):$(DOCKER_TAG)..."
-      docker build -t "$(IMAGE_NAME):$(DOCKER_TAG)" .
-    displayName: Build Docker image
+          - script: |
+              docker compose down
+              docker compose up --build -d
 
-  - script: |
-      echo "Pushing Docker image $(IMAGE_NAME):$(DOCKER_TAG)..."
-      docker push "$(IMAGE_NAME):$(DOCKER_TAG)"
-    displayName: Push Docker image
+              echo "Waiting for server to be ready..."
+              for i in $(seq 1 30); do
+                if curl -sk https://localhost:20129/v1/models > /dev/null 2>&1; then
+                  echo "Server ready."
+                  break
+                fi
+                sleep 2
+              done
+
+              PASS=0
+              FAIL=0
+
+              run_test() {
+                local label="$1"
+                local response="$2"
+
+                echo "=== $label ==="
+                echo "$response"
+
+                content=$(echo "$response" | grep "content_block_delta" | grep -o '"text":"[^"]*"' | sed 's/"text":"//g' | sed 's/"//g' | tr -d '\n')
+
+                if [ -n "$content" ]; then
+                  echo "PASS: $content"
+                  PASS=$((PASS+1))
+                else
+                  echo "FAIL: no content found"
+                  FAIL=$((FAIL+1))
+                fi
+                echo
+              }
+
+              FIRST=1
+              for model in planning coding; do
+                if [ "$FIRST" = "0" ]; then
+                  echo "Waiting 5s for model locks to expire..."
+                  sleep 5
+                fi
+                FIRST=0
+
+                run_test "$model" "$(curl -sk https://localhost:20129/v1/messages \
+                  -H "Content-Type: application/json" \
+                  -H "x-api-key: $(TEST_API_KEY)" \
+                  -H "anthropic-version: 2023-06-01" \
+                  -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"say hi\"}],\"max_tokens\":50}" 2>&1)"
+              done
+
+              echo "Results: $PASS passed, $FAIL failed"
+
+              docker compose down
+
+              if [ "$FAIL" -gt 0 ]; then
+                exit 1
+              fi
+            displayName: Run tests
+
+  - stage: Build
+    displayName: Build and Push Docker Image
+    dependsOn: Test
     condition: and(succeeded(), or(eq(variables['Build.SourceBranchName'], 'latest'), eq(variables['Build.SourceBranchName'], 'beta')))
+    jobs:
+      - job: Build
+        displayName: Build and Push
+        steps:
+          - checkout: self
+            displayName: Checkout source
 
-  - script: |
-      set -euo pipefail
-      PORTAINER_URL="https://dk-server.linkpc.net/portainer"
-      STACK_ID=23
-      ENDPOINT_ID=3
-      MAX_RETRIES=3
-      RETRY_DELAY=10
+          - script: |
+              echo "Building Docker image $(IMAGE_NAME):$(DOCKER_TAG)..."
+              docker build -t "$(IMAGE_NAME):$(DOCKER_TAG)" .
+            displayName: Build Docker image
 
-      echo "Fetching current stack file from Portainer..."
-      STACK_FILE=$(curl -fsSL --max-time 30 \
-        -H "X-API-Key: $(PORTAINER_API_KEY)" \
-        "${PORTAINER_URL}/api/stacks/${STACK_ID}/file" \
-        | jq -r '.StackFileContent')
+          - script: |
+              echo "Pushing Docker image $(IMAGE_NAME):$(DOCKER_TAG)..."
+              docker push "$(IMAGE_NAME):$(DOCKER_TAG)"
+            displayName: Push Docker image
 
-      if [ -z "$STACK_FILE" ] || [ "$STACK_FILE" = "null" ]; then
-        echo "Failed to retrieve stack file"; exit 1
-      fi
-
-      echo "Triggering Portainer redeploy with image pull..."
-      PAYLOAD=$(jq -n \
-        --arg file "$STACK_FILE" \
-        '{stackFileContent: $file, env: [], prune: false, pullImage: true}')
-
-      for i in $(seq 1 $MAX_RETRIES); do
-        echo "Attempt $i of $MAX_RETRIES..."
-        if curl -fsSL -X PUT --max-time 120 \
-          -H "X-API-Key: $(PORTAINER_API_KEY)" \
-          -H "Content-Type: application/json" \
-          --data "$PAYLOAD" \
-          "${PORTAINER_URL}/api/stacks/${STACK_ID}?endpointId=${ENDPOINT_ID}"; then
-          echo
-          echo "Portainer redeploy successful."
-          exit 0
-        else
-          EXIT_CODE=$?
-          echo "Attempt $i failed with exit code $EXIT_CODE"
-          if [ $i -lt $MAX_RETRIES ]; then
-            echo "Waiting ${RETRY_DELAY}s before retry..."
-            sleep $RETRY_DELAY
-          fi
-        fi
-      done
-      echo "All retry attempts failed."
-      exit 1
-    displayName: Redeploy 9router stack via Portainer
+  - stage: Deploy
+    displayName: Redeploy Portainer
+    dependsOn: Build
     condition: and(succeeded(), eq(variables['Build.SourceBranchName'], 'beta'))
-    env:
-      PORTAINER_API_KEY: $(PORTAINER_API_KEY)
+    jobs:
+      - job: Deploy
+        displayName: Redeploy via Portainer
+        steps:
+          - script: |
+              set -euo pipefail
+              PORTAINER_URL="https://dk-server.linkpc.net/portainer"
+              STACK_ID=23
+              ENDPOINT_ID=3
+              MAX_RETRIES=3
+              RETRY_DELAY=10
+
+              echo "Fetching current stack file from Portainer..."
+              STACK_FILE=$(curl -fsSL --max-time 30 \
+                -H "X-API-Key: $(PORTAINER_API_KEY)" \
+                "${PORTAINER_URL}/api/stacks/${STACK_ID}/file" \
+                | jq -r '.StackFileContent')
+
+              if [ -z "$STACK_FILE" ] || [ "$STACK_FILE" = "null" ]; then
+                echo "Failed to retrieve stack file"; exit 1
+              fi
+
+              echo "Triggering Portainer redeploy with image pull..."
+              PAYLOAD=$(jq -n \
+                --arg file "$STACK_FILE" \
+                '{stackFileContent: $file, env: [], prune: false, pullImage: true}')
+
+              for i in $(seq 1 $MAX_RETRIES); do
+                echo "Attempt $i of $MAX_RETRIES..."
+                if curl -fsSL -X PUT --max-time 120 \
+                  -H "X-API-Key: $(PORTAINER_API_KEY)" \
+                  -H "Content-Type: application/json" \
+                  --data "$PAYLOAD" \
+                  "${PORTAINER_URL}/api/stacks/${STACK_ID}?endpointId=${ENDPOINT_ID}"; then
+                  echo
+                  echo "Portainer redeploy successful."
+                  exit 0
+                else
+                  EXIT_CODE=$?
+                  echo "Attempt $i failed with exit code $EXIT_CODE"
+                  if [ $i -lt $MAX_RETRIES ]; then
+                    echo "Waiting ${RETRY_DELAY}s before retry..."
+                    sleep $RETRY_DELAY
+                  fi
+                fi
+              done
+              echo "All retry attempts failed."
+              exit 1
+            displayName: Redeploy 9router stack via Portainer
+            env:
+              PORTAINER_API_KEY: $(PORTAINER_API_KEY)
