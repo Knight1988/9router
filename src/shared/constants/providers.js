@@ -118,6 +118,7 @@ export const APIKEY_PROVIDERS = {
   huggingface: { id: "huggingface", alias: "hf", name: "HuggingFace", icon: "face", color: "#FFD21E", textIcon: "HF", website: "https://huggingface.co", notice: { apiKeyUrl: "https://huggingface.co/settings/tokens" }, serviceKinds: ["image", "imageToText", "tts", "stt"], hiddenKinds: ["tts"], ttsConfig: { baseUrl: "https://api-inference.huggingface.co/models", authType: "apikey", authHeader: "bearer", format: "huggingface-tts", models: [{ id: "facebook/mms-tts-eng", name: "MMS TTS English" }, { id: "microsoft/speecht5_tts", name: "SpeechT5 TTS" }] }, sttConfig: { baseUrl: "https://api-inference.huggingface.co/models", authType: "apikey", authHeader: "bearer", format: "huggingface-asr", models: [{ id: "openai/whisper-large-v3", name: "Whisper Large v3 (HF)" }, { id: "openai/whisper-small", name: "Whisper Small (HF)" }] } },
   blackbox: { id: "blackbox", alias: "bb", name: "Blackbox AI", icon: "smart_toy", color: "#5B5FEF", textIcon: "BB", website: "https://blackbox.ai", notice: { apiKeyUrl: "https://www.blackbox.ai/api-management" }, serviceKinds: ["llm"] },
   chutes: { id: "chutes", alias: "ch", name: "Chutes AI", icon: "water_drop", color: "#ffffffff", textIcon: "CH", website: "https://chutes.ai", notice: { apiKeyUrl: "https://chutes.ai/app/api" } },
+  devgo: { id: "devgo", alias: "devgo", name: "DevGoVN", icon: "hub", color: "#0F766E", textIcon: "DG", website: "https://9router.tools.devgovietnam.io.vn", notice: { apiKeyUrl: "https://9router.tools.devgovietnam.io.vn" }, modelsFetcher: { url: "https://9router.tools.devgovietnam.io.vn/v2/models", type: "openai-all" } },
   // === Free-tier LLM providers (synced from OmniRoute) — DISABLED in UI ===
   // Uncomment to re-enable. Backend config (PROVIDERS, PROVIDER_MODELS, ALIAS_TO_PROVIDER_ID) remains active.
   // agentrouter: { id: "agentrouter", alias: "agentrouter", name: "AgentRouter", icon: "router", color: "#10B981", textIcon: "AR", website: "https://agentrouter.org", notice: { text: "$200 free credits on signup - multi-model routing gateway.", apiKeyUrl: "https://agentrouter.org/register" }, passthroughModels: true, serviceKinds: ["llm"] },
@@ -287,6 +288,7 @@ export const USAGE_SUPPORTED_PROVIDERS = [
   "open-claude",
   "troll-llm",
   "techopenclaw",
+  "devgo",
 ];
 
 // Subset that uses apikey auth (still surfaced on quota page)
@@ -303,4 +305,5 @@ export const USAGE_APIKEY_PROVIDERS = [
   "minimax-claudible",
   "claude-claudible",
   "techopenclaw",
+  "devgo",
 ];
