@@ -17,6 +17,8 @@ stages:
     jobs:
       - job: Test
         displayName: Build Docker and Run Tests
+        pool:
+          name: Ubuntu
         steps:
           - checkout: self
             displayName: Checkout source
@@ -87,6 +89,8 @@ stages:
     jobs:
       - job: Build
         displayName: Build and Push
+        pool:
+          name: Ubuntu
         steps:
           - checkout: self
             displayName: Checkout source
@@ -108,6 +112,8 @@ stages:
     jobs:
       - job: Deploy
         displayName: Redeploy via Portainer
+        pool:
+          name: Ubuntu
         steps:
           - script: |
               set -euo pipefail
