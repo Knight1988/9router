@@ -65,6 +65,7 @@ export {
 // Request details
 export {
   saveRequestDetail, getRequestDetails, getRequestDetailById,
+  getProviderHealthStats, getTotalRecordCount,
 } from "./repos/requestDetailsRepo.js";
 
 // Export/import full DB

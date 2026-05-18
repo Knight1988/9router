@@ -180,6 +180,64 @@ export async function getRequestDetailById(id) {
   return row ? parseJson(row.data, null) : null;
 }
 
+const healthCache = new Map();
+const COUNT_CACHE_TTL_MS = 60_000;
+let countCache = null;
+let countCacheTs = 0;
+
+function healthCacheTtl(startDate) {
+  if (!startDate) return 120_000;
+  const age = Date.now() - new Date(startDate).getTime();
+  return age < 6 * 60 * 60 * 1000 ? 30_000 : 120_000;
+}
+
+export async function getProviderHealthStats({ startDate, provider } = {}) {
+  const cacheKey = `${startDate || ""}|${provider || ""}`;
+  const cached = healthCache.get(cacheKey);
+  if (cached && (Date.now() - cached.ts) < healthCacheTtl(startDate)) {
+    return cached.data;
+  }
+
+  const db = await getAdapter();
+  const conds = [];
+  const params = [];
+
+  if (startDate) { conds.push("timestamp >= ?"); params.push(new Date(startDate).toISOString()); }
+  if (provider) { conds.push("provider = ?"); params.push(provider); }
+
+  const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
+
+  const data = db.all(
+    `SELECT
+      provider,
+      model,
+      COUNT(*) AS totalRequests,
+      SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS successCount,
+      SUM(CASE WHEN status != 'success' THEN 1 ELSE 0 END) AS errorCount,
+      0 AS rateLimitCount,
+      MAX(timestamp) AS lastUsed,
+      AVG(CASE WHEN json_extract(data, '$.latency.total') > 0 THEN json_extract(data, '$.latency.total') END) AS avgLatency,
+      AVG(CASE WHEN json_extract(data, '$.latency.ttft') > 0 THEN json_extract(data, '$.latency.ttft') END) AS avgTtft
+    FROM requestDetails ${where}
+    GROUP BY provider, model`,
+    params
+  );
+
+  healthCache.set(cacheKey, { data, ts: Date.now() });
+  return data;
+}
+
+export async function getTotalRecordCount() {
+  if (countCache !== null && (Date.now() - countCacheTs) < COUNT_CACHE_TTL_MS) {
+    return countCache;
+  }
+  const db = await getAdapter();
+  const row = db.get("SELECT COUNT(*) AS count FROM requestDetails");
+  countCache = row ? row.count : 0;
+  countCacheTs = Date.now();
+  return countCache;
+}
+
 const _shutdownHandler = async () => {
   if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
   if (writeBuffer.length > 0) await flushToDatabase();
