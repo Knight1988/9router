@@ -3,6 +3,7 @@ import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../../config/defaultThinkingS
 import { adjustMaxTokens } from "./maxTokensHelper.js";
 import { applyCloaking } from "../../utils/claudeCloaking.js";
 import { deriveSessionId } from "../../utils/sessionManager.js";
+import { randomBytes, randomUUID } from "crypto";
 
 // Check if message has valid non-empty content
 export function hasValidContent(msg) {
@@ -238,6 +239,13 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
   if ((provider === "claude" || provider?.startsWith("anthropic-compatible")) && apiKey) {
     const sessionId = connectionId ? deriveSessionId(connectionId) : null;
     body = applyCloaking(body, apiKey, sessionId);
+  }
+
+  // Claudible providers require metadata.user_id with Claude Code fingerprint format
+  const CLAUDIBLE_PROVIDERS = new Set(["vip-claudible", "cc-claudible", "minimax-claudible", "claude-claudible"]);
+  if (CLAUDIBLE_PROVIDERS.has(provider) && !body.metadata?.user_id) {
+    const userId = JSON.stringify({ device_id: randomBytes(32).toString("hex"), account_uuid: randomUUID(), session_id: randomUUID() });
+    body = { ...body, metadata: { ...body.metadata, user_id: userId } };
   }
 
   return body;

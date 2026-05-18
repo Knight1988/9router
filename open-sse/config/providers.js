@@ -258,12 +258,12 @@ export const PROVIDERS = {
   "vip-claudible": {
     baseUrl: "https://vip.claudible.io/v1/messages",
     format: "claude",
-    headers: { ...CLAUDE_API_HEADERS }
+    headers: { ...CLAUDE_API_HEADERS, "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)", "X-App": "cli" }
   },
   "cc-claudible": {
     baseUrl: "https://cc.claudible.io/v1/messages",
     format: "claude",
-    headers: { ...CLAUDE_API_HEADERS }
+    headers: { ...CLAUDE_API_HEADERS, "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)", "X-App": "cli" }
   },
   "cn-claudible": {
     baseUrl: "https://cn.claudible.io/v1/chat/completions",
@@ -272,12 +272,12 @@ export const PROVIDERS = {
   "minimax-claudible": {
     baseUrl: "https://minimax.claudible.io/v1/messages",
     format: "claude",
-    headers: { ...CLAUDE_API_HEADERS }
+    headers: { ...CLAUDE_API_HEADERS, "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)", "X-App": "cli" }
   },
   "claude-claudible": {
     baseUrl: "https://claude.claudible.io/v1/messages",
     format: "claude",
-    headers: { ...CLAUDE_API_HEADERS }
+    headers: { ...CLAUDE_API_HEADERS, "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)", "X-App": "cli" }
   },
   "open-claude": {
     baseUrl: "https://open-claude.com/v1/chat/completions",
