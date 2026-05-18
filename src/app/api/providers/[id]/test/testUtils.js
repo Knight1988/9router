@@ -5,6 +5,7 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/sha
 import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
+import { randomBytes, randomUUID } from "crypto";
 import {
   GEMINI_CONFIG,
   ANTIGRAVITY_CONFIG,
@@ -487,19 +488,33 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "vip-claudible": {
+        const userId = JSON.stringify({ device_id: randomBytes(32).toString("hex"), account_uuid: randomUUID(), session_id: randomUUID() });
         const res = await fetchWithConnectionProxy("https://vip.claudible.io/v1/messages", {
           method: "POST",
-          headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-          body: JSON.stringify({ model: "claude-3-haiku-20240307", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+          headers: { 
+            "x-api-key": connection.apiKey, 
+            "anthropic-version": "2023-06-01", 
+            "content-type": "application/json",
+            "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
+            "X-App": "cli",
+          },
+          body: JSON.stringify({ model: "claude-haiku-4-5", max_tokens: 1, messages: [{ role: "user", content: "test" }], metadata: { user_id: userId } }),
         }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "cc-claudible": {
+        const userId = JSON.stringify({ device_id: randomBytes(32).toString("hex"), account_uuid: randomUUID(), session_id: randomUUID() });
         const res = await fetchWithConnectionProxy("https://cc.claudible.io/v1/messages", {
           method: "POST",
-          headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-          body: JSON.stringify({ model: "claude-3-haiku-20240307", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+          headers: { 
+            "x-api-key": connection.apiKey, 
+            "anthropic-version": "2023-06-01", 
+            "content-type": "application/json",
+            "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
+            "X-App": "cli",
+          },
+          body: JSON.stringify({ model: "claude-haiku-4-5", max_tokens: 1, messages: [{ role: "user", content: "test" }], metadata: { user_id: userId } }),
         }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
@@ -514,19 +529,33 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "minimax-claudible": {
+        const userId = JSON.stringify({ device_id: randomBytes(32).toString("hex"), account_uuid: randomUUID(), session_id: randomUUID() });
         const res = await fetchWithConnectionProxy("https://minimax.claudible.io/v1/messages", {
           method: "POST",
-          headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-          body: JSON.stringify({ model: "MiniMax-M2.7", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+          headers: { 
+            "x-api-key": connection.apiKey, 
+            "anthropic-version": "2023-06-01", 
+            "content-type": "application/json",
+            "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
+            "X-App": "cli",
+          },
+          body: JSON.stringify({ model: "MiniMax-M2.7", max_tokens: 1, messages: [{ role: "user", content: "test" }], metadata: { user_id: userId } }),
         }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "claude-claudible": {
+        const userId = JSON.stringify({ device_id: randomBytes(32).toString("hex"), account_uuid: randomUUID(), session_id: randomUUID() });
         const res = await fetchWithConnectionProxy("https://claude.claudible.io/v1/messages", {
           method: "POST",
-          headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-          body: JSON.stringify({ model: "claude-3-haiku-20240307", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+          headers: { 
+            "x-api-key": connection.apiKey, 
+            "anthropic-version": "2023-06-01", 
+            "content-type": "application/json",
+            "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
+            "X-App": "cli",
+          },
+          body: JSON.stringify({ model: "claude-haiku-4-5", max_tokens: 1, messages: [{ role: "user", content: "test" }], metadata: { user_id: userId } }),
         }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };

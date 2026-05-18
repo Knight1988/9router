@@ -6,6 +6,7 @@ import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js"
 import { openaiToCommandCode } from "open-sse/translator/request/openai-to-commandcode.js";
 import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
 import { normalizeProviderId } from "@/lib/providerNormalization";
+import { randomBytes, randomUUID } from "crypto";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
 // Returns true if API key is accepted (status !== 401 && !== 403).
@@ -277,17 +278,21 @@ export async function POST(request) {
         }
 
         case "vip-claudible": {
+          const vipClaudibleUserId = JSON.stringify({ device_id: randomBytes(32).toString("hex"), account_uuid: randomUUID(), session_id: randomUUID() });
           const vipClaudibleRes = await fetch("https://vip.claudible.io/v1/messages", {
             method: "POST",
             headers: {
               "x-api-key": apiKey,
               "anthropic-version": "2023-06-01",
               "content-type": "application/json",
+              "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
+              "X-App": "cli",
             },
             body: JSON.stringify({
-              model: "claude-3-haiku-20240307",
+              model: "claude-haiku-4-5",
               max_tokens: 1,
               messages: [{ role: "user", content: "test" }],
+              metadata: { user_id: vipClaudibleUserId },
             }),
           });
           isValid = vipClaudibleRes.status !== 401 && vipClaudibleRes.status !== 403;
@@ -295,17 +300,21 @@ export async function POST(request) {
         }
 
         case "cc-claudible": {
+          const ccClaudibleUserId = JSON.stringify({ device_id: randomBytes(32).toString("hex"), account_uuid: randomUUID(), session_id: randomUUID() });
           const ccClaudibleRes = await fetch("https://cc.claudible.io/v1/messages", {
             method: "POST",
             headers: {
               "x-api-key": apiKey,
               "anthropic-version": "2023-06-01",
               "content-type": "application/json",
+              "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
+              "X-App": "cli",
             },
             body: JSON.stringify({
-              model: "claude-3-haiku-20240307",
+              model: "claude-haiku-4-5",
               max_tokens: 1,
               messages: [{ role: "user", content: "test" }],
+              metadata: { user_id: ccClaudibleUserId },
             }),
           });
           isValid = ccClaudibleRes.status !== 401 && ccClaudibleRes.status !== 403;
@@ -330,17 +339,21 @@ export async function POST(request) {
         }
 
         case "minimax-claudible": {
+          const minimaxClaudibleUserId = JSON.stringify({ device_id: randomBytes(32).toString("hex"), account_uuid: randomUUID(), session_id: randomUUID() });
           const minimaxClaudibleRes = await fetch("https://minimax.claudible.io/v1/messages", {
             method: "POST",
             headers: {
               "x-api-key": apiKey,
               "anthropic-version": "2023-06-01",
               "content-type": "application/json",
+              "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
+              "X-App": "cli",
             },
             body: JSON.stringify({
               model: "MiniMax-M2.7",
               max_tokens: 1,
               messages: [{ role: "user", content: "test" }],
+              metadata: { user_id: minimaxClaudibleUserId },
             }),
           });
           isValid = minimaxClaudibleRes.status !== 401 && minimaxClaudibleRes.status !== 403;
@@ -348,17 +361,21 @@ export async function POST(request) {
         }
 
         case "claude-claudible": {
+          const claudeClaudibleUserId = JSON.stringify({ device_id: randomBytes(32).toString("hex"), account_uuid: randomUUID(), session_id: randomUUID() });
           const claudeClaudibleRes = await fetch("https://claude.claudible.io/v1/messages", {
             method: "POST",
             headers: {
               "x-api-key": apiKey,
               "anthropic-version": "2023-06-01",
               "content-type": "application/json",
+              "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
+              "X-App": "cli",
             },
             body: JSON.stringify({
-              model: "claude-3-haiku-20240307",
+              model: "claude-haiku-4-5",
               max_tokens: 1,
               messages: [{ role: "user", content: "test" }],
+              metadata: { user_id: claudeClaudibleUserId },
             }),
           });
           isValid = claudeClaudibleRes.status !== 401 && claudeClaudibleRes.status !== 403;
