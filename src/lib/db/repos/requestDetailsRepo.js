@@ -185,19 +185,38 @@ const COUNT_CACHE_TTL_MS = 60_000;
 let countCache = null;
 let countCacheTs = 0;
 
+export function invalidateHealthCache() {
+  healthCache.clear();
+}
+
+export function invalidateCountCache() {
+  countCache = null;
+  countCacheTs = 0;
+}
+
 function healthCacheTtl(startDate) {
   if (!startDate) return 120_000;
   const age = Date.now() - new Date(startDate).getTime();
   return age < 6 * 60 * 60 * 1000 ? 30_000 : 120_000;
 }
 
-export async function getProviderHealthStats({ startDate, provider } = {}) {
-  const cacheKey = `${startDate || ""}|${provider || ""}`;
-  const cached = healthCache.get(cacheKey);
-  if (cached && (Date.now() - cached.ts) < healthCacheTtl(startDate)) {
-    return cached.data;
-  }
+function getLocalDateKey(timestamp) {
+  const d = timestamp ? new Date(timestamp) : new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
+function todayLocalStartIso() {
+  const today = getLocalDateKey(new Date());
+  const [y, m, d] = today.split("-").map(Number);
+  return new Date(y, m - 1, d, 0, 0, 0, 0).toISOString();
+}
+
+function dateKeyFromStartDate(startDateIso) {
+  const d = new Date(startDateIso);
+  return getLocalDateKey(d);
+}
+
+async function getLiveHealthRows({ startDate, provider } = {}) {
   const db = await getAdapter();
   const conds = [];
   const params = [];
@@ -207,7 +226,7 @@ export async function getProviderHealthStats({ startDate, provider } = {}) {
 
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
 
-  const data = db.all(
+  return db.all(
     `SELECT
       provider,
       model,
@@ -222,6 +241,94 @@ export async function getProviderHealthStats({ startDate, provider } = {}) {
     GROUP BY provider, model`,
     params
   );
+}
+
+function mergeHealthRows(daily, live) {
+  const map = {};
+  for (const r of daily) {
+    const key = `${r.provider}|${r.model}`;
+    map[key] = {
+      provider: r.provider,
+      model: r.model,
+      totalRequests: r.totalRequests || 0,
+      successCount: r.successCount || 0,
+      errorCount: r.errorCount || 0,
+      rateLimitCount: r.rateLimitCount || 0,
+      latencySum: r.latencySum || 0,
+      latencyCount: r.latencyCount || 0,
+      ttftSum: r.ttftSum || 0,
+      ttftCount: r.ttftCount || 0,
+      lastUsed: r.lastUsed,
+    };
+  }
+  for (const r of live) {
+    const key = `${r.provider}|${r.model}`;
+    if (!map[key]) {
+      map[key] = {
+        provider: r.provider,
+        model: r.model,
+        totalRequests: 0,
+        successCount: 0,
+        errorCount: 0,
+        rateLimitCount: 0,
+        latencySum: 0,
+        latencyCount: 0,
+        ttftSum: 0,
+        ttftCount: 0,
+        lastUsed: null,
+      };
+    }
+    const e = map[key];
+    e.totalRequests += r.totalRequests || 0;
+    e.successCount += r.successCount || 0;
+    e.errorCount += r.errorCount || 0;
+    e.rateLimitCount += r.rateLimitCount || 0;
+    if (r.avgLatency != null) {
+      e.latencySum += r.avgLatency * (r.totalRequests || 0);
+      e.latencyCount += r.totalRequests || 0;
+    }
+    if (r.avgTtft != null) {
+      e.ttftSum += r.avgTtft * (r.totalRequests || 0);
+      e.ttftCount += r.totalRequests || 0;
+    }
+    if (!e.lastUsed || (r.lastUsed && r.lastUsed > e.lastUsed)) e.lastUsed = r.lastUsed;
+  }
+  return Object.values(map).map((e) => ({
+    provider: e.provider,
+    model: e.model,
+    totalRequests: e.totalRequests,
+    successCount: e.successCount,
+    errorCount: e.errorCount,
+    rateLimitCount: e.rateLimitCount,
+    lastUsed: e.lastUsed,
+    avgLatency: e.latencyCount > 0 ? e.latencySum / e.latencyCount : null,
+    avgTtft: e.ttftCount > 0 ? e.ttftSum / e.ttftCount : null,
+  }));
+}
+
+export async function getProviderHealthStats({ startDate, provider } = {}) {
+  const cacheKey = `${startDate || ""}|${provider || ""}`;
+  const cached = healthCache.get(cacheKey);
+  if (cached && (Date.now() - cached.ts) < healthCacheTtl(startDate)) {
+    return cached.data;
+  }
+
+  // Determine if the window spans multiple days (needs daily table)
+  const startOfToday = todayLocalStartIso();
+  const isMultiDay = !startDate || new Date(startDate).toISOString() < startOfToday;
+
+  let data;
+  if (isMultiDay) {
+    const { getDailyHealthRows } = await import("./providerHealthRepo.js");
+    const startDateKey = startDate ? dateKeyFromStartDate(startDate) : undefined;
+    const [dailyRows, liveRows] = await Promise.all([
+      getDailyHealthRows({ startDateKey, provider }),
+      getLiveHealthRows({ startDate: startOfToday, provider }),
+    ]);
+    data = mergeHealthRows(dailyRows, liveRows);
+  } else {
+    data = await getLiveHealthRows({ startDate, provider });
+  }
 
   healthCache.set(cacheKey, { data, ts: Date.now() });
   return data;

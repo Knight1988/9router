@@ -148,6 +148,28 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
     ],
   },
+  providerHealthDaily: {
+    columns: {
+      dateKey: "TEXT NOT NULL",
+      provider: "TEXT NOT NULL",
+      model: "TEXT NOT NULL",
+      totalRequests: "INTEGER DEFAULT 0",
+      successCount: "INTEGER DEFAULT 0",
+      errorCount: "INTEGER DEFAULT 0",
+      rateLimitCount: "INTEGER DEFAULT 0",
+      latencySum: "REAL DEFAULT 0",
+      latencyCount: "INTEGER DEFAULT 0",
+      ttftSum: "REAL DEFAULT 0",
+      ttftCount: "INTEGER DEFAULT 0",
+      firstSeen: "TEXT",
+      lastUsed: "TEXT",
+    },
+    primaryKey: "PRIMARY KEY (dateKey, provider, model)",
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_phd_date ON providerHealthDaily(dateKey)",
+      "CREATE INDEX IF NOT EXISTS idx_phd_provider ON providerHealthDaily(provider)",
+    ],
+  },
 };
 
 export function buildCreateTableSql(name, def) {

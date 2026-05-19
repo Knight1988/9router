@@ -66,7 +66,15 @@ export {
 export {
   saveRequestDetail, getRequestDetails, getRequestDetailById,
   getProviderHealthStats, getTotalRecordCount,
+  invalidateHealthCache, invalidateCountCache,
 } from "./repos/requestDetailsRepo.js";
+
+// Provider health aggregation
+export {
+  aggregateRequestDetailsForDate,
+  aggregateBackfill,
+  getDailyHealthRows,
+} from "./repos/providerHealthRepo.js";
 
 // Export/import full DB
 export async function exportDb() {

@@ -45,6 +45,7 @@ const g = global.__appSingleton ??= {
   mitmStartInProgress: false,
   tunnelAutoResumed: false,
   tailscaleAutoResumed: false,
+  dailyAggregatorTimeout: null,
 };
 
 export async function initializeApp() {
@@ -85,6 +86,7 @@ export async function initializeApp() {
 
     startWatchdog();
     startNetworkMonitor();
+    startDailyAggregator();
     autoStartMitm();
   } catch (error) {
     console.error("[InitApp] Error:", error);
@@ -247,6 +249,46 @@ function startNetworkMonitor() {
   }, NETWORK_CHECK_INTERVAL_MS);
 
   if (g.networkMonitorInterval.unref) g.networkMonitorInterval.unref();
+}
+
+// ─── Daily health aggregator: runs at 1AM, catch-up on startup ───────────────
+
+function startDailyAggregator() {
+  if (g.dailyAggregatorTimeout) return;
+
+  const scheduleNext = () => {
+    const now = new Date();
+    const next = new Date(now);
+    next.setHours(1, 0, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+    const delay = next - now;
+    g.dailyAggregatorTimeout = setTimeout(async () => {
+      g.dailyAggregatorTimeout = null;
+      try {
+        const { aggregateBackfill } = await import("@/lib/db/index.js");
+        const result = await aggregateBackfill();
+        console.log(`[DailyAggregator] done: ${result.daysAggregated} days aggregated, ${result.daysDeleted} day-rows pruned`);
+      } catch (e) {
+        console.error("[DailyAggregator] 1AM run failed:", e.message);
+      }
+      scheduleNext();
+    }, delay);
+    if (g.dailyAggregatorTimeout.unref) g.dailyAggregatorTimeout.unref();
+  };
+
+  (async () => {
+    try {
+      const { aggregateBackfill } = await import("@/lib/db/index.js");
+      const result = await aggregateBackfill();
+      if (result.daysAggregated > 0 || result.daysDeleted > 0) {
+        console.log(`[DailyAggregator] startup catch-up: ${result.daysAggregated} days aggregated, ${result.daysDeleted} day-rows pruned`);
+      }
+    } catch (e) {
+      console.error("[DailyAggregator] startup catch-up failed:", e.message);
+    }
+  })();
+
+  scheduleNext();
 }
 
 export default initializeApp;
