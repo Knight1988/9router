@@ -79,41 +79,92 @@ async function flushToDatabase() {
       const db = await getAdapter();
       const config = await getObservabilityConfig();
 
-      db.transaction(() => {
-        for (const item of items) {
-          if (!item.id) item.id = generateDetailId(item.model);
-          if (!item.timestamp) item.timestamp = new Date().toISOString();
-          if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
+        const healthDeltas = {};
 
-          const record = {
-            id: item.id,
-            provider: item.provider || null,
-            model: item.model || null,
-            connectionId: item.connectionId || null,
-            timestamp: item.timestamp,
-            status: item.status || null,
-            latency: item.latency || {},
-            tokens: item.tokens || {},
-            request: truncateField(item.request, config.maxJsonSize),
-            providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
-            providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
-            response: truncateField(item.response, config.maxJsonSize),
-          };
+        db.transaction(() => {
+          for (const item of items) {
+            if (!item.id) item.id = generateDetailId(item.model);
+            if (!item.timestamp) item.timestamp = new Date().toISOString();
+            if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
 
-          db.run(
-            `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
-            [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record)]
-          );
-        }
+            const record = {
+              id: item.id,
+              provider: item.provider || null,
+              model: item.model || null,
+              connectionId: item.connectionId || null,
+              timestamp: item.timestamp,
+              status: item.status || null,
+              latency: item.latency || {},
+              tokens: item.tokens || {},
+              request: truncateField(item.request, config.maxJsonSize),
+              providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
+              providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
+              response: truncateField(item.response, config.maxJsonSize),
+            };
 
-        const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
-        if (cnt && cnt.c > config.maxRecords) {
-          db.run(
-            `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
-            [cnt.c - config.maxRecords]
-          );
-        }
-      });
+            db.run(
+              `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
+              [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record)]
+            );
+
+            const dateKey = getLocalDateKey(record.timestamp);
+            const hKey = `${dateKey}|${record.provider || ""}|${record.model || ""}`;
+            if (!healthDeltas[hKey]) {
+              healthDeltas[hKey] = {
+                dateKey,
+                provider: record.provider || "",
+                model: record.model || "",
+                totalRequests: 0, successCount: 0, errorCount: 0, rateLimitCount: 0,
+                latencySum: 0, latencyCount: 0, ttftSum: 0, ttftCount: 0,
+                firstSeen: record.timestamp, lastUsed: record.timestamp,
+              };
+            }
+            const d = healthDeltas[hKey];
+            d.totalRequests++;
+            if (record.status === "success") d.successCount++;
+            else d.errorCount++;
+            const lat = record.latency?.total;
+            if (lat > 0) { d.latencySum += lat; d.latencyCount++; }
+            const ttft = record.latency?.ttft;
+            if (ttft > 0) { d.ttftSum += ttft; d.ttftCount++; }
+            if (record.timestamp < d.firstSeen) d.firstSeen = record.timestamp;
+            if (record.timestamp > d.lastUsed) d.lastUsed = record.timestamp;
+          }
+
+          for (const d of Object.values(healthDeltas)) {
+            db.run(
+              `INSERT INTO providerHealthDaily
+                 (dateKey, provider, model, totalRequests, successCount, errorCount, rateLimitCount,
+                  latencySum, latencyCount, ttftSum, ttftCount, firstSeen, lastUsed)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(dateKey, provider, model) DO UPDATE SET
+                 totalRequests  = providerHealthDaily.totalRequests  + excluded.totalRequests,
+                 successCount   = providerHealthDaily.successCount   + excluded.successCount,
+                 errorCount     = providerHealthDaily.errorCount     + excluded.errorCount,
+                 rateLimitCount = providerHealthDaily.rateLimitCount + excluded.rateLimitCount,
+                 latencySum     = providerHealthDaily.latencySum     + excluded.latencySum,
+                 latencyCount   = providerHealthDaily.latencyCount   + excluded.latencyCount,
+                 ttftSum        = providerHealthDaily.ttftSum        + excluded.ttftSum,
+                 ttftCount      = providerHealthDaily.ttftCount      + excluded.ttftCount,
+                 firstSeen      = MIN(providerHealthDaily.firstSeen, excluded.firstSeen),
+                 lastUsed       = MAX(providerHealthDaily.lastUsed,  excluded.lastUsed)`,
+              [
+                d.dateKey, d.provider, d.model,
+                d.totalRequests, d.successCount, d.errorCount, d.rateLimitCount,
+                d.latencySum, d.latencyCount, d.ttftSum, d.ttftCount,
+                d.firstSeen, d.lastUsed,
+              ]
+            );
+          }
+
+          const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
+          if (cnt && cnt.c > config.maxRecords) {
+            db.run(
+              `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
+              [cnt.c - config.maxRecords]
+            );
+          }
+        });
     }
   } catch (e) {
     console.error("[requestDetailsRepo] Batch write failed:", e);
@@ -205,42 +256,50 @@ function getLocalDateKey(timestamp) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function todayLocalStartIso() {
-  const today = getLocalDateKey(new Date());
-  const [y, m, d] = today.split("-").map(Number);
-  return new Date(y, m - 1, d, 0, 0, 0, 0).toISOString();
-}
-
 function dateKeyFromStartDate(startDateIso) {
   const d = new Date(startDateIso);
   return getLocalDateKey(d);
 }
 
-async function getLiveHealthRows({ startDate, provider } = {}) {
-  const db = await getAdapter();
-  const conds = [];
-  const params = [];
-
-  if (startDate) { conds.push("timestamp >= ?"); params.push(new Date(startDate).toISOString()); }
-  if (provider) { conds.push("provider = ?"); params.push(provider); }
-
-  const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
-
-  return db.all(
-    `SELECT
-      provider,
-      model,
-      COUNT(*) AS totalRequests,
-      SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS successCount,
-      SUM(CASE WHEN status != 'success' THEN 1 ELSE 0 END) AS errorCount,
-      0 AS rateLimitCount,
-      MAX(timestamp) AS lastUsed,
-      AVG(CASE WHEN json_extract(data, '$.latency.total') > 0 THEN json_extract(data, '$.latency.total') END) AS avgLatency,
-      AVG(CASE WHEN json_extract(data, '$.latency.ttft') > 0 THEN json_extract(data, '$.latency.ttft') END) AS avgTtft
-    FROM requestDetails ${where}
-    GROUP BY provider, model`,
-    params
-  );
+function getLiveBufferRows({ startDate, provider } = {}) {
+  const startIso = startDate ? new Date(startDate).toISOString() : null;
+  const groups = {};
+  for (const item of writeBuffer) {
+    const ts = item.timestamp || new Date().toISOString();
+    if (startIso && ts < startIso) continue;
+    const prov = item.provider || "";
+    if (provider && prov !== provider) continue;
+    const key = `${prov}|${item.model || ""}`;
+    if (!groups[key]) {
+      groups[key] = {
+        provider: prov,
+        model: item.model || "",
+        totalRequests: 0, successCount: 0, errorCount: 0, rateLimitCount: 0,
+        latencySum: 0, latencyCount: 0, ttftSum: 0, ttftCount: 0,
+        lastUsed: ts,
+      };
+    }
+    const g = groups[key];
+    g.totalRequests++;
+    if (item.status === "success") g.successCount++;
+    else g.errorCount++;
+    const lat = item.latency?.total;
+    if (lat > 0) { g.latencySum += lat; g.latencyCount++; }
+    const ttft = item.latency?.ttft;
+    if (ttft > 0) { g.ttftSum += ttft; g.ttftCount++; }
+    if (ts > g.lastUsed) g.lastUsed = ts;
+  }
+  return Object.values(groups).map((g) => ({
+    provider: g.provider,
+    model: g.model,
+    totalRequests: g.totalRequests,
+    successCount: g.successCount,
+    errorCount: g.errorCount,
+    rateLimitCount: g.rateLimitCount,
+    lastUsed: g.lastUsed,
+    avgLatency: g.latencyCount > 0 ? g.latencySum / g.latencyCount : null,
+    avgTtft: g.ttftCount > 0 ? g.ttftSum / g.ttftCount : null,
+  }));
 }
 
 function mergeHealthRows(daily, live) {
@@ -313,22 +372,13 @@ export async function getProviderHealthStats({ startDate, provider } = {}) {
     return cached.data;
   }
 
-  // Determine if the window spans multiple days (needs daily table)
-  const startOfToday = todayLocalStartIso();
-  const isMultiDay = !startDate || new Date(startDate).toISOString() < startOfToday;
-
-  let data;
-  if (isMultiDay) {
-    const { getDailyHealthRows } = await import("./providerHealthRepo.js");
-    const startDateKey = startDate ? dateKeyFromStartDate(startDate) : undefined;
-    const [dailyRows, liveRows] = await Promise.all([
-      getDailyHealthRows({ startDateKey, provider }),
-      getLiveHealthRows({ startDate: startOfToday, provider }),
-    ]);
-    data = mergeHealthRows(dailyRows, liveRows);
-  } else {
-    data = await getLiveHealthRows({ startDate, provider });
-  }
+  const { getDailyHealthRows } = await import("./providerHealthRepo.js");
+  const startDateKey = startDate ? dateKeyFromStartDate(startDate) : undefined;
+  const [dailyRows, bufferRows] = await Promise.all([
+    getDailyHealthRows({ startDateKey, provider }),
+    Promise.resolve(getLiveBufferRows({ startDate, provider })),
+  ]);
+  const data = mergeHealthRows(dailyRows, bufferRows);
 
   healthCache.set(cacheKey, { data, ts: Date.now() });
   return data;
