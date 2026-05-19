@@ -15,8 +15,23 @@ stages:
   - stage: Test
     displayName: Build and Test
     jobs:
+      - job: UnitTests
+        displayName: Run Unit Tests
+        pool:
+          name: Ubuntu
+        steps:
+          - checkout: self
+            displayName: Checkout source
+
+          - script: |
+              cd tests
+              npm install
+              npm test
+            displayName: Run Vitest unit tests
+
       - job: Test
         displayName: Build Docker and Run Tests
+        dependsOn: UnitTests
         pool:
           name: Ubuntu
         steps:
