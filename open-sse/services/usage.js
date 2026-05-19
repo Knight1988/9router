@@ -122,7 +122,10 @@ export async function getUsageForProvider(connection, options = {}) {
     case "minimax":
     case "minimax-cn":
       return await getMiniMaxUsage(apiKey, provider, proxyOptions);
+    case "vip-claudible":
     case "cc-claudible":
+    case "cn-claudible":
+    case "minimax-claudible":
     case "claude-claudible":
       return await getClaudibleUsage(apiKey, proxyOptions);
     default:
@@ -1580,7 +1583,7 @@ async function getTechOpenClawUsage(apiKey, proxyOptions = null) {
 }
 
 /**
- * Get Claudible usage (CC Claudible, Claude Claudible)
+ * Get Claudible usage (VIP, CC, CN, MiniMax, Claude Claudible)
  */
 async function getClaudibleUsage(apiKey, proxyOptions = null) {
   try {
