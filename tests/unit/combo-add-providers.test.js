@@ -7,7 +7,7 @@
  *     correct bucket (APIKEY / FREE_TIER / etc.) so ModelSelectModal includes it.
  *  2. Hardcoded model lists — getModelsByProviderId() returns usable entries.
  *  3. passthroughModels + modelsFetcher shape — Claudible & techopenclaw.
- *  4. DevGo suggested-models fetch — fetchSuggestedModels() mocked via global.fetch.
+ *  4. Claudible suggested-models — endpointId forwarded.
  *  5. POST /api/combos  — accepts models from all target providers (status 201).
  *  6. PUT  /api/combos/[id] — same (status 200).
  *  7. USAGE_SUPPORTED_PROVIDERS / USAGE_APIKEY_PROVIDERS regression guard.
@@ -120,6 +120,7 @@ describe("hardcoded model lists", () => {
     "techopenclaw",
     ...CLAUDIBLE_IDS,
     "open-claude",
+    "devgo",
   ];
 
   it.each(PROVIDERS_WITH_HARDCODED_MODELS)("%s has at least one hardcoded model", (id) => {
@@ -145,10 +146,6 @@ describe("hardcoded model lists", () => {
     expect(value).toMatch(/^[^/]+\/[^/]+/);
   });
 
-  it("devgo has no hardcoded models — models are fetched live", () => {
-    const models = getModelsByProviderId("devgo");
-    expect(models).toEqual([]);
-  });
 });
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -188,77 +185,10 @@ describe("passthroughModels and modelsFetcher shape", () => {
     expect(f.url).toMatch(/^https:\/\//);
   });
 
-  it("devgo modelsFetcher type is openai-all and url ends with /v2/models", () => {
-    const f = AI_PROVIDERS.devgo.modelsFetcher;
-    expect(f).toBeDefined();
-    expect(f.type).toBe("openai-all");
-    expect(f.url).toMatch(/\/v2\/models$/);
-  });
-
   it.each(CLAUDIBLE_IDS)("%s fetcher endpointIds are distinct", () => {
     const ids = CLAUDIBLE_IDS.map((id) => AI_PROVIDERS[id].modelsFetcher.endpointId);
     const unique = new Set(ids);
     expect(unique.size).toBe(CLAUDIBLE_IDS.length);
-  });
-});
-
-// ══════════════════════════════════════════════════════════════════════════
-// 4. DevGo — suggested-models via mocked fetch
-// ══════════════════════════════════════════════════════════════════════════
-
-describe("devgo fetchSuggestedModels (mocked)", () => {
-  const DEVGO_SAMPLE = [
-    { id: "devgo-flash", name: "DevGo Flash" },
-    { id: "devgo-pro",   name: "DevGo Pro"   },
-  ];
-
-  let originalFetch;
-
-  beforeEach(() => {
-    originalFetch = global.fetch;
-    global.fetch  = vi.fn(async (url) => {
-      if (String(url).includes("/api/providers/suggested-models")) {
-        return new Response(JSON.stringify({ data: DEVGO_SAMPLE }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      throw new Error(`Unexpected fetch: ${url}`);
-    });
-  });
-
-  afterEach(() => {
-    global.fetch = originalFetch;
-  });
-
-  it("fetchSuggestedModels returns models, passes url+type params, and values have alias/id format", async () => {
-    const fetcher = AI_PROVIDERS.devgo.modelsFetcher;
-    const alias   = getProviderAlias("devgo");
-
-    const result = await fetchSuggestedModels(fetcher);
-
-    // ── was fetch called? ─────────────────────────────────────────────────
-    // fetchSuggestedModels caches results for CACHE_TTL_MS. If a prior test
-    // in the same module instance already populated the cache for this URL,
-    // fetch may not be called again — which is correct behaviour. We verify
-    // the fetched result instead.
-
-    // ── returned models ───────────────────────────────────────────────────
-    expect(result.length).toBeGreaterThan(0);
-    expect(result.map((m) => m.id)).toContain("devgo-flash");
-    expect(result.map((m) => m.id)).toContain("devgo-pro");
-
-    // ── combo value format ────────────────────────────────────────────────
-    for (const m of result) {
-      expect(`${alias}/${m.id}`).toMatch(/^devgo\//);
-    }
-
-    // ── query params present when fetch IS called (first call wins cache) ─
-    if (global.fetch.mock.calls.length > 0) {
-      const calledUrl = String(global.fetch.mock.calls[0][0]);
-      expect(calledUrl).toContain("url=");
-      expect(calledUrl).toContain("type=openai-all");
-    }
   });
 });
 
@@ -351,7 +281,7 @@ describe("POST /api/combos — accepts provider model values", () => {
   });
 
   it("creates combo with devgo model value", async () => {
-    const models = ["devgo/devgo-flash", "devgo/devgo-pro"];
+    const models = getModelsByProviderId("devgo").slice(0, 2).map((m) => `devgo/${m.id}`);
 
     const req = makeRequest({ name: "devgo-combo", models, kind: null });
     const res = await POST(req);
@@ -366,7 +296,7 @@ describe("POST /api/combos — accepts provider model values", () => {
       `techopenclaw/${getModelsByProviderId("techopenclaw")[0].id}`,
       `vip-claudible/${getModelsByProviderId("vip-claudible")[0].id}`,
       `open-claude/${getModelsByProviderId("open-claude")[0].id}`,
-      "devgo/devgo-flash",
+      `devgo/${getModelsByProviderId("devgo")[0].id}`,
     ];
 
     const req = makeRequest({ name: "mixed-combo", models, kind: null });
@@ -441,7 +371,7 @@ describe("PUT /api/combos/[id] — accepts provider model values", () => {
   });
 
   it("updates models with devgo entries", async () => {
-    const models = ["devgo/devgo-flash", "devgo/devgo-pro"];
+    const models = getModelsByProviderId("devgo").slice(0, 2).map((m) => `devgo/${m.id}`);
 
     const req = makePutRequest({ models });
     const res = await PUT(req, { params: Promise.resolve({ id: "combo-test-1" }) });
@@ -455,7 +385,7 @@ describe("PUT /api/combos/[id] — accepts provider model values", () => {
       `techopenclaw/${getModelsByProviderId("techopenclaw")[0].id}`,
       `cc-claudible/${getModelsByProviderId("cc-claudible")[0].id}`,
       `open-claude/${getModelsByProviderId("open-claude")[0].id}`,
-      "devgo/devgo-pro",
+      `devgo/${getModelsByProviderId("devgo")[0].id}`,
     ];
 
     const req = makePutRequest({ models });
