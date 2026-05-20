@@ -20,6 +20,7 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { compactBodyIfNeeded } from "open-sse/utils/contextCompactor.js";
+import { getOpenClaudeResetsAtMs } from "open-sse/services/openClaudeQuota.js";
 
 /**
  * Handle chat completion request
@@ -248,6 +249,15 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     });
 
     if (result.success) return result.response;
+
+    // open-claude returns 402 on quota exhaustion; the body has no reset time but the
+    // usage API exposes period_reset_at. Plumb it as resetsAtMs so the cooldown matches
+    // the actual 2h quota window (capped at MAX_RATE_LIMIT_COOLDOWN_MS = 30 min) instead
+    // of the generic 2-minute fallback.
+    if (!result.resetsAtMs && provider === "open-claude" && result.status === 402) {
+      const resetsAtMs = await getOpenClaudeResetsAtMs(credentials._connection || credentials);
+      if (resetsAtMs) result.resetsAtMs = resetsAtMs;
+    }
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);

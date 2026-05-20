@@ -229,7 +229,12 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
 
   if (provider && status && reason) {
-    console.error(`❌ ${provider} [${status}]: ${reason}`);
+    if (provider === "open-claude" && status === 402) {
+      // Expected quota-exhausted state — rotation handles it. Don't surface as error.
+      console.log(`⚠️  ${provider} [${status}]: quota exhausted, rotating`);
+    } else {
+      console.error(`❌ ${provider} [${status}]: ${reason}`);
+    }
   }
 
   return { shouldFallback: true, cooldownMs };
