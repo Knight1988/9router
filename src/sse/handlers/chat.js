@@ -119,6 +119,8 @@ export async function handleChat(request, clientRawRequest = null) {
       comboStrategy,
       comboStickyLimit,
       smartPriority,
+      keepCycling: true,
+      signal: request?.signal,
     });
   }
 
@@ -154,6 +156,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         comboStrategy,
         comboStickyLimit,
         smartPriority,
+        keepCycling: true,
+        signal: request?.signal,
       });
     }
     log.warn("CHAT", "Invalid model format", { model: modelStr });

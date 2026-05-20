@@ -146,3 +146,140 @@ describe("combo fallback — same provider, different models", () => {
     expect(body.choices[0].message.content).toBe("after throw");
   });
 });
+
+describe("combo cycling — keepCycling + signal", () => {
+  it("T6: cycles restart from first model, abort stops cleanly", async () => {
+    const controller = new AbortController();
+    let callCount = 0;
+
+    const handleSingleModel = vi.fn().mockImplementation(async () => {
+      callCount++;
+      // Fail first 3 calls (full cycle 1 + model A in cycle 2), then abort
+      if (callCount === 3) {
+        controller.abort();
+      }
+      return makeResponse(500, { error: { message: "fail" } });
+    });
+
+    const result = await handleComboChat({
+      body: { messages: [{ role: "user", content: "ping" }] },
+      models: [MODEL_A, MODEL_B],
+      handleSingleModel,
+      log,
+      keepCycling: true,
+      signal: controller.signal,
+    });
+
+    // Cycle 1: A fails, B fails → restart
+    // Cycle 2: A fails (abort fires) → exit
+    expect(handleSingleModel).toHaveBeenCalledTimes(3);
+    expect(handleSingleModel.mock.calls[0][1]).toBe(MODEL_A); // Cycle 1
+    expect(handleSingleModel.mock.calls[1][1]).toBe(MODEL_B); // Cycle 1
+    expect(handleSingleModel.mock.calls[2][1]).toBe(MODEL_A); // Cycle 2
+
+    // Returns 503 after abort
+    expect(result.ok).toBe(false);
+    expect([500, 503]).toContain(result.status);
+  });
+
+  it("T7: success on retry cycle returns immediately", async () => {
+    vi.useFakeTimers();
+    let callCount = 0;
+
+    const handleSingleModel = vi.fn().mockImplementation(async (body, modelStr) => {
+      callCount++;
+      // Model A: fail twice, succeed third time
+      // Model B: always fail
+      if (modelStr === MODEL_A && callCount === 5) {
+        return makeResponse(200, { choices: [{ message: { content: "success on retry" } }] });
+      }
+      return makeResponse(500, { error: { message: "fail" } });
+    });
+
+    const promise = handleComboChat({
+      body: { messages: [{ role: "user", content: "ping" }] },
+      models: [MODEL_A, MODEL_B],
+      handleSingleModel,
+      log,
+      keepCycling: true,
+      signal: new AbortController().signal,
+    });
+
+    // Advance through cycle delays
+    await vi.runAllTimersAsync();
+
+    const result = await promise;
+
+    // Cycle 1: A fails, B fails → wait 1500ms
+    // Cycle 2: A fails, B fails → wait 1500ms
+    // Cycle 3: A succeeds
+    expect(handleSingleModel).toHaveBeenCalledTimes(5);
+    expect(result.ok).toBe(true);
+    const body = await result.json();
+    expect(body.choices[0].message.content).toBe("success on retry");
+
+    vi.useRealTimers();
+  });
+
+  it("T8: cycle delay is abortable — exits promptly on abort", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    let callCount = 0;
+
+    const handleSingleModel = vi.fn().mockImplementation(async () => {
+      callCount++;
+      // After first full cycle (2 calls), abort during the delay
+      if (callCount === 2) {
+        // Schedule abort to fire during the 1500ms delay
+        setTimeout(() => controller.abort(), 500);
+      }
+      return makeResponse(500, { error: { message: "fail" } });
+    });
+
+    const promise = handleComboChat({
+      body: { messages: [{ role: "user", content: "ping" }] },
+      models: [MODEL_A, MODEL_B],
+      handleSingleModel,
+      log,
+      keepCycling: true,
+      signal: controller.signal,
+    });
+
+    // Advance timers: cycle 1 completes, delay starts, abort fires at 500ms
+    await vi.runAllTimersAsync();
+
+    const result = await promise;
+
+    // Only cycle 1 ran (2 calls), abort during delay prevented cycle 2
+    expect(handleSingleModel).toHaveBeenCalledTimes(2);
+    expect(result.ok).toBe(false);
+
+    vi.useRealTimers();
+  });
+
+  it("T9: safety cap prevents infinite loop", async () => {
+    vi.useFakeTimers();
+    const handleSingleModel = vi.fn().mockResolvedValue(makeResponse(500, { error: { message: "always fail" } }));
+
+    const promise = handleComboChat({
+      body: { messages: [{ role: "user", content: "ping" }] },
+      models: [MODEL_A, MODEL_B],
+      handleSingleModel,
+      log,
+      keepCycling: true,
+      signal: new AbortController().signal, // Signal that never aborts
+    });
+
+    // Advance through all cycle delays
+    await vi.runAllTimersAsync();
+
+    const result = await promise;
+
+    // Safety cap is 200 cycles × 2 models = 400 calls
+    expect(handleSingleModel).toHaveBeenCalledTimes(400);
+    expect(result.ok).toBe(false);
+    expect([500, 503]).toContain(result.status);
+
+    vi.useRealTimers();
+  });
+});

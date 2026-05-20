@@ -96,6 +96,8 @@ export async function handleFetch(request) {
       comboStrategy,
       comboStickyLimit,
       smartPriority,
+      keepCycling: true,
+      signal: request?.signal,
     });
   }
 

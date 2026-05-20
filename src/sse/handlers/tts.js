@@ -60,6 +60,8 @@ export async function handleTts(request) {
       comboStrategy,
       comboStickyLimit,
       smartPriority,
+      keepCycling: true,
+      signal: request?.signal,
     });
   }
 

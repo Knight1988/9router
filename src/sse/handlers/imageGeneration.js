@@ -63,6 +63,8 @@ export async function handleImageGeneration(request) {
       comboStrategy,
       comboStickyLimit,
       smartPriority,
+      keepCycling: true,
+      signal: request?.signal,
     });
   }
 

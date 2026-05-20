@@ -117,6 +117,20 @@ function applySmartPriority(models, smartPriority) {
 }
 
 /**
+ * Abortable sleep helper for inter-cycle delays
+ * @param {number} ms - Milliseconds to sleep
+ * @param {AbortSignal} [signal] - Optional abort signal
+ * @returns {Promise<void>}
+ */
+function abortableSleep(ms, signal) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
+    const t = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => { clearTimeout(t); resolve(); }, { once: true });
+  });
+}
+
+/**
  * Handle combo chat with fallback
  * @param {Object} options
  * @param {Object} options.body - Request body
@@ -127,10 +141,12 @@ function applySmartPriority(models, smartPriority) {
  * @param {string} [options.comboStrategy] - Strategy: "fallback", "round-robin", or "smart-routing"
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching (round-robin only)
  * @param {string[]} [options.smartPriority] - Cached smart-routing priority order
+ * @param {boolean} [options.keepCycling=false] - If true, restart from first model after exhausting all models
+ * @param {AbortSignal} [options.signal] - Optional abort signal to stop cycling on client disconnect
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, smartPriority }) {
-  // Apply ordering strategy
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, smartPriority, keepCycling = false, signal }) {
+  // Apply ordering strategy (computed once per request, before cycling)
   let rotatedModels;
   if (comboStrategy === "smart-routing") {
     rotatedModels = applySmartPriority(models, smartPriority);
@@ -138,72 +154,99 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   } else {
     rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
   }
-  
+
   let lastError = null;
-  let earliestRetryAfter = null;
   let lastStatus = null;
+  let earliestRetryAfter = null;
 
-  for (let i = 0; i < rotatedModels.length; i++) {
-    const modelStr = rotatedModels[i];
-    log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
+  const SAFETY_CAP = 200;
+  const CYCLE_DELAY_MS = 1500;
+  let cycle = 0;
 
-    try {
-      const result = await handleSingleModel(body, modelStr);
-      
-      // Success (2xx) - return response
-      if (result.ok) {
-        log.info("COMBO", `Model ${modelStr} succeeded`);
-        return result;
-      }
+  while (true) {
+    cycle++;
+    earliestRetryAfter = null; // Reset each cycle for freshness
 
-      // Extract error info from response
-      let errorText = result.statusText || "";
-      let retryAfter = null;
+    for (let i = 0; i < rotatedModels.length; i++) {
+      const modelStr = rotatedModels[i];
+      log.info("COMBO", `Cycle ${cycle} | Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
+
       try {
-        const errorBody = await result.clone().json();
-        errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
-        retryAfter = errorBody?.retryAfter || null;
-      } catch {
-        // Ignore JSON parse errors
+        const result = await handleSingleModel(body, modelStr);
+
+        // Success (2xx) - return response
+        if (result.ok) {
+          log.info("COMBO", `Cycle ${cycle} | Model ${modelStr} succeeded`);
+          return result;
+        }
+
+        // Extract error info from response
+        let errorText = result.statusText || "";
+        let retryAfter = null;
+        try {
+          const errorBody = await result.clone().json();
+          errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
+          retryAfter = errorBody?.retryAfter || null;
+        } catch {
+          // Ignore JSON parse errors
+        }
+
+        // Track earliest retryAfter across all combo models
+        if (retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
+          earliestRetryAfter = retryAfter;
+        }
+
+        // Normalize error text to string (Worker-safe)
+        if (typeof errorText !== "string") {
+          try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
+        }
+
+        // Check if should fallback to next model
+        const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
+
+        if (!shouldFallback) {
+          log.warn("COMBO", `Cycle ${cycle} | Model ${modelStr} failed (no fallback)`, { status: result.status });
+          return result;
+        }
+
+        // For transient errors (503/502/504), wait for cooldown before falling through
+        // so a briefly-overloaded provider gets a chance to recover rather than being
+        // skipped immediately (fixes: combo falls through on transient 503)
+        if (cooldownMs && cooldownMs > 0 && cooldownMs <= 5000 &&
+            (result.status === 503 || result.status === 502 || result.status === 504)) {
+          log.info("COMBO", `Cycle ${cycle} | Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`);
+          await new Promise(r => setTimeout(r, cooldownMs));
+        }
+
+        // Fallback to next model
+        lastError = errorText || String(result.status);
+        if (!lastStatus) lastStatus = result.status;
+        log.warn("COMBO", `Cycle ${cycle} | Model ${modelStr} failed, trying next`, { status: result.status });
+      } catch (error) {
+        // Catch unexpected exceptions to ensure fallback continues
+        lastError = error.message || String(error);
+        if (!lastStatus) lastStatus = 500;
+        log.warn("COMBO", `Cycle ${cycle} | Model ${modelStr} threw error, trying next`, { error: lastError });
       }
 
-      // Track earliest retryAfter across all combo models
-      if (retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
-        earliestRetryAfter = retryAfter;
+      // Check for abort mid-cycle
+      if (signal?.aborted) {
+        log.info("COMBO", `Cycle ${cycle} | Client disconnected, stopping`);
+        break;
       }
-
-      // Normalize error text to string (Worker-safe)
-      if (typeof errorText !== "string") {
-        try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
-      }
-
-      // Check if should fallback to next model
-      const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
-
-      if (!shouldFallback) {
-        log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
-        return result;
-      }
-
-      // For transient errors (503/502/504), wait for cooldown before falling through
-      // so a briefly-overloaded provider gets a chance to recover rather than being
-      // skipped immediately (fixes: combo falls through on transient 503)
-      if (cooldownMs && cooldownMs > 0 && cooldownMs <= 5000 &&
-          (result.status === 503 || result.status === 502 || result.status === 504)) {
-        log.info("COMBO", `Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`);
-        await new Promise(r => setTimeout(r, cooldownMs));
-      }
-
-      // Fallback to next model
-      lastError = errorText || String(result.status);
-      if (!lastStatus) lastStatus = result.status;
-      log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
-    } catch (error) {
-      // Catch unexpected exceptions to ensure fallback continues
-      lastError = error.message || String(error);
-      if (!lastStatus) lastStatus = 500;
-      log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     }
+
+    // After full pass through all models
+    if (!keepCycling) break;
+    if (signal?.aborted) break;
+    if (cycle >= SAFETY_CAP) {
+      log.warn("COMBO", `Safety cap reached (${SAFETY_CAP} cycles), stopping`);
+      break;
+    }
+
+    log.info("COMBO", `Cycle ${cycle} exhausted, restarting from first model after ${CYCLE_DELAY_MS}ms`);
+    await abortableSleep(CYCLE_DELAY_MS, signal);
+    if (signal?.aborted) break;
   }
 
   // All models failed
