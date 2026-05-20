@@ -24,6 +24,7 @@ stages:
             displayName: Checkout source
 
           - script: |
+              npm install
               cd tests
               npm install
               npm test
