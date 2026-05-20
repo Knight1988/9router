@@ -24,6 +24,11 @@ stages:
             displayName: Checkout source
 
           - script: |
+              export NVM_DIR="$HOME/.nvm"
+              [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+              export PATH="$(dirname "$(nvm which current 2>/dev/null || command -v node)"):$PATH"
+              echo "Using node: $(which node) ($(node -v))"
+              echo "Using npm:  $(which npm) ($(npm -v))"
               npm install
               cd tests
               npm install
