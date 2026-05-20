@@ -19,14 +19,14 @@ function colorLine(line) {
   return <span className={color}>{line}</span>;
 }
 
-export default function ConsoleLogClient() {
+export default function ConsoleLogClient({ endpoint = "/api/translator/console-logs" }) {
   const [logs, setLogs] = useState([]);
   const [connected, setConnected] = useState(false);
   const logRef = useRef(null);
 
   const handleClear = async () => {
     try {
-      await fetch("/api/translator/console-logs", { method: "DELETE" });
+      await fetch(endpoint, { method: "DELETE" });
       // UI cleared via SSE "clear" event
     } catch (err) {
       console.error("Failed to clear console logs:", err);
@@ -34,7 +34,7 @@ export default function ConsoleLogClient() {
   };
 
   useEffect(() => {
-    const es = new EventSource("/api/translator/console-logs/stream");
+    const es = new EventSource(`${endpoint}/stream`);
 
     es.onopen = () => setConnected(true);
 
@@ -55,7 +55,7 @@ export default function ConsoleLogClient() {
     es.onerror = () => setConnected(false);
 
     return () => es.close();
-  }, []);
+  }, [endpoint]);
 
   // Auto-scroll to bottom on new logs
   useEffect(() => {

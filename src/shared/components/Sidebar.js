@@ -29,6 +29,7 @@ const navItems = [
 
 const debugItems = [
   { href: "/dashboard/console-log", label: "Console Log", icon: "terminal" },
+  { href: "/dashboard/error-log", label: "Error Log", icon: "error" },
   { href: "/dashboard/translator", label: "Translator", icon: "translate" },
 ];
 

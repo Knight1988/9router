@@ -6,11 +6,14 @@ const consoleLevels = ["log", "info", "warn", "error", "debug"];
 if (!global._consoleLogBufferState) {
   global._consoleLogBufferState = {
     logs: [],
+    errorLogs: [],
     patched: false,
     originals: {},
     emitter: new EventEmitter(),
+    errorEmitter: new EventEmitter(),
   };
   global._consoleLogBufferState.emitter.setMaxListeners(50);
+  global._consoleLogBufferState.errorEmitter.setMaxListeners(50);
 }
 
 const state = global._consoleLogBufferState;
@@ -19,6 +22,13 @@ const state = global._consoleLogBufferState;
 if (!state.emitter) {
   state.emitter = new EventEmitter();
   state.emitter.setMaxListeners(50);
+}
+if (!state.errorEmitter) {
+  state.errorEmitter = new EventEmitter();
+  state.errorEmitter.setMaxListeners(50);
+}
+if (!state.errorLogs) {
+  state.errorLogs = [];
 }
 
 function toLogLine(level, args) {
@@ -51,13 +61,24 @@ function appendLine(line) {
   state.emitter.emit("line", line);
 }
 
+function appendErrorLine(line) {
+  state.errorLogs.push(line);
+  const maxLines = CONSOLE_LOG_CONFIG.maxLines;
+  if (state.errorLogs.length > maxLines) {
+    state.errorLogs = state.errorLogs.slice(-maxLines);
+  }
+  state.errorEmitter.emit("line", line);
+}
+
 export function initConsoleLogCapture() {
   if (state.patched) return;
 
   for (const level of consoleLevels) {
     state.originals[level] = console[level];
     console[level] = (...args) => {
-      appendLine(toLogLine(level, args));
+      const line = toLogLine(level, args);
+      appendLine(line);
+      if (level === "error") appendErrorLine(line);
       state.originals[level](...args);
     };
   }
@@ -76,4 +97,17 @@ export function clearConsoleLogs() {
 
 export function getConsoleEmitter() {
   return state.emitter;
+}
+
+export function getErrorLogs() {
+  return state.errorLogs;
+}
+
+export function clearErrorLogs() {
+  state.errorLogs = [];
+  state.errorEmitter.emit("clear");
+}
+
+export function getErrorEmitter() {
+  return state.errorEmitter;
 }
