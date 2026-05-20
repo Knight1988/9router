@@ -1616,9 +1616,36 @@ async function getClaudibleUsage(apiKey, proxyOptions = null) {
       ? parseResetTime(data.subscriptionExpiresAt)
       : null;
 
+    const dailyQuota = data.dailyQuota;
+    const balance = data.balance;
+    const quotas = {};
+    // Claudible daily quota resets at midnight Asia/Ho_Chi_Minh (UTC+7), i.e. 17:00 UTC.
+    const now = new Date();
+    const resetAt = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      17, 0, 0, 0,
+    ));
+    if (resetAt.getTime() <= now.getTime()) {
+      resetAt.setUTCDate(resetAt.getUTCDate() + 1);
+    }
+    const dailyResetAt = resetAt.toISOString();
+    if (typeof dailyQuota === "number" && dailyQuota > 0 && typeof balance === "number") {
+      const used = Math.max(0, dailyQuota - balance);
+      quotas["Daily Quota"] = {
+        used,
+        total: dailyQuota,
+        remainingPercentage: Math.max(0, Math.min(100, (balance / dailyQuota) * 100)),
+        resetAt: dailyResetAt,
+      };
+    }
+
     return {
-      balance: data.balance,
-      dailyQuota: data.dailyQuota,
+      balance,
+      dailyQuota,
+      dailyResetAt,
+      quotas,
       accountType: data.accountType,
       status: data.status,
       subscriptionActive: data.subscriptionActive,

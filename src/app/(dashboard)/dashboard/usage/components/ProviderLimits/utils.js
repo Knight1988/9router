@@ -209,7 +209,7 @@ export function parseQuotaData(provider, data) {
             name: "Daily Quota",
             used: used,
             total: data.dailyQuota || 0,
-            resetAt: null, // Claudible doesn't provide reset time in the current API
+            resetAt: data.dailyResetAt || data.quotas?.["Daily Quota"]?.resetAt || null,
             accountType: data.accountType,
             status: data.status,
             subscriptionActive: data.subscriptionActive,
