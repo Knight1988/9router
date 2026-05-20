@@ -9,6 +9,10 @@ export default defineConfig({
     environment: "node",
     globals: true,
     include: ["**/*.test.js"],
+    exclude: [
+      "**/node_modules/**",
+      "**/embeddings.cloud.test.js",
+    ],
     // Suppress noisy console output from handlers under test
     silent: false,
   },

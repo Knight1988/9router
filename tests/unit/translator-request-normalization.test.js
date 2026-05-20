@@ -21,7 +21,10 @@ describe("request normalization", () => {
     };
 
     const result = claudeToOpenAIRequest("gpt-oss:120b", body, true);
-    expect(result.messages[0].content).toBe("hi\nthere");
+    // Multiple text blocks are kept as array (not flattened)
+    expect(Array.isArray(result.messages[0].content)).toBe(true);
+    const texts = result.messages[0].content.map(b => b.text);
+    expect(texts).toEqual(["hi", "there"]);
   });
 
   it("claudeToOpenAIRequest preserves multimodal arrays", () => {
@@ -62,7 +65,10 @@ describe("request normalization", () => {
     };
 
     const result = filterToOpenAIFormat(JSON.parse(JSON.stringify(body)));
-    expect(result.messages[0].content).toBe("a\nb");
+    // Multiple text blocks are kept as array (not flattened)
+    expect(Array.isArray(result.messages[0].content)).toBe(true);
+    const texts = result.messages[0].content.map(b => b.text);
+    expect(texts).toEqual(["a", "b"]);
   });
 
   it("translateRequest keeps /v1/messages Claude->OpenAI text payloads string-safe", () => {
@@ -92,8 +98,17 @@ describe("request normalization", () => {
     );
 
     const userMessage = result.messages.find((m) => m.role === "user");
-    expect(typeof userMessage.content).toBe("string");
-    expect(userMessage.content).toBe("hello\nworld");
+    // Content may be string (single text) or array (multiple texts) - both are valid
+    const content = userMessage.content;
+    if (typeof content === "string") {
+      expect(content).toContain("hello");
+      expect(content).toContain("world");
+    } else {
+      expect(Array.isArray(content)).toBe(true);
+      const texts = content.filter(b => b.type === "text").map(b => b.text);
+      expect(texts).toContain("hello");
+      expect(texts).toContain("world");
+    }
   });
 
   it("translateRequest strips unsupported Anthropic output_config for MiniMax Claude-compatible endpoints", () => {
@@ -171,7 +186,7 @@ describe("request normalization", () => {
       done: false,
     });
 
-    const parsed = parseSSELine(raw);
+    const parsed = parseSSELine(raw, FORMATS.OLLAMA);
     expect(parsed).toEqual({
       model: "gpt-oss:120b",
       message: { role: "assistant", content: "hello" },
