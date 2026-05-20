@@ -88,6 +88,7 @@ export async function initializeApp() {
     startNetworkMonitor();
     startDailyAggregator();
     autoStartMitm();
+    startSmartRoutingSchedulerSafe();
   } catch (error) {
     console.error("[InitApp] Error:", error);
   }
@@ -292,3 +293,12 @@ function startDailyAggregator() {
 }
 
 export default initializeApp;
+
+async function startSmartRoutingSchedulerSafe() {
+  try {
+    const { startSmartRoutingScheduler } = await import("@/lib/smartRouting/scheduler.js");
+    await startSmartRoutingScheduler();
+  } catch (err) {
+    console.warn("[InitApp] Smart routing scheduler failed to start:", err.message);
+  }
+}

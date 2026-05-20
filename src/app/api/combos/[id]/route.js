@@ -1,6 +1,31 @@
 import { NextResponse } from "next/server";
-import { getComboById, updateCombo, deleteCombo, getComboByName } from "@/lib/localDb";
+import { getComboById, updateCombo, deleteCombo, getComboByName, getSettings, updateSettings } from "@/lib/localDb";
 import { resetComboRotation } from "open-sse/services/combo.js";
+
+/**
+ * Clear cached smartPriority for a combo name from settings.comboStrategies.
+ * Called after edit or delete so stale priority doesn't persist.
+ */
+async function clearSmartPriorityCache(comboName) {
+  if (!comboName) return;
+  try {
+    const settings = await getSettings();
+    const strategies = settings.comboStrategies || {};
+    if (!strategies[comboName]) return;
+    const updated = {
+      ...strategies,
+      [comboName]: {
+        ...strategies[comboName],
+        smartPriority: [],
+        smartPriorityUpdatedAt: null,
+        smartPriorityError: null,
+      },
+    };
+    await updateSettings({ comboStrategies: updated });
+  } catch (err) {
+    console.warn("[Combos] Failed to clear smartPriority cache:", err.message);
+  }
+}
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -53,6 +78,25 @@ export async function PUT(request, { params }) {
     if (prev?.name) resetComboRotation(prev.name);
     if (combo.name && combo.name !== prev?.name) resetComboRotation(combo.name);
 
+    // Clear cached smartPriority when models or name changes
+    if (body.models !== undefined || body.name !== undefined) {
+      await clearSmartPriorityCache(prev?.name);
+      if (combo.name && combo.name !== prev?.name) {
+        await clearSmartPriorityCache(combo.name);
+      }
+      // If smart routing is on, trigger a fresh refresh
+      try {
+        const settings = await getSettings();
+        const strategy = settings.comboStrategies?.[combo.name]?.fallbackStrategy;
+        if (strategy === "smart-routing") {
+          const { triggerSmartRoutingRefresh } = await import("@/lib/smartRouting/scheduler.js");
+          triggerSmartRoutingRefresh(combo.name).catch(() => {});
+        }
+      } catch {
+        // non-fatal
+      }
+    }
+
     return NextResponse.json(combo);
   } catch (error) {
     console.log("Error updating combo:", error);
@@ -71,7 +115,10 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ error: "Combo not found" }, { status: 404 });
     }
 
-    if (prev?.name) resetComboRotation(prev.name);
+    if (prev?.name) {
+      resetComboRotation(prev.name);
+      await clearSmartPriorityCache(prev.name);
+    }
     
     return NextResponse.json({ success: true });
   } catch (error) {

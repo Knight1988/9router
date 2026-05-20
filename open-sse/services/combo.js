@@ -94,6 +94,29 @@ export function getComboModelsFromData(modelStr, combosData) {
 }
 
 /**
+ * Apply smart-routing priority ordering to models.
+ * Uses the cached smartPriority list; falls back to original order if stale/empty.
+ * @param {string[]} models - Original combo models
+ * @param {string[]} [smartPriority] - Cached priority from scheduler
+ * @returns {string[]}
+ */
+function applySmartPriority(models, smartPriority) {
+  if (!smartPriority || smartPriority.length === 0) return models;
+
+  // Keep only entries that still exist in the combo (defensive against edits)
+  const modelSet = new Set(models);
+  const ordered = smartPriority.filter((m) => modelSet.has(m));
+
+  // Append any models not in smartPriority (new models added after last refresh)
+  const orderedSet = new Set(ordered);
+  for (const m of models) {
+    if (!orderedSet.has(m)) ordered.push(m);
+  }
+
+  return ordered;
+}
+
+/**
  * Handle combo chat with fallback
  * @param {Object} options
  * @param {Object} options.body - Request body
@@ -101,13 +124,20 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {Function} options.handleSingleModel - Function to handle single model: (body, modelStr) => Promise<Response>
  * @param {Object} options.log - Logger object
  * @param {string} [options.comboName] - Name of the combo (for round-robin tracking)
- * @param {string} [options.comboStrategy] - Strategy: "fallback" or "round-robin"
- * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
+ * @param {string} [options.comboStrategy] - Strategy: "fallback", "round-robin", or "smart-routing"
+ * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching (round-robin only)
+ * @param {string[]} [options.smartPriority] - Cached smart-routing priority order
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1 }) {
-  // Apply rotation strategy if enabled
-  const rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, smartPriority }) {
+  // Apply ordering strategy
+  let rotatedModels;
+  if (comboStrategy === "smart-routing") {
+    rotatedModels = applySmartPriority(models, smartPriority);
+    log.info("COMBO", `Smart routing order: [${rotatedModels.join(", ")}]`);
+  } else {
+    rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+  }
   
   let lastError = null;
   let earliestRetryAfter = null;

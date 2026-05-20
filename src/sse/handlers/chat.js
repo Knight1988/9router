@@ -108,6 +108,7 @@ export async function handleChat(request, clientRawRequest = null) {
     const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
     
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
+    const smartPriority = comboStrategies[modelStr]?.smartPriority;
     log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,
@@ -116,7 +117,8 @@ export async function handleChat(request, clientRawRequest = null) {
       log,
       comboName: modelStr,
       comboStrategy,
-      comboStickyLimit
+      comboStickyLimit,
+      smartPriority,
     });
   }
 
@@ -141,6 +143,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       const comboStrategy = comboSpecificStrategy || chatSettings.comboStrategy || "fallback";
       
       const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
+      const smartPriority = comboStrategies[modelStr]?.smartPriority;
       log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
       return handleComboChat({
         body,
@@ -149,7 +152,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         log,
         comboName: modelStr,
         comboStrategy,
-        comboStickyLimit
+        comboStickyLimit,
+        smartPriority,
       });
     }
     log.warn("CHAT", "Invalid model format", { model: modelStr });

@@ -90,6 +90,16 @@ export async function PATCH(request) {
       resetComboRotation();
     }
 
+    // Restart smart routing scheduler when interval changes
+    if (Object.prototype.hasOwnProperty.call(body, "smartRoutingIntervalMinutes")) {
+      try {
+        const { startSmartRoutingScheduler } = await import("@/lib/smartRouting/scheduler.js");
+        await startSmartRoutingScheduler();
+      } catch (err) {
+        console.warn("[Settings] Failed to restart smart routing scheduler:", err.message);
+      }
+    }
+
     const { password, oidcClientSecret, ...safeSettings } = settings;
     safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
     return NextResponse.json(safeSettings, { headers: SETTINGS_RESPONSE_HEADERS });

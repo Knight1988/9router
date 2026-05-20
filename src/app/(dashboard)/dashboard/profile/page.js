@@ -918,6 +918,32 @@ export default function ProfilePage() {
               </div>
             )}
 
+            {/* Smart Routing Interval */}
+            <div className="flex items-start sm:items-center justify-between gap-4 pt-4 border-t border-border/50">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Smart Routing Interval</p>
+                <p className="text-xs sm:text-sm text-text-muted">
+                  How often (minutes) to refresh quota-based model priority for Smart Routing combos
+                </p>
+              </div>
+              <Input
+                type="number"
+                min="1"
+                max="1440"
+                value={settings.smartRoutingIntervalMinutes ?? 15}
+                onChange={(e) => {
+                  const val = Math.max(1, Math.min(1440, parseInt(e.target.value, 10) || 15));
+                  fetch("/api/settings", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ smartRoutingIntervalMinutes: val }),
+                  }).then(() => setSettings(prev => ({ ...prev, smartRoutingIntervalMinutes: val }))).catch(() => {});
+                }}
+                disabled={loading}
+                className="w-20 text-center shrink-0"
+              />
+            </div>
+
             <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
               {settings.fallbackStrategy === "round-robin"
                 ? `Currently distributing requests across all available accounts with ${settings.stickyRoundRobinLimit || 3} calls per account.`
