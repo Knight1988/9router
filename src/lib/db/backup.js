@@ -3,7 +3,7 @@ import path from "node:path";
 import { BACKUPS_DIR, ensureDirs } from "./paths.js";
 import { timestampSlug, getAppVersion } from "./version.js";
 
-const KEEP_BACKUPS = 5;
+const KEEP_BACKUPS = 2;
 
 export function makeBackupDir(label) {
   ensureDirs();
