@@ -20,6 +20,8 @@ const ALIAS_TO_PROVIDER_ID = {
   tl: "troll-llm",
   "troll-llm": "troll-llm",
   openai: "openai",
+  vercel: "vercel-ai-gateway",
+  "vercel-ai-gateway": "vercel-ai-gateway",
   anthropic: "anthropic",
   gemini: "gemini",
   openrouter: "openrouter",
@@ -69,6 +71,8 @@ const ALIAS_TO_PROVIDER_ID = {
   "perplexity-web": "perplexity-web",
   mimo: "xiaomi-mimo",
   "xiaomi-mimo": "xiaomi-mimo",
+  xmtp: "xiaomi-tokenplan",
+  "xiaomi-tokenplan": "xiaomi-tokenplan",
   cf: "cloudflare-ai",
   "cloudflare-ai": "cloudflare-ai",
   devgo: "devgo",
@@ -133,6 +137,8 @@ const ALIAS_TO_PROVIDER_ID = {
   "nous-research": "nous-research",
   nous: "nous-research",
   glhf: "glhf",
+  bb: "blackbox",
+  blackbox: "blackbox",
 };
 
 /**
