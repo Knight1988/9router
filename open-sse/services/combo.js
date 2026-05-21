@@ -160,7 +160,9 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   let earliestRetryAfter = null;
 
   const SAFETY_CAP = 200;
-  const CYCLE_DELAY_MS = 1500;
+  // Exponential backoff between cycles: 1.5s → 3s → 6s → 12s → 24s → cap at 60s
+  const CYCLE_DELAY_BASE_MS = 1500;
+  const CYCLE_DELAY_MAX_MS = 60_000;
   let cycle = 0;
 
   while (true) {
@@ -244,8 +246,10 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       break;
     }
 
-    log.info("COMBO", `Cycle ${cycle} exhausted, restarting from first model after ${CYCLE_DELAY_MS}ms`);
-    await abortableSleep(CYCLE_DELAY_MS, signal);
+    // Exponential backoff: 1.5s → 3s → 6s → 12s → 24s → 60s cap
+    const cycleDelayMs = Math.min(CYCLE_DELAY_BASE_MS * Math.pow(2, cycle - 1), CYCLE_DELAY_MAX_MS);
+    log.warn("COMBO", `🔄 [RETRY] Cycle ${cycle} exhausted — all ${rotatedModels.length} models failed. Restarting Cycle ${cycle + 1} after ${cycleDelayMs}ms (backoff)`);
+    await abortableSleep(cycleDelayMs, signal);
     if (signal?.aborted) break;
   }
 

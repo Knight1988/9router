@@ -163,10 +163,13 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     const reason = guardResult.reason === "timeout" ? "timeout waiting for first content" : "stream ended with no content";
     console.warn(`[STREAM] EMPTY → fallback: ${provider}/${model} (connection=${connectionId}). ${reason}. Marking as failed.`);
     try { reader.releaseLock(); } catch {}
+    if (onRequestSuccess) {
+      // Do NOT call onRequestSuccess — empty stream is a failure, keep account cooldown active
+    }
     return createErrorResult(502, `Empty stream from ${provider}/${model}: ${reason}`);
   }
 
-  if (onRequestSuccess) onRequestSuccess();
+  // onRequestSuccess is deferred to onStreamComplete so empty completions can suppress it
 
   const clientStream = buildReplayStream(buffered, reader);
 
@@ -193,7 +196,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 /**
  * Build onStreamComplete callback for streaming usage tracking.
  */
-export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest }) {
+export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, onRequestSuccess }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
   const onStreamComplete = (contentObj, usage, ttftAt) => {
@@ -207,6 +210,21 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     if (contentObj?.emptyStream) {
       console.warn(`[STREAM] WARNING: Empty stream from ${provider}/${model} (connection=${connectionId}). Possible format mismatch — provider may be returning a different format than expected.`);
     }
+
+    // Detect empty completion: stream succeeded structurally but produced no tokens and no content.
+    // This happens when upstream returns SSE markers (role, ping) but no actual text/tool output.
+    // Suppress onRequestSuccess so the account cooldown is NOT cleared — combo cycling will skip it.
+    const outTokens = usage?.completion_tokens ?? usage?.output_tokens ?? 0;
+    const hasContent = safeContent && safeContent !== "[Empty streaming response]" && safeContent.trim().length > 0;
+    const hasToolCalls = contentObj?.toolCalls?.length > 0 || contentObj?.tool_calls?.length > 0;
+    if (outTokens === 0 && !hasContent && !hasToolCalls) {
+      console.warn(`[STREAM] ⚠️  [EMPTY-COMPLETION] ${provider}/${model} (connection=${connectionId}) — stream completed with 0 output tokens and no content. Provider may be silently dropping requests. Account cooldown preserved.`);
+      // Do NOT call onRequestSuccess — preserves account error state so combo cycling skips it next round
+      return;
+    }
+
+    // Confirm success — clear account error state
+    if (onRequestSuccess) onRequestSuccess();
 
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,

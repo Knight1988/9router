@@ -133,9 +133,9 @@ export function createSSEStream(options = {}) {
                 accumulatedThinking += reasoning;
               }
               if (toolCallsInDelta) hasToolCalls = true;
-              if ((content || reasoning || toolCallsInDelta || hasRole) && onFirstContent && !firstContentFired) {
+              if ((content || reasoning || toolCallsInDelta) && onFirstContent && !firstContentFired) {
                 if (process.env.DEBUG === "1") {
-                  console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] 🔍 [DEBUG-passthrough] onFirstContent firing: content=${!!content} reasoning=${!!reasoning} toolCalls=${toolCallsInDelta} hasRole=${!!hasRole}`);
+                  console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] 🔍 [DEBUG-passthrough] onFirstContent firing: content=${!!content} reasoning=${!!reasoning} toolCalls=${toolCallsInDelta}`);
                 }
                 firstContentFired = true;
                 onFirstContent();
@@ -259,8 +259,16 @@ export function createSSEStream(options = {}) {
               continue; // Skip this empty chunk
             }
 
-            // Fire onFirstContent BEFORE emitting message_start to ensure detectContent buffers it
-            if (item.type === "message_start" && onFirstContent && !firstContentFired) {
+            // Fire onFirstContent only when actual text/thinking/tool content is present,
+            // NOT on message_start (which is just a structural marker with no tokens)
+            const hasActualContent = (() => {
+              if (item.choices?.[0]?.delta?.content) return true;
+              if (item.choices?.[0]?.delta?.reasoning_content) return true;
+              if (item.choices?.[0]?.delta?.tool_calls?.length > 0) return true;
+              if (item.type === "content_block_delta" && (item.delta?.text || item.delta?.thinking || item.delta?.partial_json)) return true;
+              return false;
+            })();
+            if (hasActualContent && onFirstContent && !firstContentFired) {
               firstContentFired = true;
               onFirstContent();
             }
@@ -281,7 +289,6 @@ export function createSSEStream(options = {}) {
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
             hasEmittedContent = true;
-            if (onFirstContent && !firstContentFired) { firstContentFired = true; onFirstContent(); }
           }
         }
       }
