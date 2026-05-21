@@ -81,19 +81,6 @@ export default function ProviderLimits() {
         return next;
       });
 
-      // Auto-show monitor input for connections that have saved credentials
-      setShowMonitorInputs((prev) => {
-        const next = { ...prev };
-        connectionList.forEach((conn) => {
-          const hasToken = conn.providerSpecificData?.monitorToken;
-          const hasCreds = conn.provider === "open-claude" && conn.providerSpecificData?.monitorCreds?.username;
-          if ((hasToken || hasCreds) && next[conn.id] === undefined) {
-            next[conn.id] = true;
-          }
-        });
-        return next;
-      });
-
       return connectionList;
     } catch (error) {
       console.error("Error fetching connections:", error);
