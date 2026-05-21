@@ -12,6 +12,7 @@ export default defineConfig({
     exclude: [
       "**/node_modules/**",
       "**/embeddings.cloud.test.js",
+      "**/.next/**",
     ],
     // Suppress noisy console output from handlers under test
     silent: false,
