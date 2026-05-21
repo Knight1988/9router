@@ -19,6 +19,7 @@ import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.j
 import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
+import { logAbnormal, ABNORMAL_SIGNALS } from "../utils/abnormalLogger.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -196,6 +197,19 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       status: "error"
     })).catch(() => { });
 
+    logAbnormal({
+      signal: ABNORMAL_SIGNALS.PROVIDER_ERROR,
+      provider,
+      model,
+      connectionId,
+      endpoint: clientRawRequest?.endpoint || null,
+      latencyMs: Date.now() - requestStartTime,
+      statusCode: error.name === "AbortError" ? 499 : 502,
+      details: { kind: "executor_throw", errorMessage: (error.message || String(error)).slice(0, 500) },
+      clientRequest: clientRawRequest,
+      translatedRequest: translatedBody
+    });
+
     if (error.name === "AbortError") {
       streamController.handleError(error);
       return createErrorResult(499, "Request aborted");
@@ -230,7 +244,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Provider returned error
   if (!providerResponse.ok) {
     trackPendingRequest(model, provider, connectionId, false, true);
-    const { statusCode, message, resetsAtMs } = await parseUpstreamError(providerResponse, executor);
+    const { statusCode, message, resetsAtMs, rawBody } = await parseUpstreamError(providerResponse, executor);
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => { });
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
@@ -241,6 +255,21 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       response: { error: message, status: statusCode, thinking: null },
       status: "error"
     })).catch(() => { });
+
+    logAbnormal({
+      signal: ABNORMAL_SIGNALS.PROVIDER_ERROR,
+      provider,
+      model,
+      connectionId,
+      endpoint: clientRawRequest?.endpoint || null,
+      latencyMs: Date.now() - requestStartTime,
+      statusCode,
+      details: { kind: "provider_not_ok", errorMessage: (message || "").slice(0, 500) },
+      clientRequest: clientRawRequest,
+      translatedRequest: translatedBody,
+      targetRequest: { url: providerUrl, headers: providerHeaders, body: finalBody },
+      providerResponseBody: rawBody
+    });
 
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);

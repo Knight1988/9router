@@ -5,6 +5,7 @@ import { pipeWithDisconnect } from "../../utils/streamHandler.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { createErrorResult } from "../../utils/error.js";
+import { logAbnormal, ABNORMAL_SIGNALS, isAbnormalFinishReason } from "../../utils/abnormalLogger.js";
 
 const SSE_HEADERS = {
   "Content-Type": "text/event-stream",
@@ -161,8 +162,21 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 
   if (guardResult.kind === "empty") {
     const reason = guardResult.reason === "timeout" ? "timeout waiting for first content" : "stream ended with no content";
-    console.warn(`[STREAM] EMPTY → fallback: ${provider}/${model} (connection=${connectionId}). ${reason}. Marking as failed.`);
     try { reader.releaseLock(); } catch {}
+    
+    logAbnormal({
+      signal: ABNORMAL_SIGNALS.EMPTY_STREAM,
+      provider,
+      model,
+      connectionId,
+      endpoint: clientRawRequest?.endpoint || null,
+      latencyMs: Date.now() - requestStartTime,
+      details: { reason: guardResult.reason },
+      clientRequest: clientRawRequest,
+      translatedRequest: translatedBody,
+      targetRequest: finalBody ? { url: null, headers: null, body: finalBody } : null
+    });
+
     if (onRequestSuccess) {
       // Do NOT call onRequestSuccess — empty stream is a failure, keep account cooldown active
     }
@@ -206,6 +220,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     };
     const safeContent = contentObj?.content || "[Empty streaming response]";
     const safeThinking = contentObj?.thinking || null;
+    const finishReason = contentObj?.finishReason || null;
 
     if (contentObj?.emptyStream) {
       console.warn(`[STREAM] WARNING: Empty stream from ${provider}/${model} (connection=${connectionId}). Possible format mismatch — provider may be returning a different format than expected.`);
@@ -218,9 +233,38 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     const hasContent = safeContent && safeContent !== "[Empty streaming response]" && safeContent.trim().length > 0;
     const hasToolCalls = contentObj?.toolCalls?.length > 0 || contentObj?.tool_calls?.length > 0;
     if (outTokens === 0 && !hasContent && !hasToolCalls) {
-      console.warn(`[STREAM] ⚠️  [EMPTY-COMPLETION] ${provider}/${model} (connection=${connectionId}) — stream completed with 0 output tokens and no content. Provider may be silently dropping requests. Account cooldown preserved.`);
+      logAbnormal({
+        signal: ABNORMAL_SIGNALS.EMPTY_COMPLETION,
+        provider,
+        model,
+        connectionId,
+        endpoint: clientRawRequest?.endpoint || null,
+        latencyMs: latency.total,
+        details: { outTokens, hasContent: false, hasToolCalls: false, finishReason },
+        clientRequest: clientRawRequest,
+        translatedRequest: translatedBody,
+        targetRequest: finalBody ? { url: null, headers: null, body: finalBody } : null,
+        clientResponseBody: safeContent
+      });
       // Do NOT call onRequestSuccess — preserves account error state so combo cycling skips it next round
       return;
+    }
+
+    // Check for abnormal finish_reason
+    if (finishReason && isAbnormalFinishReason(finishReason)) {
+      logAbnormal({
+        signal: ABNORMAL_SIGNALS.BAD_FINISH_REASON,
+        provider,
+        model,
+        connectionId,
+        endpoint: clientRawRequest?.endpoint || null,
+        latencyMs: latency.total,
+        details: { finishReason, outTokens, hasContent, hasToolCalls },
+        clientRequest: clientRawRequest,
+        translatedRequest: translatedBody,
+        targetRequest: finalBody ? { url: null, headers: null, body: finalBody } : null,
+        clientResponseBody: safeContent
+      });
     }
 
     // Confirm success — clear account error state

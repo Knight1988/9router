@@ -8,6 +8,7 @@ import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
+import { logAbnormal, ABNORMAL_SIGNALS, isAbnormalFinishReason } from "../../utils/abnormalLogger.js";
 
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
@@ -175,6 +176,80 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     }
   }
 
+  // Detect abnormal responses
+  const totalLatency = Date.now() - requestStartTime;
+  const choice = translatedResponse?.choices?.[0];
+  const msg = choice?.message;
+  const finishReason = choice?.finish_reason;
+  const outTokens = usage?.completion_tokens ?? usage?.output_tokens ?? 0;
+  const hasContent = msg?.content && typeof msg.content === "string" && msg.content.trim().length > 0;
+  const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
+
+  // Empty completion
+  if (outTokens === 0 && !hasContent && !hasToolCalls) {
+    logAbnormal({
+      signal: ABNORMAL_SIGNALS.EMPTY_COMPLETION,
+      provider,
+      model,
+      connectionId,
+      endpoint: clientRawRequest?.endpoint || null,
+      latencyMs: totalLatency,
+      details: { outTokens, hasContent: false, hasToolCalls: false, finishReason },
+      clientRequest: clientRawRequest,
+      translatedRequest: translatedBody,
+      targetRequest: finalBody ? { url: null, headers: null, body: finalBody } : null,
+      providerResponseBody: responseBody,
+      clientResponseBody: translatedResponse
+    });
+  }
+
+  // Bad finish_reason
+  if (finishReason && isAbnormalFinishReason(finishReason)) {
+    logAbnormal({
+      signal: ABNORMAL_SIGNALS.BAD_FINISH_REASON,
+      provider,
+      model,
+      connectionId,
+      endpoint: clientRawRequest?.endpoint || null,
+      latencyMs: totalLatency,
+      details: { finishReason, outTokens, hasContent, hasToolCalls },
+      clientRequest: clientRawRequest,
+      translatedRequest: translatedBody,
+      targetRequest: finalBody ? { url: null, headers: null, body: finalBody } : null,
+      providerResponseBody: responseBody,
+      clientResponseBody: translatedResponse
+    });
+  }
+
+  // Format mismatch: missing choices or malformed tool_calls
+  const hasMalformedToolCalls = hasToolCalls && msg.tool_calls.some(tc => 
+    !tc.function?.name || typeof tc.function?.arguments !== "string"
+  );
+  const missingChoices = !translatedResponse?.choices || translatedResponse.choices.length === 0;
+  const missingMessage = choice && !msg;
+  if (missingChoices || missingMessage || hasMalformedToolCalls) {
+    logAbnormal({
+      signal: ABNORMAL_SIGNALS.FORMAT_MISMATCH,
+      provider,
+      model,
+      connectionId,
+      endpoint: clientRawRequest?.endpoint || null,
+      latencyMs: totalLatency,
+      details: { 
+        missingChoices, 
+        missingMessage, 
+        hasMalformedToolCalls,
+        targetFormat,
+        sourceFormat
+      },
+      clientRequest: clientRawRequest,
+      translatedRequest: translatedBody,
+      targetRequest: finalBody ? { url: null, headers: null, body: finalBody } : null,
+      providerResponseBody: responseBody,
+      clientResponseBody: translatedResponse
+    });
+  }
+
   // Ensure OpenAI-required fields
   if (!translatedResponse.object) translatedResponse.object = "chat.completion";
   if (!translatedResponse.created) translatedResponse.created = Math.floor(Date.now() / 1000);
@@ -199,7 +274,6 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   reqLogger.logConvertedResponse(translatedResponse);
 
-  const totalLatency = Date.now() - requestStartTime;
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,
     latency: { ttft: totalLatency, total: totalLatency },

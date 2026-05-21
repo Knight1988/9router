@@ -63,6 +63,7 @@ export function createSSEStream(options = {}) {
   let hasToolCalls = false;
   let hasEmittedContent = false;
   let firstContentFired = false;
+  let lastFinishReason = null;
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -147,6 +148,7 @@ export function createSSEStream(options = {}) {
               }
 
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
+              if (isFinishChunk) lastFinishReason = parsed.choices[0].finish_reason;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
                 parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
@@ -275,6 +277,7 @@ export function createSSEStream(options = {}) {
 
             // Inject estimated usage if finish chunk has no valid usage
             const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
+            if (isFinishChunk && state.finishReason) lastFinishReason = state.finishReason;
             if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && totalContentLength > 0) {
               const estimated = estimateUsage(body, totalContentLength, sourceFormat);
               item.usage = filterUsageForFormat(estimated, sourceFormat); // Filter + already has buffer
@@ -386,7 +389,8 @@ export function createSSEStream(options = {}) {
             onStreamComplete({
               content: accumulatedContent,
               thinking: accumulatedThinking,
-              emptyStream: totalContentLength === 0 && !accumulatedThinking
+              emptyStream: totalContentLength === 0 && !accumulatedThinking,
+              finishReason: lastFinishReason
             }, usage, ttftAt);
           }
           return;
@@ -456,7 +460,8 @@ export function createSSEStream(options = {}) {
           onStreamComplete({
             content: accumulatedContent,
             thinking: accumulatedThinking,
-            emptyStream
+            emptyStream,
+            finishReason: lastFinishReason || state?.finishReason || null
           }, state?.usage, ttftAt);
         }
       } catch (error) {
