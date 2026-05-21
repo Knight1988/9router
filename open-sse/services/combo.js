@@ -74,23 +74,82 @@ export function resetComboRotation(comboName) {
 }
 
 /**
- * Get combo models from combos data
+ * Recursively expand a model string into a flat list of leaf provider/model entries.
+ *
+ * A "leaf" is any string that contains "/" (e.g. "anthropic/claude-3-5-sonnet").
+ * A "sub-combo" is any string without "/" that matches a known combo name.
+ * Strings without "/" that don't match any combo are treated as leaves (aliases).
+ *
+ * Cycle detection: if a combo name is encountered a second time in the same
+ * expansion path, it is skipped with a warning and contributes no leaves.
+ *
+ * Deduplication: first occurrence of each leaf wins; subsequent duplicates are dropped.
+ *
+ * @param {string} modelStr - Model string to expand
+ * @param {function(string): (Object|null|Promise<Object|null>)} lookupCombo
+ *   Sync or async function that returns a combo object (with .models) by name, or null.
+ * @param {Set<string>} [visited] - Combo names already on the current expansion path (cycle guard)
+ * @param {Set<string>} [seen] - Leaf strings already emitted (dedup across the whole expansion)
+ * @returns {Promise<string[]>} Flat, deduped list of leaf model strings
+ */
+export async function expandComboModels(modelStr, lookupCombo, visited = new Set(), seen = new Set()) {
+  // Already a provider/model leaf
+  if (modelStr.includes("/")) {
+    if (seen.has(modelStr)) return [];
+    seen.add(modelStr);
+    return [modelStr];
+  }
+
+  // Look up as a combo
+  const combo = await lookupCombo(modelStr);
+  if (!combo) {
+    // Not a known combo — treat as alias leaf
+    if (seen.has(modelStr)) return [];
+    seen.add(modelStr);
+    return [modelStr];
+  }
+
+  // Cycle detection
+  if (visited.has(modelStr)) {
+    console.warn(`[combo] Cycle detected: "${modelStr}" already on expansion path [${[...visited].join(" → ")}]. Skipping.`);
+    return [];
+  }
+
+  // Known combo with no models contributes nothing
+  if (!combo.models || combo.models.length === 0) return [];
+
+  const nextVisited = new Set(visited);
+  nextVisited.add(modelStr);
+
+  const results = [];
+  for (const entry of combo.models) {
+    const leaves = await expandComboModels(entry, lookupCombo, nextVisited, seen);
+    results.push(...leaves);
+  }
+  return results;
+}
+
+/**
+ * Get combo models from combos data, with recursive sub-combo expansion.
  * @param {string} modelStr - Model string to check
  * @param {Array|Object} combosData - Array of combos or object with combos
- * @returns {string[]|null} Array of models or null if not a combo
+ * @returns {Promise<string[]|null>} Flat deduped array of leaf models, or null if not a combo
  */
-export function getComboModelsFromData(modelStr, combosData) {
+export async function getComboModelsFromData(modelStr, combosData) {
   // Don't check if it's in provider/model format
   if (modelStr.includes("/")) return null;
-  
+
   // Handle both array and object formats
   const combos = Array.isArray(combosData) ? combosData : (combosData?.combos || []);
-  
-  const combo = combos.find(c => c.name === modelStr);
-  if (combo && combo.models && combo.models.length > 0) {
-    return combo.models;
-  }
-  return null;
+
+  // Build a fast name→combo map
+  const comboMap = new Map(combos.map(c => [c.name, c]));
+
+  const topCombo = comboMap.get(modelStr);
+  if (!topCombo || !topCombo.models || topCombo.models.length === 0) return null;
+
+  const leaves = await expandComboModels(modelStr, (name) => comboMap.get(name) ?? null);
+  return leaves.length > 0 ? leaves : null;
 }
 
 /**

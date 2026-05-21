@@ -13,7 +13,7 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: "Combo not found" }, { status: 404 });
     }
 
-    const result = validateComboForSmartRouting(combo);
+    const result = await validateComboForSmartRouting(combo);
     return NextResponse.json(result);
   } catch (error) {
     console.error("[SmartRouting] validate error:", error);

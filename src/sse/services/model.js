@@ -1,6 +1,7 @@
 // Re-export from open-sse with localDb integration
 import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb";
 import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
+import { expandComboModels } from "open-sse/services/combo.js";
 
 // Local provider alias overrides (HMR-friendly, applied on top of open-sse map)
 const LOCAL_PROVIDER_ALIASES = {
@@ -81,16 +82,17 @@ export async function getModelInfo(modelStr) {
 }
 
 /**
- * Check if model is a combo and get models list
- * @returns {Promise<string[]|null>} Array of models or null if not a combo
+ * Check if model is a combo and get models list, with recursive sub-combo expansion.
+ * Returns a flat, deduped list of leaf provider/model strings, or null if not a combo.
+ * @returns {Promise<string[]|null>}
  */
 export async function getComboModels(modelStr) {
   // Only check if it's not in provider/model format
   if (modelStr.includes("/")) return null;
 
-  const combo = await getComboByName(modelStr);
-  if (combo && combo.models && combo.models.length > 0) {
-    return combo.models;
-  }
-  return null;
+  const topCombo = await getComboByName(modelStr);
+  if (!topCombo || !topCombo.models || topCombo.models.length === 0) return null;
+
+  const leaves = await expandComboModels(modelStr, getComboByName);
+  return leaves.length > 0 ? leaves : null;
 }

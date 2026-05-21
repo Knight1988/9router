@@ -1,6 +1,7 @@
-import { getProviderConnections } from "@/lib/localDb";
+import { getProviderConnections, getCombos } from "@/lib/localDb";
 import { USAGE_SUPPORTED_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
 import { fetchUsageForConnection, bestRemainingPercentage } from "@/lib/usage/connectionUsage";
+import { expandComboModels } from "open-sse/services/combo.js";
 
 /**
  * Parse a model string (e.g. "kr/claude-sonnet-4.5" or "glm/glm-5.1") to a provider id.
@@ -23,12 +24,38 @@ export function isProviderQuotaSupported(modelStr) {
 }
 
 /**
- * Validate that all models in a combo can have their quota checked.
- * @param {{ models: string[] }} combo
- * @returns {{ ok: boolean, unsupported: string[] }}
+ * Build a combo lookup function from the DB for use with expandComboModels.
  */
-export function validateComboForSmartRouting(combo) {
-  const unsupported = (combo.models || []).filter((m) => !isProviderQuotaSupported(m));
+async function buildComboLookup() {
+  const combos = await getCombos();
+  const map = new Map(combos.map(c => [c.name, c]));
+  return (name) => map.get(name) ?? null;
+}
+
+/**
+ * Expand a combo's models to leaf provider/model strings, resolving sub-combos recursively.
+ * @param {{ models: string[] }} combo
+ * @returns {Promise<string[]>}
+ */
+async function expandCombo(combo) {
+  const lookupCombo = await buildComboLookup();
+  const leaves = [];
+  const seen = new Set();
+  for (const entry of (combo.models || [])) {
+    const expanded = await expandComboModels(entry, lookupCombo, new Set(), seen);
+    leaves.push(...expanded);
+  }
+  return leaves;
+}
+
+/**
+ * Validate that all leaf models in a combo (including sub-combos) can have quota checked.
+ * @param {{ models: string[] }} combo
+ * @returns {Promise<{ ok: boolean, unsupported: string[] }>}
+ */
+export async function validateComboForSmartRouting(combo) {
+  const leaves = await expandCombo(combo);
+  const unsupported = leaves.filter((m) => !isProviderQuotaSupported(m));
   return { ok: unsupported.length === 0, unsupported };
 }
 
@@ -82,13 +109,13 @@ export async function getProviderQuotaPercentForModel(modelStr) {
 }
 
 /**
- * Compute a smart-priority ordering for the combo's models.
- * Models with higher remaining quota come first. Original order preserved for ties.
+ * Compute a smart-priority ordering for the combo's models (with sub-combo expansion).
+ * Leaf models with higher remaining quota come first. Original order preserved for ties.
  * @param {{ name: string, models: string[] }} combo
  * @returns {Promise<{ ok: boolean, priority: string[], errors: { model: string, reason: string }[] }>}
  */
 export async function computeSmartPriority(combo) {
-  const models = combo.models || [];
+  const models = await expandCombo(combo);
   const results = await Promise.all(
     models.map(async (m) => {
       const r = await getProviderQuotaPercentForModel(m);

@@ -135,32 +135,11 @@ export async function handleChat(request, clientRawRequest = null) {
 async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
   const modelInfo = await getModelInfo(modelStr);
 
-  // If provider is null, this might be a combo name - check and handle
+  // If provider is null, the model string is not a provider/model pair.
+  // Sub-combos are already expanded to leaves by getComboModels before handleComboChat
+  // calls handleSingleModelChat, so reaching here with provider=null means the entry
+  // is genuinely malformed (not a combo, not a valid alias).
   if (!modelInfo.provider) {
-    const comboModels = await getComboModels(modelStr);
-    if (comboModels) {
-      const chatSettings = await getSettings();
-      // Check for combo-specific strategy first, fallback to global
-      const comboStrategies = chatSettings.comboStrategies || {};
-      const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
-      const comboStrategy = comboSpecificStrategy || chatSettings.comboStrategy || "fallback";
-      
-      const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
-      const smartPriority = comboStrategies[modelStr]?.smartPriority;
-      log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
-      return handleComboChat({
-        body,
-        models: comboModels,
-        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
-        log,
-        comboName: modelStr,
-        comboStrategy,
-        comboStickyLimit,
-        smartPriority,
-        keepCycling: true,
-        signal: request?.signal,
-      });
-    }
     log.warn("CHAT", "Invalid model format", { model: modelStr });
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
   }
