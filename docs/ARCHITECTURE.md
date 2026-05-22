@@ -1,6 +1,8 @@
 # 9Router Architecture
 
-_Last updated: 2026-02-06_
+_Last updated: 2026-05-22_
+
+> **Fork divergence:** This repo is [Knight1988/9router](https://github.com/Knight1988/9router), a fork of [decolua/9router](https://github.com/decolua/9router). The architecture below describes the upstream baseline. Fork-specific additions (Azure CI/CD, smart routing, provider health observability, HTTPS, extra providers) are summarized in [./FORK.md](./FORK.md).
 
 ## Executive Summary
 

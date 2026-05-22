@@ -22,6 +22,10 @@
 
 ---
 
+> **Fork notice:** This is [Knight1988/9router](https://github.com/Knight1988/9router), a fork of [decolua/9router](https://github.com/decolua/9router). See [docs/FORK.md](./docs/FORK.md) for what this fork adds (Azure CI/CD, smart routing, observability, HTTPS, extra providers).
+
+---
+
 ## 🤔 Why 9Router?
 
 **Stop wasting money, tokens and hitting limits:**
