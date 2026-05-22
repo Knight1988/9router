@@ -49,9 +49,6 @@ data/
 logs/*
 source/*
 .cursor/*
-docs/*
-!docs/ARCHITECTURE.md
-!docs/FORK.md
 test/*
 open-sse/test/*
 RM.vn.md
