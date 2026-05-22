@@ -11,10 +11,11 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
-import { buildRequestDetail, extractRequestConfig } from "./chatCore/requestDetail.js";
+import { buildRequestDetail, extractRequestConfig, saveUsageStats } from "./chatCore/requestDetail.js";
 import { handleForcedSSEToJson } from "./chatCore/sseToJsonHandler.js";
 import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
+import { claudeJsonToSSE } from "../utils/jsonToSseConverter.js";
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
 import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
@@ -59,7 +60,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   const clientRequestedStreaming = body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI;
   const providerRequiresStreaming = provider === "openai" || provider === "codex" || provider === "commandcode";
+  const providerForcesNonStreaming = provider === "techopenclaw";
   let stream = providerRequiresStreaming ? true : (body.stream !== false);
+
+  // Force non-streaming for providers that don't support stream=true
+  if (providerForcesNonStreaming) {
+    stream = false;
+  }
 
   // DeepSeek-TUI: interactive TUI panel sends stream:true and needs SSE.
   // Non-interactive mode (-p flag) sends without stream and can't parse SSE.
@@ -292,6 +299,62 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, reqLogger, toolNameMap, trackDone, appendLog });
     streamController.handleComplete();
     return result;
+  }
+
+  // Provider forced non-streaming but client wants SSE
+  // Convert JSON response to SSE stream
+  if (providerForcesNonStreaming && clientRequestedStreaming) {
+    trackDone();
+    let responseBody;
+    try {
+      responseBody = await providerResponse.json();
+    } catch (err) {
+      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+      console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
+      streamController.handleComplete();
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
+    }
+
+    reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
+    if (onRequestSuccess) await onRequestSuccess();
+
+    const usage = responseBody.usage || { input_tokens: 0, output_tokens: 0 };
+    appendLog({ tokens: usage, status: "200 OK" });
+    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint });
+
+    // Synthesize SSE chunks from JSON
+    const sseChunks = claudeJsonToSSE(responseBody);
+    const sseBody = sseChunks.join("");
+
+    saveRequestDetail(buildRequestDetail({
+      provider, model, connectionId,
+      latency: { ttft: Date.now() - requestStartTime, total: Date.now() - requestStartTime },
+      tokens: usage,
+      request: extractRequestConfig(body, true),
+      providerRequest: finalBody || translatedBody || null,
+      providerResponse: responseBody,
+      response: {
+        content: responseBody.content?.[0]?.text || null,
+        thinking: responseBody.content?.find(b => b.type === "thinking")?.thinking || null,
+        finish_reason: responseBody.stop_reason || "end_turn"
+      },
+      status: "success"
+    }, { endpoint: clientRawRequest?.endpoint || null })).catch(err => {
+      console.error("[RequestDetail] Failed to save:", err.message);
+    });
+
+    streamController.handleComplete();
+    return {
+      success: true,
+      response: new Response(sseBody, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+          "Access-Control-Allow-Origin": "*"
+        }
+      })
+    };
   }
 
   // Streaming response
