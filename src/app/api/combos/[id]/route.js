@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getComboById, updateCombo, deleteCombo, getComboByName, getSettings, updateSettings } from "@/lib/localDb";
 import { resetComboRotation } from "open-sse/services/combo.js";
+import { validateComboForSmartRouting } from "@/lib/smartRouting/quotaCheck";
 
 /**
  * Clear cached smartPriority for a combo name from settings.comboStrategies.
@@ -84,13 +85,28 @@ export async function PUT(request, { params }) {
       if (combo.name && combo.name !== prev?.name) {
         await clearSmartPriorityCache(combo.name);
       }
-      // If smart routing is on, trigger a fresh refresh
+      // If smart routing is on, re-validate and either refresh or auto-disable
       try {
         const settings = await getSettings();
         const strategy = settings.comboStrategies?.[combo.name]?.fallbackStrategy;
         if (strategy === "smart-routing") {
-          const { triggerSmartRoutingRefresh } = await import("@/lib/smartRouting/scheduler.js");
-          triggerSmartRoutingRefresh(combo.name).catch(() => {});
+          const validation = await validateComboForSmartRouting(combo);
+          if (!validation.ok) {
+            // Models no longer support quota checks — auto-disable smart routing
+            const strategies = settings.comboStrategies || {};
+            const { fallbackStrategy, smartPriority, smartPriorityUpdatedAt, smartPriorityError, ...rest } = strategies[combo.name] || {};
+            const updated = { ...strategies };
+            if (Object.keys(rest).length === 0) {
+              delete updated[combo.name];
+            } else {
+              updated[combo.name] = rest;
+            }
+            await updateSettings({ comboStrategies: updated });
+            console.warn(`[Combos] Auto-disabled smart routing for "${combo.name}": unsupported providers ${validation.unsupported.join(", ")}`);
+          } else {
+            const { triggerSmartRoutingRefresh } = await import("@/lib/smartRouting/scheduler.js");
+            triggerSmartRoutingRefresh(combo.name).catch(() => {});
+          }
         }
       } catch {
         // non-fatal
