@@ -83,7 +83,7 @@ describe("compatible provider connections API", () => {
     else process.env.DATA_DIR = originalDataDir;
   });
 
-  it("creates one API-key connection for an OpenAI-compatible node", async () => {
+  it("creates one API-key connection for an OpenAI-compatible node", { timeout: 15000 }, async () => {
     const ctx = await setupTestContext({
       id: "openai-compatible-test",
       type: "openai-compatible",

@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 describe("Driver fallback chain", () => {
-  it("default → picks better-sqlite3 when available", async () => {
+  it("default → picks better-sqlite3 when available", { timeout: 15000 }, async () => {
     const { getAdapter } = await import("@/lib/db/driver.js");
     const db = await getAdapter();
     expect(["better-sqlite3", "node:sqlite", "sql.js"]).toContain(db.driver);

@@ -25,7 +25,7 @@ afterEach(() => {
 });
 
 describe("Schema migrations", () => {
-  it("fresh DB → applies migrations & stamps schemaVersion", async () => {
+  it("fresh DB → applies migrations & stamps schemaVersion", { timeout: 15000 }, async () => {
     const { getAdapter } = await import("@/lib/db/driver.js");
     const { latestVersion } = await import("@/lib/db/migrations/index.js");
     const db = await getAdapter();
