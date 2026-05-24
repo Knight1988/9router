@@ -157,8 +157,8 @@ describe("passthroughModels and modelsFetcher shape", () => {
     expect(AI_PROVIDERS[id].passthroughModels).toBe(true);
   });
 
-  it("techopenclaw has passthroughModels=true", () => {
-    expect(AI_PROVIDERS.techopenclaw.passthroughModels).toBe(true);
+  it("techopenclaw does not have passthroughModels (uses hardcoded models)", () => {
+    expect(AI_PROVIDERS.techopenclaw.passthroughModels).toBeUndefined();
   });
 
   it.each(CLAUDIBLE_IDS)("%s modelsFetcher type is claudible-endpoint", (id) => {
@@ -178,11 +178,8 @@ describe("passthroughModels and modelsFetcher shape", () => {
     expect(endpointId.length).toBeGreaterThan(0);
   });
 
-  it("techopenclaw modelsFetcher type is openai-all", () => {
-    const f = AI_PROVIDERS.techopenclaw.modelsFetcher;
-    expect(f).toBeDefined();
-    expect(f.type).toBe("openai-all");
-    expect(f.url).toMatch(/^https:\/\//);
+  it("techopenclaw does not have a modelsFetcher (uses hardcoded models)", () => {
+    expect(AI_PROVIDERS.techopenclaw.modelsFetcher).toBeUndefined();
   });
 
   it.each(CLAUDIBLE_IDS)("%s fetcher endpointIds are distinct", () => {
