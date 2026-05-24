@@ -294,8 +294,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     if (result) { streamController.handleComplete(); return result; }
   }
 
-  // True non-streaming response
-  if (!stream) {
+  // True non-streaming response (skip if provider forced non-streaming — handled below)
+  if (!stream && !providerForcesNonStreaming) {
     const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, reqLogger, toolNameMap, trackDone, appendLog });
     streamController.handleComplete();
     return result;
