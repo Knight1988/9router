@@ -6,7 +6,7 @@ import { getMeta, setMeta } from "../helpers/metaStore.js";
 const PENDING_TIMEOUT_MS = 60 * 1000;
 const RING_CAP = 50;
 const CONN_CACHE_TTL_MS = 30 * 1000;
-const PERIOD_MS = { "24h": 86400000, "7d": 604800000, "30d": 2592000000, "60d": 5184000000 };
+const PERIOD_MS = { "5h": 18000000, "12h": 43200000, "24h": 86400000, "7d": 604800000, "30d": 2592000000, "60d": 5184000000 };
 
 // In-memory state shared across Next.js modules
 if (!global._pendingRequests) global._pendingRequests = { byModel: {}, byAccount: {} };
@@ -415,7 +415,7 @@ export async function getUsageStats(period = "all") {
     }
   }
 
-  const useDailySummary = period !== "24h" && period !== "today";
+  const useDailySummary = period !== "24h" && period !== "today" && period !== "5h" && period !== "12h";
 
   if (useDailySummary) {
     const periodDays = { "7d": 7, "30d": 30, "60d": 60 };
@@ -536,7 +536,7 @@ export async function getUsageStats(period = "all") {
       startOfDay.setHours(0, 0, 0, 0);
       cutoff = startOfDay.toISOString();
     } else {
-      cutoff = new Date(Date.now() - PERIOD_MS["24h"]).toISOString();
+      cutoff = new Date(Date.now() - PERIOD_MS[period]).toISOString();
     }
     const filtered = db.all(
       `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ?`,
@@ -647,9 +647,9 @@ export async function getChartData(period = "7d") {
     return buckets;
   }
 
-  if (period === "24h") {
-    const bucketCount = 24;
-    const bucketMs = 3600000;
+  if (period === "24h" || period === "12h" || period === "5h") {
+    const bucketMs = period === "5h" ? 1800000 : 3600000;
+    const bucketCount = period === "5h" ? 10 : period === "12h" ? 12 : 24;
     const labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
     const startTime = now - bucketCount * bucketMs;
     const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
