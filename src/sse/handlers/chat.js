@@ -21,6 +21,7 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { compactBodyIfNeeded } from "open-sse/utils/contextCompactor.js";
 import { getOpenClaudeResetsAtMs } from "open-sse/services/openClaudeQuota.js";
+import { checkRateLimit } from "../utils/rateLimiter.js";
 
 /**
  * Handle chat completion request
@@ -84,6 +85,18 @@ export async function handleChat(request, clientRawRequest = null) {
   if (!modelStr) {
     log.warn("CHAT", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+  }
+
+  // Rate limit per API key (30 req/min sliding window)
+  if (apiKey) {
+    const { allowed, retryAfter } = checkRateLimit(apiKey);
+    if (!allowed) {
+      log.warn("RATE_LIMIT", `API key ${log.maskKey(apiKey)} exceeded 30 req/min — retry in ${retryAfter}s`);
+      return new Response(
+        JSON.stringify({ error: { message: "Rate limit exceeded: 30 requests per minute", type: "rate_limit_error", code: "rate_limit_exceeded" } }),
+        { status: 429, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Retry-After": String(retryAfter) } }
+      );
+    }
   }
 
   // Auto-compact context if enabled and not an internal compaction call
