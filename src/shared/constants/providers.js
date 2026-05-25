@@ -86,6 +86,7 @@ export const APIKEY_PROVIDERS = {
   "cn-claudible": { id: "cn-claudible", alias: "cn-claudible", name: "Claudible China", icon: "smart_toy", color: "#DC2626", textIcon: "CN", website: "https://cn.claudible.io", notice: { text: "Cheap Chinese models for production. DeepSeek, GLM, Kimi, Qwen.", apiKeyUrl: "https://claudible.io/dashboard" }, passthroughModels: true, modelsFetcher: { url: "https://claudible.io/api/model-hub", type: "claudible-endpoint", endpointId: "b8d17fbe" }, serviceKinds: ["llm"] },
   "minimax-claudible": { id: "minimax-claudible", alias: "minimax-claudible", name: "MiniMax Claudible", icon: "memory", color: "#7C3AED", textIcon: "MX", website: "https://minimax.claudible.io", notice: { text: "MiniMax gateway for OpenClaw, 0.15 credit/req. Models: MiniMax-M2.7, MiniMax-M2.7-highspeed, MiniMax-CodingPlan.", apiKeyUrl: "https://claudible.io/dashboard" }, passthroughModels: true, modelsFetcher: { url: "https://claudible.io/api/model-hub", type: "claudible-endpoint", endpointId: "f5936314" }, serviceKinds: ["llm"] },
   "claude-claudible": { id: "claude-claudible", alias: "claude-claudible", name: "Claude Claudible", icon: "smart_toy", color: "#D97757", textIcon: "CL", website: "https://claude.claudible.io", notice: { text: "Claude Subscription + GPT gateway. Models: gpt-5.4, gpt-5.4-mini, gpt-5.5.", apiKeyUrl: "https://claudible.io/dashboard" }, passthroughModels: true, modelsFetcher: { url: "https://claudible.io/api/model-hub", type: "claudible-endpoint", endpointId: "5046fcac" }, serviceKinds: ["llm"] },
+  "codex-claudible": { id: "codex-claudible", alias: "codex-claudible", name: "Codex Claudible", icon: "smart_toy", color: "#10A37F", textIcon: "CX", website: "https://codex.claudible.io", notice: { text: "Codex gateway for GPT and code review models. Models: codex-auto-review, gpt-5.3-codex, gpt-5.4, gpt-5.4-mini, gpt-5.5.", apiKeyUrl: "https://claudible.io/dashboard" }, passthroughModels: true, modelsFetcher: { url: "https://claudible.io/api/model-hub", type: "claudible-endpoint", endpointId: "183b1811" }, serviceKinds: ["llm"] },
   "open-claude": { id: "open-claude", alias: "open-claude", name: "Open Claude", icon: "smart_toy", color: "#D97757", textIcon: "OC", website: "https://open-claude.com", notice: { text: "OpenAI-compatible Claude gateway with usage dashboard and budget tracking.", apiKeyUrl: "https://open-claude.com/keys" } },
   "troll-llm": { id: "troll-llm", alias: "tl", name: "Troll LLM", icon: "smart_toy", color: "#7C3AED", textIcon: "TL", website: "https://www.trollllm.xyz", notice: { text: "OpenAI-compatible multi-model gateway with Claude, GPT, and Gemini.", apiKeyUrl: "https://www.trollllm.xyz/dashboard/keys" } },
   "opencode-go": { id: "opencode-go", alias: "ocg", name: "OpenCode Go", icon: "terminal", color: "#E87040", textIcon: "OC", website: "https://opencode.ai/auth", notice: { text: "OpenCode Go subscription: $5/mo (then $10/mo). Access to Kimi, GLM, Qwen, MiMo, MiniMax models.", apiKeyUrl: "https://opencode.ai/auth" } },
@@ -289,6 +290,7 @@ export const USAGE_SUPPORTED_PROVIDERS = [
   "cn-claudible",
   "minimax-claudible",
   "claude-claudible",
+  "codex-claudible",
   "open-claude",
   "troll-llm",
   "techopenclaw",
@@ -308,6 +310,7 @@ export const USAGE_APIKEY_PROVIDERS = [
   "cn-claudible",
   "minimax-claudible",
   "claude-claudible",
+  "codex-claudible",
   "techopenclaw",
   "devgo",
 ];

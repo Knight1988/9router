@@ -552,14 +552,26 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const userId = JSON.stringify({ device_id: randomBytes(32).toString("hex"), account_uuid: randomUUID(), session_id: randomUUID() });
         const res = await fetchWithConnectionProxy("https://claude.claudible.io/v1/messages", {
           method: "POST",
-          headers: { 
-            "x-api-key": connection.apiKey, 
-            "anthropic-version": "2023-06-01", 
+          headers: {
+            "x-api-key": connection.apiKey,
+            "anthropic-version": "2023-06-01",
             "content-type": "application/json",
             "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
             "X-App": "cli",
           },
           body: JSON.stringify({ model: "claude-haiku-4-5", max_tokens: 1, messages: [{ role: "user", content: "test" }], metadata: { user_id: userId } }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid API key" };
+      }
+      case "codex-claudible": {
+        const res = await fetchWithConnectionProxy("https://codex.claudible.io/v1/responses", {
+          method: "POST",
+          headers: {
+            "x-api-key": connection.apiKey,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ model: "gpt-5.4-mini", input: [], stream: false, store: false }),
         }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };

@@ -302,6 +302,13 @@ export const PROVIDER_MODELS = {
     { id: "gpt-5.4-mini", name: "GPT 5.4 Mini" },
     { id: "gpt-5.5", name: "GPT 5.5" },
   ],
+  "codex-claudible": [
+    { id: "codex-auto-review", name: "Codex Auto Review" },
+    { id: "gpt-5.3-codex", name: "GPT 5.3 Codex" },
+    { id: "gpt-5.4", name: "GPT 5.4" },
+    { id: "gpt-5.4-mini", name: "GPT 5.4 Mini" },
+    { id: "gpt-5.5", name: "GPT 5.5" },
+  ],
   gemini: [
     // Gemini 3.1 series
     { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview" },

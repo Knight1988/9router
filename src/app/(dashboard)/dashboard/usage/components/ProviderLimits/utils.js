@@ -194,6 +194,7 @@ export function parseQuotaData(provider, data) {
       case "cn-claudible":
       case "minimax-claudible":
       case "claude-claudible":
+      case "codex-claudible":
         if (data.error) {
           normalizedQuotas.push({
             name: "error",

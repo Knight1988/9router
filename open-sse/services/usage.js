@@ -127,6 +127,7 @@ export async function getUsageForProvider(connection, options = {}) {
     case "cn-claudible":
     case "minimax-claudible":
     case "claude-claudible":
+    case "codex-claudible":
       return await getClaudibleUsage(apiKey, proxyOptions);
     default:
       return { message: `Usage API not implemented for ${provider}` };

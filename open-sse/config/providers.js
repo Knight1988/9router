@@ -283,6 +283,10 @@ export const PROVIDERS = {
     format: "claude",
     headers: { ...CLAUDE_API_HEADERS, "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)", "X-App": "cli" }
   },
+  "codex-claudible": {
+    baseUrl: "https://codex.claudible.io/v1/responses",
+    format: "openai-responses"
+  },
   "open-claude": {
     baseUrl: "https://open-claude.com/v1/chat/completions",
     format: "openai",

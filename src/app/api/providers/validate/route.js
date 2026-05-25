@@ -389,6 +389,24 @@ export async function POST(request) {
           break;
         }
 
+        case "codex-claudible": {
+          const codexClaudibleRes = await fetch("https://codex.claudible.io/v1/responses", {
+            method: "POST",
+            headers: {
+              "x-api-key": apiKey,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "gpt-5.4-mini",
+              input: [],
+              stream: false,
+              store: false,
+            }),
+          });
+          isValid = codexClaudibleRes.status !== 401 && codexClaudibleRes.status !== 403;
+          break;
+        }
+
         case "gemini":
           const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${apiKey}`);
           isValid = geminiRes.ok;
