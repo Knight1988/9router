@@ -223,6 +223,9 @@ describe("combo cycling — keepCycling + signal", () => {
 
   it("T8: cycle delay is abortable — exits promptly on abort", async () => {
     vi.useFakeTimers();
+    // Force full jitter to return the maximum (1.0) so cycleDelayMs = 1500ms,
+    // ensuring the 500ms abort fires well before the delay expires.
+    vi.spyOn(Math, 'random').mockReturnValue(1);
     const controller = new AbortController();
     let callCount = 0;
 
@@ -254,6 +257,7 @@ describe("combo cycling — keepCycling + signal", () => {
     expect(handleSingleModel).toHaveBeenCalledTimes(2);
     expect(result.ok).toBe(false);
 
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
