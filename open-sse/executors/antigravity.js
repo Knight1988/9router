@@ -5,6 +5,7 @@ import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, INTERNAL_REQUEST_HEADER, AG_DEFAU
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { deriveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { addJitter, abortableSleep } from "../utils/retry.js";
 import { cleanJSONSchemaForAntigravity } from "../translator/helpers/geminiHelper.js";
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
@@ -245,8 +246,11 @@ export class AntigravityExecutor extends BaseExecutor {
 
           if (retryMs && retryMs <= MAX_RETRY_AFTER_MS && retryAfterAttemptsByUrl[urlIndex] < MAX_RETRY_AFTER_RETRIES) {
             retryAfterAttemptsByUrl[urlIndex]++;
-            log?.debug?.("RETRY", `${response.status} with Retry-After: ${Math.ceil(retryMs / 1000)}s, waiting... (${retryAfterAttemptsByUrl[urlIndex]}/${MAX_RETRY_AFTER_RETRIES})`);
-            await new Promise(resolve => setTimeout(resolve, retryMs));
+            // Equal jitter on Retry-After delay to spread concurrent retries
+            const jitteredRetryMs = addJitter(retryMs, { mode: 'equal' });
+            log?.debug?.("RETRY", `${response.status} with Retry-After: ${Math.ceil(retryMs / 1000)}s, waiting ${(jitteredRetryMs / 1000).toFixed(1)}s... (${retryAfterAttemptsByUrl[urlIndex]}/${MAX_RETRY_AFTER_RETRIES})`);
+            const { aborted } = await abortableSleep(jitteredRetryMs, signal);
+            if (aborted) throw Object.assign(new Error("Aborted during retry"), { name: "AbortError" });
             urlIndex--;
             continue;
           }
@@ -254,10 +258,12 @@ export class AntigravityExecutor extends BaseExecutor {
           // Auto retry only for 429 when retryMs is 0 or undefined
           if (response.status === HTTP_STATUS.RATE_LIMITED && (!retryMs || retryMs === 0) && retryAttemptsByUrl[urlIndex] < MAX_AUTO_RETRIES) {
             retryAttemptsByUrl[urlIndex]++;
-            // Exponential backoff: 2s, 4s, 8s...
-            const backoffMs = Math.min(1000 * (2 ** retryAttemptsByUrl[urlIndex]), MAX_RETRY_AFTER_MS);
-            log?.debug?.("RETRY", `429 auto retry ${retryAttemptsByUrl[urlIndex]}/${MAX_AUTO_RETRIES} after ${backoffMs / 1000}s`);
-            await new Promise(resolve => setTimeout(resolve, backoffMs));
+            // Exponential backoff with equal jitter: 2s, 4s, 8s...
+            const rawBackoffMs = Math.min(1000 * (2 ** retryAttemptsByUrl[urlIndex]), MAX_RETRY_AFTER_MS);
+            const backoffMs = addJitter(rawBackoffMs, { mode: 'equal' });
+            log?.debug?.("RETRY", `429 auto retry ${retryAttemptsByUrl[urlIndex]}/${MAX_AUTO_RETRIES} after ${(backoffMs / 1000).toFixed(1)}s`);
+            const { aborted } = await abortableSleep(backoffMs, signal);
+            if (aborted) throw Object.assign(new Error("Aborted during retry"), { name: "AbortError" });
             urlIndex--;
             continue;
           }

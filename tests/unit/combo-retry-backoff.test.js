@@ -95,8 +95,9 @@ describe("combo retry — exponential backoff between cycles", () => {
 
     setTimeoutSpy.mockRestore();
 
-    // First inter-cycle delay should be 1500ms
-    expect(delays[0]).toBe(1500);
+    // First inter-cycle delay should be within jittered range of 1500ms (full jitter: 0–1500ms)
+    expect(delays[0]).toBeGreaterThanOrEqual(0);
+    expect(delays[0]).toBeLessThanOrEqual(1500);
 
     vi.useRealTimers();
   });
@@ -133,9 +134,11 @@ describe("combo retry — exponential backoff between cycles", () => {
 
     setTimeoutSpy.mockRestore();
 
-    // Delays: cycle 1→2 = 1500ms, cycle 2→3 = 3000ms
-    expect(delays[0]).toBe(1500);
-    expect(delays[1]).toBe(3000);
+    // Delays: cycle 1→2 within 0–1500ms, cycle 2→3 within 0–3000ms (full jitter)
+    expect(delays[0]).toBeGreaterThanOrEqual(0);
+    expect(delays[0]).toBeLessThanOrEqual(1500);
+    expect(delays[1]).toBeGreaterThanOrEqual(0);
+    expect(delays[1]).toBeLessThanOrEqual(3000);
 
     vi.useRealTimers();
   });
@@ -175,9 +178,9 @@ describe("combo retry — exponential backoff between cycles", () => {
 
     setTimeoutSpy.mockRestore();
 
-    // After enough cycles, delay should be capped at 60000ms
+    // After enough cycles, delay should be capped at 60000ms (full jitter: 0–60000ms)
     const maxDelay = Math.max(...delays);
-    expect(maxDelay).toBe(60000);
+    expect(maxDelay).toBeLessThanOrEqual(60000);
 
     vi.useRealTimers();
   });

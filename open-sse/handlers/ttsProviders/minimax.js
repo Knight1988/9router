@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { fetchWithRetry } from "../../utils/retry.js";
 
 function hexToBase64(audioHex) {
   const clean = typeof audioHex === "string" ? audioHex.trim() : "";
@@ -11,7 +12,7 @@ function hexToBase64(audioHex) {
 
 // MiniMax T2A HTTP: returns hex-encoded audio in non-streaming mode.
 export default async function minimaxTts({ baseUrl, apiKey, text, modelId, voiceId }) {
-  const res = await fetch(baseUrl, {
+  const { result: res } = await fetchWithRetry(baseUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
     body: JSON.stringify({
@@ -33,7 +34,7 @@ export default async function minimaxTts({ baseUrl, apiKey, text, modelId, voice
         channel: 1,
       },
     }),
-  });
+  }, { maxRetries: 2, baseDelay: 1000 });
 
   const rawText = await res.text();
   let data = {};

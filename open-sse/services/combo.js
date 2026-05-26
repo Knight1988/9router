@@ -4,6 +4,7 @@
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
+import { addJitter, abortableSleep } from "../utils/retry.js";
 
 /**
  * Track rotation state per combo (for round-robin strategy)
@@ -176,20 +177,6 @@ function applySmartPriority(models, smartPriority) {
 }
 
 /**
- * Abortable sleep helper for inter-cycle delays
- * @param {number} ms - Milliseconds to sleep
- * @param {AbortSignal} [signal] - Optional abort signal
- * @returns {Promise<void>}
- */
-function abortableSleep(ms, signal) {
-  return new Promise((resolve) => {
-    if (signal?.aborted) return resolve();
-    const t = setTimeout(resolve, ms);
-    signal?.addEventListener("abort", () => { clearTimeout(t); resolve(); }, { once: true });
-  });
-}
-
-/**
  * Handle combo chat with fallback
  * @param {Object} options
  * @param {Object} options.body - Request body
@@ -305,9 +292,10 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       break;
     }
 
-    // Exponential backoff: 1.5s → 3s → 6s → 12s → 24s → 60s cap
-    const cycleDelayMs = Math.min(CYCLE_DELAY_BASE_MS * Math.pow(2, cycle - 1), CYCLE_DELAY_MAX_MS);
-    log.warn("COMBO", `🔄 [RETRY] Cycle ${cycle} exhausted — all ${rotatedModels.length} models failed. Restarting Cycle ${cycle + 1} after ${cycleDelayMs}ms (backoff)`);
+    // Exponential backoff: 1.5s → 3s → 6s → 12s → 24s → 60s cap (full jitter for wide spread)
+    const rawCycleDelayMs = Math.min(CYCLE_DELAY_BASE_MS * Math.pow(2, cycle - 1), CYCLE_DELAY_MAX_MS);
+    const cycleDelayMs = addJitter(rawCycleDelayMs, { mode: 'full' });
+    log.warn("COMBO", `🔄 [RETRY] Cycle ${cycle} exhausted — all ${rotatedModels.length} models failed. Restarting Cycle ${cycle + 1} after ${Math.round(cycleDelayMs)}ms (backoff)`);
     await abortableSleep(cycleDelayMs, signal);
     if (signal?.aborted) break;
   }

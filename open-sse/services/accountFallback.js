@@ -1,4 +1,5 @@
 import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
+import { addJitter } from "../utils/retry.js";
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
@@ -8,8 +9,10 @@ import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/er
  */
 export function getQuotaCooldown(backoffLevel = 0) {
   const level = Math.max(0, backoffLevel - 1);
-  const cooldown = BACKOFF_CONFIG.base * Math.pow(2, level);
-  return Math.min(cooldown, BACKOFF_CONFIG.max);
+  const rawCooldown = BACKOFF_CONFIG.base * Math.pow(2, level);
+  const capped = Math.min(rawCooldown, BACKOFF_CONFIG.max);
+  // Equal jitter: guarantee at least 50% of the cooldown to prevent thundering herd
+  return addJitter(capped, { mode: 'equal' });
 }
 
 /**

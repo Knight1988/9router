@@ -1,5 +1,6 @@
 import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { addJitter, abortableSleep } from "../utils/retry.js";
 
 /**
  * BaseExecutor - Base class for provider executors
@@ -117,8 +118,15 @@ export class BaseExecutor {
       const { attempts, delayMs } = resolveRetryEntry(retryConfig[statusKey]);
       if (attempts <= 0 || retryAttemptsByUrl[urlIndex] >= attempts) return false;
       retryAttemptsByUrl[urlIndex]++;
-      log?.debug?.("RETRY", `${reason} retry ${retryAttemptsByUrl[urlIndex]}/${attempts} after ${delayMs / 1000}s`);
-      await new Promise(resolve => setTimeout(resolve, delayMs));
+      // Equal jitter: random between delayMs/2 and delayMs to prevent thundering herd
+      const jitteredDelay = addJitter(delayMs, { mode: 'equal' });
+      log?.debug?.("RETRY", `${reason} retry ${retryAttemptsByUrl[urlIndex]}/${attempts} after ${(jitteredDelay / 1000).toFixed(1)}s`);
+      const { aborted } = await abortableSleep(jitteredDelay, signal);
+      if (aborted) {
+        const err = new Error("Aborted during retry");
+        err.name = "AbortError";
+        throw err;
+      }
       return true;
     };
 

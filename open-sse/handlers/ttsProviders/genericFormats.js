@@ -2,14 +2,17 @@
 // Each handler accepts { baseUrl, apiKey, text, modelId, voiceId } and returns { base64, format }.
 import { responseToBase64, throwUpstreamError } from "./_base.js";
 import minimaxTts from "./minimax.js";
+import { fetchWithRetry } from "../../utils/retry.js";
+
+const TTS_RETRY_OPTS = { maxRetries: 2, baseDelay: 1000 };
 
 // Hyperbolic: POST { text } → { audio: base64 }
 async function hyperbolic({ baseUrl, apiKey, text }) {
-  const res = await fetch(baseUrl, {
+  const { result: res } = await fetchWithRetry(baseUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
     body: JSON.stringify({ text }),
-  });
+  }, TTS_RETRY_OPTS);
   if (!res.ok) await throwUpstreamError(res);
   const data = await res.json();
   return { base64: data.audio, format: "mp3" };
@@ -19,22 +22,22 @@ async function hyperbolic({ baseUrl, apiKey, text }) {
 async function deepgram({ baseUrl, apiKey, text, modelId }) {
   const url = new URL(baseUrl);
   url.searchParams.set("model", modelId || "aura-asteria-en");
-  const res = await fetch(url.toString(), {
+  const { result: res } = await fetchWithRetry(url.toString(), {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Token ${apiKey}` },
     body: JSON.stringify({ text }),
-  });
+  }, TTS_RETRY_OPTS);
   if (!res.ok) await throwUpstreamError(res);
   return responseToBase64(res, "mp3");
 }
 
 // Nvidia NIM: POST { input: { text }, voice, model } → binary
 async function nvidia({ baseUrl, apiKey, text, modelId, voiceId }) {
-  const res = await fetch(baseUrl, {
+  const { result: res } = await fetchWithRetry(baseUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
     body: JSON.stringify({ input: { text }, voice: voiceId || "default", model: modelId }),
-  });
+  }, TTS_RETRY_OPTS);
   if (!res.ok) await throwUpstreamError(res);
   return responseToBase64(res, "wav");
 }
@@ -42,18 +45,18 @@ async function nvidia({ baseUrl, apiKey, text, modelId, voiceId }) {
 // HuggingFace: POST {baseUrl}/{modelId} { inputs: text } → binary
 async function huggingface({ baseUrl, apiKey, text, modelId }) {
   if (!modelId || modelId.includes("..")) throw new Error("Invalid HuggingFace model ID");
-  const res = await fetch(`${baseUrl}/${modelId}`, {
+  const { result: res } = await fetchWithRetry(`${baseUrl}/${modelId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
     body: JSON.stringify({ inputs: text }),
-  });
+  }, TTS_RETRY_OPTS);
   if (!res.ok) await throwUpstreamError(res);
   return responseToBase64(res, "wav");
 }
 
 // Inworld: Basic auth, JSON { audioContent }
 async function inworld({ baseUrl, apiKey, text, modelId, voiceId }) {
-  const res = await fetch(baseUrl, {
+  const { result: res } = await fetchWithRetry(baseUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Basic ${apiKey}` },
     body: JSON.stringify({
@@ -62,7 +65,7 @@ async function inworld({ baseUrl, apiKey, text, modelId, voiceId }) {
       modelId: modelId || "inworld-tts-1.5-mini",
       audioConfig: { audioEncoding: "MP3" },
     }),
-  });
+  }, TTS_RETRY_OPTS);
   if (!res.ok) await throwUpstreamError(res);
   const data = await res.json();
   if (!data.audioContent) throw new Error("Inworld TTS returned no audio");
@@ -71,7 +74,7 @@ async function inworld({ baseUrl, apiKey, text, modelId, voiceId }) {
 
 // Cartesia: X-API-Key header
 async function cartesia({ baseUrl, apiKey, text, modelId, voiceId }) {
-  const res = await fetch(baseUrl, {
+  const { result: res } = await fetchWithRetry(baseUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -84,7 +87,7 @@ async function cartesia({ baseUrl, apiKey, text, modelId, voiceId }) {
       ...(voiceId ? { voice: { mode: "id", id: voiceId } } : {}),
       output_format: { container: "mp3", bit_rate: 128000, sample_rate: 44100 },
     }),
-  });
+  }, TTS_RETRY_OPTS);
   if (!res.ok) await throwUpstreamError(res);
   return responseToBase64(res, "mp3");
 }
@@ -92,7 +95,7 @@ async function cartesia({ baseUrl, apiKey, text, modelId, voiceId }) {
 // PlayHT: token format "userId:apiKey", voice = s3 URL
 async function playht({ baseUrl, apiKey, text, modelId, voiceId }) {
   const [userId, key] = (apiKey || ":").split(":");
-  const res = await fetch(baseUrl, {
+  const { result: res } = await fetchWithRetry(baseUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -107,29 +110,29 @@ async function playht({ baseUrl, apiKey, text, modelId, voiceId }) {
       output_format: "mp3",
       speed: 1,
     }),
-  });
+  }, TTS_RETRY_OPTS);
   if (!res.ok) await throwUpstreamError(res);
   return responseToBase64(res, "mp3");
 }
 
 // Coqui (local, noAuth): POST { text, speaker_id } → WAV
 async function coqui({ baseUrl, text, voiceId }) {
-  const res = await fetch(baseUrl, {
+  const { result: res } = await fetchWithRetry(baseUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text, ...(voiceId ? { speaker_id: voiceId } : {}) }),
-  });
+  }, TTS_RETRY_OPTS);
   if (!res.ok) await throwUpstreamError(res);
   return responseToBase64(res, "wav");
 }
 
 // Tortoise (local, noAuth)
 async function tortoise({ baseUrl, text, voiceId }) {
-  const res = await fetch(baseUrl, {
+  const { result: res } = await fetchWithRetry(baseUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text, voice: voiceId || "random" }),
-  });
+  }, TTS_RETRY_OPTS);
   if (!res.ok) await throwUpstreamError(res);
   return responseToBase64(res, "wav");
 }
@@ -138,7 +141,7 @@ async function tortoise({ baseUrl, text, voiceId }) {
 async function openaiCompat({ baseUrl, apiKey, text, modelId, voiceId }) {
   const headers = { "Content-Type": "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-  const res = await fetch(baseUrl, {
+  const { result: res } = await fetchWithRetry(baseUrl, {
     method: "POST",
     headers,
     body: JSON.stringify({
@@ -148,7 +151,7 @@ async function openaiCompat({ baseUrl, apiKey, text, modelId, voiceId }) {
       response_format: "mp3",
       speed: 1.0,
     }),
-  });
+  }, TTS_RETRY_OPTS);
   if (!res.ok) await throwUpstreamError(res);
   return responseToBase64(res, "mp3");
 }

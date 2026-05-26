@@ -1,5 +1,6 @@
 // NanoBanana API — async submit + poll record-info
 import { sleep, nowSec, sizeToAspectRatio, POLL_INTERVAL_MS, POLL_TIMEOUT_MS } from "./_base.js";
+import { fetchWithRetry } from "../../utils/retry.js";
 
 const SUBMIT_URL = "https://api.nanobananaapi.ai/api/v1/nanobanana/generate";
 const POLL_BASE = "https://api.nanobananaapi.ai/api/v1/nanobanana/record-info";
@@ -41,7 +42,7 @@ export default {
     const deadline = Date.now() + POLL_TIMEOUT_MS;
     while (Date.now() < deadline) {
       await sleep(POLL_INTERVAL_MS);
-      const r = await fetch(pollUrl, { headers });
+      const { result: r } = await fetchWithRetry(pollUrl, { headers }, { maxRetries: 1, baseDelay: 1000 });
       if (!r.ok) throw new Error(`NanoBanana status ${r.status}`);
       const s = await r.json();
       const flag = s.data?.successFlag;

@@ -1,5 +1,6 @@
 // Runway ML — async submit + /tasks/{id} polling
 import { sleep, nowSec, sizeToAspectRatio, POLL_INTERVAL_MS, POLL_TIMEOUT_MS } from "./_base.js";
+import { fetchWithRetry } from "../../utils/retry.js";
 
 const BASE_URL = "https://api.dev.runwayml.com/v1";
 
@@ -32,7 +33,7 @@ export default {
     const deadline = Date.now() + POLL_TIMEOUT_MS;
     while (Date.now() < deadline) {
       await sleep(POLL_INTERVAL_MS);
-      const r = await fetch(taskUrl, { headers });
+      const { result: r } = await fetchWithRetry(taskUrl, { headers }, { maxRetries: 1, baseDelay: 1000 });
       if (!r.ok) throw new Error(`Runway status ${r.status}`);
       const s = await r.json();
       if (s.status === "SUCCEEDED") return s;

@@ -53,13 +53,15 @@ export const DEFAULT_RETRY_CONFIG = {
   504: { attempts: 2, delayMs: 3000 }
 };
 
+const DEFAULT_DELAY_MS = 2000;
+
 // Normalize a retry entry to { attempts, delayMs }
 export function resolveRetryEntry(entry) {
-  if (entry == null) return { attempts: 0, delayMs: RETRY_CONFIG.delayMs };
-  if (typeof entry === "number") return { attempts: entry, delayMs: RETRY_CONFIG.delayMs };
+  if (entry == null) return { attempts: 0, delayMs: DEFAULT_DELAY_MS };
+  if (typeof entry === "number") return { attempts: entry, delayMs: DEFAULT_DELAY_MS };
   return {
     attempts: entry.attempts || 0,
-    delayMs: entry.delayMs != null ? entry.delayMs : RETRY_CONFIG.delayMs
+    delayMs: entry.delayMs != null ? entry.delayMs : DEFAULT_DELAY_MS
   };
 }
 
