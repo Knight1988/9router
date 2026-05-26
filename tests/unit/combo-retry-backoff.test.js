@@ -64,6 +64,8 @@ describe("combo retry — exponential backoff between cycles", () => {
 
   it("T2: first cycle delay is 1500ms (base)", async () => {
     vi.useFakeTimers();
+    // Pin Math.random to 1 so full jitter = max delay, ensuring delay > 100ms threshold
+    vi.spyOn(Math, 'random').mockReturnValue(1);
     const delays = [];
     let callCount = 0;
 
@@ -94,6 +96,7 @@ describe("combo retry — exponential backoff between cycles", () => {
     await promise;
 
     setTimeoutSpy.mockRestore();
+    vi.restoreAllMocks();
 
     // First inter-cycle delay should be within jittered range of 1500ms (full jitter: 0–1500ms)
     expect(delays[0]).toBeGreaterThanOrEqual(0);
@@ -104,6 +107,8 @@ describe("combo retry — exponential backoff between cycles", () => {
 
   it("T3: second cycle delay is 3000ms (2x base)", async () => {
     vi.useFakeTimers();
+    // Pin Math.random to 1 so full jitter = max delay, ensuring delays > 100ms threshold
+    vi.spyOn(Math, 'random').mockReturnValue(1);
     const delays = [];
     let callCount = 0;
 
@@ -133,6 +138,7 @@ describe("combo retry — exponential backoff between cycles", () => {
     await promise;
 
     setTimeoutSpy.mockRestore();
+    vi.restoreAllMocks();
 
     // Delays: cycle 1→2 within 0–1500ms, cycle 2→3 within 0–3000ms (full jitter)
     expect(delays[0]).toBeGreaterThanOrEqual(0);
