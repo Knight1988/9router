@@ -1,4 +1,5 @@
 // Shared helpers for image provider adapters
+import { fetchWithRetry } from "../../utils/retry.js";
 
 export const POLL_INTERVAL_MS = 1500;
 export const POLL_TIMEOUT_MS = 120000;
@@ -20,7 +21,7 @@ export function sizeToAspectRatio(size) {
 
 // Fetch URL → base64 (for providers returning image URLs)
 export async function urlToBase64(url) {
-  const res = await fetch(url);
+  const { result: res } = await fetchWithRetry(url, {}, { maxRetries: 2, baseDelay: 1000 });
   if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
   const buf = await res.arrayBuffer();
   return Buffer.from(buf).toString("base64");

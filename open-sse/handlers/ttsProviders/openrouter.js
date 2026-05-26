@@ -1,4 +1,5 @@
 // OpenRouter TTS — via chat completions + audio modality (SSE stream)
+import { fetchWithRetry } from "../../utils/retry.js";
 export default {
   async synthesize(text, model, credentials) {
     if (!credentials?.apiKey) throw new Error("No OpenRouter API key configured");
@@ -20,7 +21,7 @@ export default {
       voice = model;
     }
 
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    const { result: res } = await fetchWithRetry("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -35,7 +36,7 @@ export default {
         stream: true,
         messages: [{ role: "user", content: text }],
       }),
-    });
+    }, { maxRetries: 2, baseDelay: 1000 });
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
