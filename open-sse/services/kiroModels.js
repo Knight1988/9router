@@ -22,6 +22,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { createHash } from "crypto";
 import { refreshKiroToken } from "./tokenRefresh.js";
+import { fetchWithRetry } from "../utils/retry.js";
 
 const KIRO_RUNTIME_SDK_VERSION = "1.0.0";
 const KIRO_AGENT_OS = "windows";
@@ -178,11 +179,12 @@ async function fetchKiroCatalogRaw(credentials, signal) {
 
   let response;
   try {
-    response = await fetch(url, {
+    const { result } = await fetchWithRetry(url, {
       method: "GET",
       headers,
-      signal: controller.signal
-    });
+      signal: controller.signal,
+    }, { maxRetries: 2, baseDelay: 1000 });
+    response = result;
   } finally {
     clearTimeout(timer);
   }

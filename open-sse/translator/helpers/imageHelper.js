@@ -8,6 +8,8 @@
  * @param {object} options - { signal, timeoutMs }
  * @returns {Promise<{url: string, mimeType: string}|null>}
  */
+import { fetchWithRetry } from "../../utils/retry.js";
+
 export async function fetchImageAsBase64(imageUrl, options = {}) {
   const { signal, timeoutMs = 10000 } = options;
   if (!imageUrl || (!imageUrl.startsWith("http://") && !imageUrl.startsWith("https://"))) {
@@ -19,7 +21,7 @@ export async function fetchImageAsBase64(imageUrl, options = {}) {
   const fetchSignal = signal || controller.signal;
 
   try {
-    const response = await fetch(imageUrl, { signal: fetchSignal });
+    const { result: response } = await fetchWithRetry(imageUrl, { signal: fetchSignal }, { maxRetries: 2, baseDelay: 1000 });
     if (!response.ok) return null;
 
     const mimeType = response.headers.get("Content-Type") || "image/jpeg";

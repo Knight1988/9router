@@ -3,6 +3,7 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { getExecutor } from "../executors/index.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { getEmbeddingAdapter } from "./embeddingProviders/index.js";
+import { fetchWithRetry } from "../utils/retry.js";
 
 /**
  * Core embeddings handler — orchestrator only. Provider-specific URL/headers/body/normalize
@@ -50,11 +51,12 @@ export async function handleEmbeddingsCore({
 
   let providerResponse;
   try {
-    providerResponse = await fetch(url, {
+    const { result } = await fetchWithRetry(url, {
       method: "POST",
       headers,
       body: JSON.stringify(requestBody),
-    });
+    }, { maxRetries: 2, baseDelay: 1000 });
+    providerResponse = result;
   } catch (error) {
     const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
     log?.debug?.("EMBEDDINGS", `Fetch error: ${errMsg}`);
@@ -82,11 +84,12 @@ export async function handleEmbeddingsCore({
       try {
         const retryHeaders = adapter.buildHeaders(credentials, ctx);
         const retryUrl = adapter.buildUrl(model, credentials, ctx);
-        providerResponse = await fetch(retryUrl, {
+        const { result: retryResult } = await fetchWithRetry(retryUrl, {
           method: "POST",
           headers: retryHeaders,
           body: JSON.stringify(requestBody),
-        });
+        }, { maxRetries: 2, baseDelay: 1000 });
+        providerResponse = retryResult;
       } catch {
         log?.warn?.("TOKEN", `${provider.toUpperCase()} | retry after refresh failed`);
       }

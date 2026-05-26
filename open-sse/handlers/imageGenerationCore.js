@@ -3,6 +3,7 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { getExecutor } from "../executors/index.js";
 import { getImageAdapter } from "./imageProviders/index.js";
+import { fetchWithRetry } from "../utils/retry.js";
 import { urlToBase64 } from "./imageProviders/_base.js";
 
 function serializeRequestBody(requestBody) {
@@ -66,11 +67,12 @@ export async function handleImageGenerationCore({
 
   let providerResponse;
   try {
-    providerResponse = await fetch(url, {
+    const { result } = await fetchWithRetry(url, {
       method: "POST",
       headers,
       body: serializeRequestBody(requestBody),
-    });
+    }, { maxRetries: 2, baseDelay: 1000 });
+    providerResponse = result;
   } catch (error) {
     const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
     log?.debug?.("IMAGE", `Fetch error: ${errMsg}`);
@@ -100,11 +102,12 @@ export async function handleImageGenerationCore({
         const retryBody = await adapter.buildBody(model, body);
         const retryHeaders = adapter.buildHeaders(credentials, retryBody, model, body);
         const retryUrl = adapter.buildUrl(model, credentials);
-        providerResponse = await fetch(retryUrl, {
+        const { result: retryResult } = await fetchWithRetry(retryUrl, {
           method: "POST",
           headers: retryHeaders,
           body: serializeRequestBody(retryBody),
-        });
+        }, { maxRetries: 2, baseDelay: 1000 });
+        providerResponse = retryResult;
       } catch {
         log?.warn?.("TOKEN", `${provider.toUpperCase()} | retry after refresh failed`);
       }

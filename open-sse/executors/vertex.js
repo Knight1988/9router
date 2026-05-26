@@ -2,6 +2,7 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { parseVertexSaJson, refreshVertexToken } from "../services/tokenRefresh.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { fetchWithRetry } from "../utils/retry.js";
 
 // Cache project IDs resolved from raw API keys { apiKey → projectId }
 const projectIdCache = new Map();
@@ -13,9 +14,10 @@ const projectIdCache = new Map();
 async function resolveProjectId(apiKey) {
   if (projectIdCache.has(apiKey)) return projectIdCache.get(apiKey);
 
-  const res = await fetch(
+  const { result: res } = await fetchWithRetry(
     `https://aiplatform.googleapis.com/v1/publishers/google/models/__probe__:generateContent?key=${apiKey}`,
-    { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
+    { maxRetries: 2, baseDelay: 1000 }
   );
   const json = await res.json().catch(() => null);
   const msg = json?.[0]?.error?.message || json?.error?.message || "";
