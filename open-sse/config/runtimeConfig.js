@@ -38,14 +38,8 @@ export const STREAM_STALL_TIMEOUT_MS = 3 * 60 * 1000;
 export const DEFAULT_MAX_TOKENS = 64000;
 export const DEFAULT_MIN_TOKENS = 32000;
 
-// Retry config for 429 responses (legacy - kept for backward compatibility)
-export const RETRY_CONFIG = {
-  maxAttempts: 2,
-  delayMs: 2000
-};
-
 // Default retry config by status code: { attempts, delayMs }
-// Backward compat: if value is a number, treated as attempts with RETRY_CONFIG.delayMs
+// Backward compat: if value is a number, treated as attempts with default delayMs
 export const DEFAULT_RETRY_CONFIG = {
   429: { attempts: 0, delayMs: 0 },
   502: { attempts: 3, delayMs: 3000 },
