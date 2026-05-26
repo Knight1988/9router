@@ -67,7 +67,12 @@ stages:
                 echo "=== $label ==="
                 echo "$response"
 
+                # Try SSE streaming format first (content_block_delta events)
                 content=$(echo "$response" | grep "content_block_delta" | grep -oE '"text"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/"text"[[:space:]]*:[[:space:]]*"//g' | sed 's/"//g' | tr -d '\n')
+                # Fall back to non-streaming JSON response format
+                if [ -z "$content" ]; then
+                  content=$(echo "$response" | grep -oE '"text"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/"text"[[:space:]]*:[[:space:]]*"//g' | sed 's/"//g')
+                fi
 
                 if [ -n "$content" ]; then
                   echo "PASS: $content"
