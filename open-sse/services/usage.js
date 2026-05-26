@@ -3,6 +3,7 @@
  */
 
 import { CLIENT_METADATA, getPlatformUserAgent } from "../config/appConstants.js";
+import { fetchWithRetry } from "../utils/retry.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 // GitHub API config
@@ -519,11 +520,11 @@ async function getAntigravitySubscriptionInfo(accessToken, proxyOptions = null) 
  * Returns { accessToken, expiresAt } or throws on failure.
  */
 async function loginOpenClaude(username, password) {
-  const res = await fetch(OPEN_CLAUDE_CONFIG.loginUrl, {
+  const { result: res } = await fetchWithRetry(OPEN_CLAUDE_CONFIG.loginUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password }),
-  });
+  }, { maxRetries: 2, baseDelay: 1000 });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     let msg;
@@ -1184,11 +1185,11 @@ async function getDevGoUsage(accessToken) {
   try {
     const baseUrl = DEVGO_CONFIG.baseUrl;
 
-    const loginRes = await fetch(`${baseUrl}${DEVGO_CONFIG.loginPath}`, {
+    const { result: loginRes } = await fetchWithRetry(`${baseUrl}${DEVGO_CONFIG.loginPath}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ apiKey: accessToken }),
-    });
+    }, { maxRetries: 2, baseDelay: 1000 });
 
     if (!loginRes.ok) {
       throw new Error(`DevGoVN login failed: ${loginRes.status}`);
@@ -1197,13 +1198,13 @@ async function getDevGoUsage(accessToken) {
     const cookieHeader = loginRes.headers.get("set-cookie") || "";
     const cookieValue = cookieHeader.split(";")[0].trim();
 
-    const summaryRes = await fetch(`${baseUrl}${DEVGO_CONFIG.summaryPath}`, {
+    const { result: summaryRes } = await fetchWithRetry(`${baseUrl}${DEVGO_CONFIG.summaryPath}`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
         ...(cookieValue ? { Cookie: cookieValue } : {}),
       },
-    });
+    }, { maxRetries: 2, baseDelay: 1000 });
 
     if (!summaryRes.ok) {
       throw new Error(`DevGoVN summary API error: ${summaryRes.status}`);
