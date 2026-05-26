@@ -22,6 +22,7 @@ import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { compactBodyIfNeeded } from "open-sse/utils/contextCompactor.js";
 import { getOpenClaudeResetsAtMs } from "open-sse/services/openClaudeQuota.js";
 import { checkRateLimit } from "../utils/rateLimiter.js";
+import { getEffectiveSmartPriority } from "@/lib/smartRouting/getEffectivePriority.js";
 
 /**
  * Handle chat completion request
@@ -122,7 +123,7 @@ export async function handleChat(request, clientRawRequest = null) {
     const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
     
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    const smartPriority = comboStrategies[modelStr]?.smartPriority;
+    const smartPriority = getEffectiveSmartPriority(comboStrategies, modelStr, { intervalMinutes: settings.smartRoutingIntervalMinutes });
     log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,

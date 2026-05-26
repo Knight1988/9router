@@ -12,6 +12,7 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat } from "open-sse/services/combo.js";
+import { getEffectiveSmartPriority } from "@/lib/smartRouting/getEffectivePriority.js";
 import * as log from "../utils/logger.js";
 
 // Providers that don't require credentials (noAuth)
@@ -52,7 +53,7 @@ export async function handleImageGeneration(request) {
     const comboStrategies = settings.comboStrategies || {};
     const comboStrategy = comboStrategies[modelStr]?.fallbackStrategy || settings.comboStrategy || "fallback";
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    const smartPriority = comboStrategies[modelStr]?.smartPriority;
+    const smartPriority = getEffectiveSmartPriority(comboStrategies, modelStr, { intervalMinutes: settings.smartRoutingIntervalMinutes });
     log.info("IMAGE", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,

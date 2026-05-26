@@ -13,6 +13,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
+import { getEffectiveSmartPriority } from "@/lib/smartRouting/getEffectivePriority.js";
 
 /**
  * Handle web search request for the SSE/Next.js server.
@@ -75,7 +76,7 @@ export async function handleSearch(request) {
     const comboStrategies = settings.comboStrategies || {};
     const comboStrategy = comboStrategies[providerInput]?.fallbackStrategy || settings.comboStrategy || "fallback";
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    const smartPriority = comboStrategies[providerInput]?.smartPriority;
+    const smartPriority = getEffectiveSmartPriority(comboStrategies, providerInput, { intervalMinutes: settings.smartRoutingIntervalMinutes });
     log.info("SEARCH", `Combo "${providerInput}" with ${comboModels.length} providers (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,
