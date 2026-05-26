@@ -127,9 +127,10 @@ describe("withRetry", () => {
     const fn = vi.fn().mockRejectedValue(new Error("always fail"));
 
     const promise = withRetry(fn, { baseDelay: 100, maxRetries: 2 });
+    // Attach rejection handler before advancing timers to avoid unhandled rejection
+    const assertion = expect(promise).rejects.toThrow("always fail");
     await vi.runAllTimersAsync();
-
-    await expect(promise).rejects.toThrow("always fail");
+    await assertion;
     expect(fn).toHaveBeenCalledTimes(3); // initial + 2 retries
     vi.useRealTimers();
   });
@@ -154,12 +155,14 @@ describe("withRetry", () => {
       signal: controller.signal,
     });
 
+    // Attach rejection handler before advancing timers to avoid unhandled rejection
+    const assertion = expect(promise).rejects.toThrow(/aborted during retry/);
     // Let first attempt fail, then abort during retry delay
     await vi.advanceTimersByTimeAsync(10);
     controller.abort();
     await vi.runAllTimersAsync();
 
-    await expect(promise).rejects.toThrow(/aborted during retry/);
+    await assertion;
     expect(fn).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
   });
