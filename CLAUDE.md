@@ -11,6 +11,14 @@ Before creating a commit or pushing a branch, scan tracked changes for secrets o
 - Prioritize high-signal findings such as API keys, OAuth client secrets, bearer tokens, JWTs, private keys, and hardcoded credential fallbacks.
 - If a new secret-like value is found in tracked changes, stop and ask whether it should be removed, moved to environment variables, or intentionally committed.
 
+## Local Testing
+
+When testing locally, use Docker Compose to build and start all services:
+
+```bash
+docker compose up -d --build
+```
+
 ## CI/CD Pipeline
 
 The project uses Azure DevOps Pipelines for CI/CD.

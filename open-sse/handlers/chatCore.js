@@ -294,67 +294,88 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     if (result) { streamController.handleComplete(); return result; }
   }
 
-  // True non-streaming response (skip if provider forced non-streaming — handled below)
-  if (!stream && !providerForcesNonStreaming) {
-    const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, reqLogger, toolNameMap, trackDone, appendLog });
-    streamController.handleComplete();
-    return result;
-  }
+  // Non-streaming response: either client requested non-streaming, or provider forced it
+  if (!stream) {
+    // If provider forced non-streaming but client wants SSE, convert JSON to SSE
+    if (providerForcesNonStreaming && clientRequestedStreaming) {
+      if (!providerResponse.ok) {
+        trackDone();
+        trackPendingRequest(model, provider, connectionId, false, true);
+        const { statusCode, message, resetsAtMs, rawBody } = await parseUpstreamError(providerResponse, executor);
+        appendLog({ status: `FAILED ${statusCode}` });
+        logAbnormal({
+          signal: ABNORMAL_SIGNALS.PROVIDER_ERROR,
+          provider, model, connectionId,
+          endpoint: clientRawRequest?.endpoint || null,
+          latencyMs: Date.now() - requestStartTime,
+          statusCode,
+          details: { kind: "provider_not_ok_forced_nonstream", errorMessage: (message || "").slice(0, 500) },
+          clientRequest: clientRawRequest,
+          translatedRequest: translatedBody,
+          targetRequest: { url: providerUrl, headers: providerHeaders, body: finalBody },
+          providerResponseBody: rawBody
+        });
+        const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
+        streamController.handleComplete();
+        return createErrorResult(statusCode, errMsg, resetsAtMs);
+      }
 
-  // Provider forced non-streaming but client wants SSE
-  // Convert JSON response to SSE stream
-  if (providerForcesNonStreaming && clientRequestedStreaming) {
-    trackDone();
-    let responseBody;
-    try {
-      responseBody = await providerResponse.json();
-    } catch (err) {
-      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-      console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
+      trackDone();
+      let responseBody;
+      try {
+        responseBody = await providerResponse.json();
+      } catch (err) {
+        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
+        streamController.handleComplete();
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
+      }
+
+      reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
+      if (onRequestSuccess) await onRequestSuccess();
+
+      const usage = responseBody.usage || { input_tokens: 0, output_tokens: 0 };
+      appendLog({ tokens: usage, status: "200 OK" });
+      saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint });
+
+      // Synthesize SSE chunks from JSON
+      const sseChunks = claudeJsonToSSE(responseBody);
+      const sseBody = sseChunks.join("");
+
+      saveRequestDetail(buildRequestDetail({
+        provider, model, connectionId,
+        latency: { ttft: Date.now() - requestStartTime, total: Date.now() - requestStartTime },
+        tokens: usage,
+        request: extractRequestConfig(body, true),
+        providerRequest: finalBody || translatedBody || null,
+        providerResponse: responseBody,
+        response: {
+          content: responseBody.content?.[0]?.text || null,
+          thinking: responseBody.content?.find(b => b.type === "thinking")?.thinking || null,
+          finish_reason: responseBody.stop_reason || "end_turn"
+        },
+        status: "success"
+      }, { endpoint: clientRawRequest?.endpoint || null })).catch(err => {
+        console.error("[RequestDetail] Failed to save:", err.message);
+      });
+
       streamController.handleComplete();
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
+      return {
+        success: true,
+        response: new Response(sseBody, {
+          headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*"
+          }
+        })
+      };
+    } else {
+      const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, reqLogger, toolNameMap, trackDone, appendLog });
+      streamController.handleComplete();
+      return result;
     }
-
-    reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
-    if (onRequestSuccess) await onRequestSuccess();
-
-    const usage = responseBody.usage || { input_tokens: 0, output_tokens: 0 };
-    appendLog({ tokens: usage, status: "200 OK" });
-    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint });
-
-    // Synthesize SSE chunks from JSON
-    const sseChunks = claudeJsonToSSE(responseBody);
-    const sseBody = sseChunks.join("");
-
-    saveRequestDetail(buildRequestDetail({
-      provider, model, connectionId,
-      latency: { ttft: Date.now() - requestStartTime, total: Date.now() - requestStartTime },
-      tokens: usage,
-      request: extractRequestConfig(body, true),
-      providerRequest: finalBody || translatedBody || null,
-      providerResponse: responseBody,
-      response: {
-        content: responseBody.content?.[0]?.text || null,
-        thinking: responseBody.content?.find(b => b.type === "thinking")?.thinking || null,
-        finish_reason: responseBody.stop_reason || "end_turn"
-      },
-      status: "success"
-    }, { endpoint: clientRawRequest?.endpoint || null })).catch(err => {
-      console.error("[RequestDetail] Failed to save:", err.message);
-    });
-
-    streamController.handleComplete();
-    return {
-      success: true,
-      response: new Response(sseBody, {
-        headers: {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
-          "Connection": "keep-alive",
-          "Access-Control-Allow-Origin": "*"
-        }
-      })
-    };
   }
 
   // Streaming response
