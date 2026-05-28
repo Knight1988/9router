@@ -453,6 +453,7 @@ export default function ModelSelectModal({
             <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
               <ProviderIcon
                 src={`/providers/${providerId}.png`}
+                svgIcon={group.svgIcon}
                 alt={group.name}
                 size={14}
                 fallbackText={(group.name || providerId).slice(0, 2).toUpperCase()}

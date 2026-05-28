@@ -5,6 +5,7 @@ import PropTypes from "prop-types";
 
 export default function ProviderIcon({
   src,
+  svgIcon,
   alt,
   size = 32,
   className = "",
@@ -12,6 +13,16 @@ export default function ProviderIcon({
   fallbackColor,
 }) {
   const [errored, setErrored] = useState(false);
+
+  if (svgIcon) {
+    return (
+      <span
+        className={`inline-flex items-center justify-center ${className}`.trim()}
+        style={{ width: size, height: size }}
+        dangerouslySetInnerHTML={{ __html: svgIcon }}
+      />
+    );
+  }
 
   if (!src || errored) {
     return (
@@ -43,6 +54,7 @@ export default function ProviderIcon({
 
 ProviderIcon.propTypes = {
   src: PropTypes.string,
+  svgIcon: PropTypes.string,
   alt: PropTypes.string,
   size: PropTypes.number,
   className: PropTypes.string,

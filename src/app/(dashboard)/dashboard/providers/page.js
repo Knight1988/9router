@@ -625,6 +625,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
             >
               <ProviderIcon
                 src={`/providers/${provider.id}.png`}
+                svgIcon={provider.svgIcon}
                 alt={provider.name}
                 size={30}
                 className="object-contain rounded-lg max-w-[32px] max-h-[32px]"
