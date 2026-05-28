@@ -1,12 +1,15 @@
-/**
- * Health check endpoint for container orchestration
- * Returns 200 OK if the server is running and ready to accept requests
- */
+import { NextResponse } from "next/server";
+
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "*",
+};
+
 export async function GET() {
-  return Response.json({
-    status: "ok",
-    timestamp: new Date().toISOString()
-  }, {
-    status: 200
-  });
+  return NextResponse.json({ ok: true }, { headers: CORS_HEADERS });
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
 }
