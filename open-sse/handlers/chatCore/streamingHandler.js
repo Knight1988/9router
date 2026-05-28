@@ -6,6 +6,7 @@ import { buildRequestDetail, extractRequestConfig, saveUsageStats } from "./requ
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { createErrorResult } from "../../utils/error.js";
 import { logAbnormal, ABNORMAL_SIGNALS, isAbnormalFinishReason } from "../../utils/abnormalLogger.js";
+import { recordRequestResult } from "@/lib/smartRouting/healthTracker.js";
 
 const SSE_HEADERS = {
   "Content-Type": "text/event-stream",
@@ -176,6 +177,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
       translatedRequest: translatedBody,
       targetRequest: finalBody ? { url: null, headers: null, body: finalBody } : null
     });
+    recordRequestResult(`${provider}/${model}`, ABNORMAL_SIGNALS.EMPTY_STREAM, false);
 
     if (onRequestSuccess) {
       // Do NOT call onRequestSuccess — empty stream is a failure, keep account cooldown active
@@ -246,6 +248,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
         targetRequest: finalBody ? { url: null, headers: null, body: finalBody } : null,
         clientResponseBody: safeContent
       });
+      recordRequestResult(`${provider}/${model}`, ABNORMAL_SIGNALS.EMPTY_COMPLETION, false);
       // Do NOT call onRequestSuccess — preserves account error state so combo cycling skips it next round
       return;
     }
@@ -269,6 +272,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
 
     // Confirm success — clear account error state
     if (onRequestSuccess) onRequestSuccess();
+    recordRequestResult(`${provider}/${model}`, "success", true);
 
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,

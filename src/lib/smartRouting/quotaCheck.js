@@ -2,6 +2,7 @@ import { getProviderConnections, getCombos } from "@/lib/localDb";
 import { USAGE_SUPPORTED_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
 import { fetchUsageForConnection, bestRemainingPercentage } from "@/lib/usage/connectionUsage";
 import { expandComboModels } from "open-sse/services/combo.js";
+import { applyHealthScoring } from "./healthTracker.js";
 
 /**
  * Parse a model string (e.g. "kr/claude-sonnet-4.5" or "glm/glm-5.1") to a provider id.
@@ -125,12 +126,13 @@ export async function computeSmartPriority(combo) {
 
   const errors = results.filter((r) => !r.ok).map((r) => ({ model: r.model, reason: r.reason }));
 
-  // Stable sort descending by percent; models where check failed keep their original index
-  const sorted = [...results].sort((a, b) => {
-    const pa = a.percent ?? -1;
-    const pb = b.percent ?? -1;
-    return pb - pa;
-  });
+  // Apply health scoring: demotes models with high empty_completion/error rates
+  const sorted = applyHealthScoring(results);
+
+  if (sorted.some((r) => r.healthStats && !r.healthStats.insufficientData)) {
+    const summary = sorted.map((r) => `${r.model}(health=${r.healthScore?.toFixed(2) ?? "?"},quota=${r.percent ?? "?"}%)`).join(", ");
+    console.log(`[SmartRouting] Health-adjusted priority: ${summary}`);
+  }
 
   return {
     ok: errors.length === 0,

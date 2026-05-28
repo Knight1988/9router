@@ -9,6 +9,7 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { logAbnormal, ABNORMAL_SIGNALS, isAbnormalFinishReason } from "../../utils/abnormalLogger.js";
+import { recordRequestResult } from "@/lib/smartRouting/healthTracker.js";
 
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
@@ -201,6 +202,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       providerResponseBody: responseBody,
       clientResponseBody: translatedResponse
     });
+    recordRequestResult(`${provider}/${model}`, ABNORMAL_SIGNALS.EMPTY_COMPLETION, false);
   }
 
   // Bad finish_reason
@@ -290,6 +292,10 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }, { endpoint: clientRawRequest?.endpoint || null })).catch(err => {
     console.error("[RequestDetail] Failed to save:", err.message);
   });
+
+  if (outTokens > 0 || hasContent || hasToolCalls) {
+    recordRequestResult(`${provider}/${model}`, "success", true);
+  }
 
   return {
     success: true,
