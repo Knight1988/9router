@@ -186,7 +186,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   const hasContent = msg?.content && typeof msg.content === "string" && msg.content.trim().length > 0;
   const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
 
-  // Empty completion
+  // Empty completion — return error so combo falls through to next model
   if (outTokens === 0 && !hasContent && !hasToolCalls) {
     logAbnormal({
       signal: ABNORMAL_SIGNALS.EMPTY_COMPLETION,
@@ -203,6 +203,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       clientResponseBody: translatedResponse
     });
     recordRequestResult(`${provider}/${model}`, ABNORMAL_SIGNALS.EMPTY_COMPLETION, false);
+    return createErrorResult(502, `Empty completion from ${provider}/${model}: response had no content or tokens`);
   }
 
   // Bad finish_reason
