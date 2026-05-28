@@ -127,7 +127,9 @@ describe("openaiToClaudeRequest", () => {
 describe("openaiToClaudeResponse", () => {
   it("omits empty Read pages tool argument before emitting Claude input deltas", () => {
     const state = { toolCalls: new Map() };
-    const chunk = {
+
+    // Chunk 1: tool call with args (buffered, not emitted yet)
+    const chunk1 = {
       id: "chatcmpl-test",
       model: "gpt-test",
       choices: [{
@@ -149,7 +151,18 @@ describe("openaiToClaudeResponse", () => {
       }]
     };
 
-    const result = openaiToClaudeResponse(chunk, state);
+    // Chunk 2: finish_reason triggers buffered args to be sanitized and emitted
+    const chunk2 = {
+      id: "chatcmpl-test",
+      model: "gpt-test",
+      choices: [{
+        delta: {},
+        finish_reason: "tool_calls"
+      }]
+    };
+
+    openaiToClaudeResponse(chunk1, state);
+    const result = openaiToClaudeResponse(chunk2, state);
     const inputDelta = result.find(event => event.delta?.type === "input_json_delta");
 
     expect(inputDelta).toBeDefined();

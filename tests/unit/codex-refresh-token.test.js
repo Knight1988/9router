@@ -14,6 +14,7 @@ const originalFetch = global.fetch;
 describe("Codex Refresh Token", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.resetModules();
   });
 
   afterEach(() => {
