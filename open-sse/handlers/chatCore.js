@@ -338,8 +338,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       appendLog({ tokens: usage, status: "200 OK" });
       saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint });
 
-      // Synthesize SSE chunks from JSON
-      const sseChunks = claudeJsonToSSE(responseBody);
+      // Synthesize SSE chunks from JSON, in the format the client expects
+      const sseChunks = claudeJsonToSSE(responseBody, sourceFormat);
       const sseBody = sseChunks.join("");
 
       saveRequestDetail(buildRequestDetail({

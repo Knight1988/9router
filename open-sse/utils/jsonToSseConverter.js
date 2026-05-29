@@ -6,9 +6,16 @@ import { formatSSE } from "./streamHelpers.js";
  * Used for providers that don't support streaming but clients expect SSE.
  *
  * @param {Object} jsonResponse - Complete Claude JSON response
+ * @param {string} [sourceFormat] - Client's expected format (FORMATS.OPENAI or FORMATS.CLAUDE).
+ *   Defaults to FORMATS.CLAUDE for backward compatibility.
  * @returns {Array<string>} Array of SSE-formatted strings
  */
-export function claudeJsonToSSE(jsonResponse) {
+export function claudeJsonToSSE(jsonResponse, sourceFormat = FORMATS.CLAUDE) {
+  // When the client expects OpenAI format, emit OpenAI chat.completion.chunk SSE
+  if (sourceFormat === FORMATS.OPENAI) {
+    return claudeJsonToOpenAISSE(jsonResponse);
+  }
+
   const chunks = [];
 
   // 1. message_start
@@ -106,6 +113,88 @@ export function claudeJsonToSSE(jsonResponse) {
   chunks.push(formatSSE({
     type: "message_stop"
   }, FORMATS.CLAUDE));
+
+  return chunks;
+}
+
+/**
+ * Convert a Claude JSON response to OpenAI chat.completion.chunk SSE format.
+ * @param {Object} jsonResponse - Complete Claude JSON response
+ * @returns {Array<string>} Array of SSE-formatted strings
+ */
+function claudeJsonToOpenAISSE(jsonResponse) {
+  const chunks = [];
+  const id = jsonResponse.id ? `chatcmpl-${jsonResponse.id}` : `chatcmpl-${Date.now()}`;
+  const model = jsonResponse.model || "unknown";
+  const created = Math.floor(Date.now() / 1000);
+
+  // Map Claude stop_reason → OpenAI finish_reason
+  const stopReasonMap = { end_turn: "stop", max_tokens: "length", tool_use: "tool_calls" };
+  const finishReason = stopReasonMap[jsonResponse.stop_reason] || jsonResponse.stop_reason || "stop";
+
+  // 1. Role chunk
+  chunks.push(formatSSE({
+    id, object: "chat.completion.chunk", created, model,
+    system_fingerprint: null,
+    choices: [{ delta: { role: "assistant", content: "" }, index: 0, finish_reason: null, logprobs: null }]
+  }));
+
+  // 2. Content / tool_call chunks
+  let textContent = "";
+  const toolCalls = [];
+
+  if (Array.isArray(jsonResponse.content)) {
+    for (const block of jsonResponse.content) {
+      if (block.type === "text") {
+        textContent += block.text || "";
+      } else if (block.type === "tool_use") {
+        toolCalls.push({
+          index: toolCalls.length,
+          id: block.id || `call_${Date.now()}_${toolCalls.length}`,
+          type: "function",
+          function: {
+            name: block.name || "",
+            arguments: typeof block.input === "string" ? block.input : JSON.stringify(block.input || {})
+          }
+        });
+      }
+      // thinking blocks are silently dropped — OpenAI format has no equivalent
+    }
+  }
+
+  if (textContent) {
+    chunks.push(formatSSE({
+      id, object: "chat.completion.chunk", created, model,
+      system_fingerprint: null,
+      choices: [{ delta: { content: textContent }, index: 0, finish_reason: null, logprobs: null }]
+    }));
+  }
+
+  if (toolCalls.length > 0) {
+    chunks.push(formatSSE({
+      id, object: "chat.completion.chunk", created, model,
+      system_fingerprint: null,
+      choices: [{ delta: { tool_calls: toolCalls }, index: 0, finish_reason: null, logprobs: null }]
+    }));
+  }
+
+  // 3. Finish chunk with usage
+  const claudeUsage = jsonResponse.usage || {};
+  const usage = {
+    prompt_tokens: claudeUsage.input_tokens || 0,
+    completion_tokens: claudeUsage.output_tokens || 0,
+    total_tokens: (claudeUsage.input_tokens || 0) + (claudeUsage.output_tokens || 0)
+  };
+
+  chunks.push(formatSSE({
+    id, object: "chat.completion.chunk", created, model,
+    system_fingerprint: null,
+    choices: [{ delta: {}, index: 0, finish_reason: finishReason, logprobs: null }],
+    usage
+  }));
+
+  // 4. [DONE]
+  chunks.push(formatSSE({ done: true }));
 
   return chunks;
 }
