@@ -15,7 +15,7 @@ const SSE_HEADERS = {
   "Access-Control-Allow-Origin": "*"
 };
 
-const EMPTY_STREAM_TIMEOUT_MS = 30_000;
+const EMPTY_STREAM_TIMEOUT_MS = 60_000;
 
 /**
  * Determine which SSE transform stream to use based on provider/format.
