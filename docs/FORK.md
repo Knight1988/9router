@@ -1,6 +1,6 @@
 # Fork Notes — Knight1988/9router vs decolua/9router
 
-_Last updated: 2026-05-22_
+_Last updated: 2026-06-03_
 
 This repository is a fork of [decolua/9router](https://github.com/decolua/9router). The active branch is `beta`. This document summarizes how it differs from upstream `decolua/master` so contributors don't confuse fork-specific behavior with upstream behavior.
 
@@ -60,7 +60,12 @@ Vitest unit suite covering combo fallback / expand / retry-backoff / empty-strea
 
 Files: `tests/unit/*.test.js`, `tests/vitest.config.js`.
 
-### 8. Misc hardening
+### 8. Same-API header forwarding
+When the client and provider share the same API family (Claude↔Claude or OpenAI↔OpenAI), safe client headers are forwarded to the upstream provider. This lets `anthropic-beta` feature flags, `x-stainless-*` telemetry, `openai-version`, `user-agent`, and custom `x-*` headers flow end-to-end without configuration. Hop-by-hop, transport, and auth headers are always blocked; provider-specific headers built by 9router win on any conflict.
+
+Files: `open-sse/utils/clientDetector.js`, `open-sse/handlers/chatCore.js`, `open-sse/executors/base.js`.
+
+### 9. Misc hardening
 Tailwind/PostCSS config fix so the Docker build keeps Tailwind content scanning, `KEEP_BACKUPS` lowered from 5 → 2, retry on empty completions, fallback user message changed from `continue` to `continue where you left off`, and a `.next` exclusion in the Vitest glob.
 
 ## What is unchanged from upstream
