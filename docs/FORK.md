@@ -1,6 +1,6 @@
 # Fork Notes — Knight1988/9router vs decolua/9router
 
-_Last updated: 2026-06-03_
+_Last updated: 2026-06-03 (refreshed)_
 
 This repository is a fork of [decolua/9router](https://github.com/decolua/9router). The active branch is `beta`. This document summarizes how it differs from upstream `decolua/master` so contributors don't confuse fork-specific behavior with upstream behavior.
 
@@ -8,8 +8,8 @@ This repository is a fork of [decolua/9router](https://github.com/decolua/9route
 
 Comparison baseline: `decolua/master` → `Knight1988/9router` `beta`.
 
-- 142 non-merge commits ahead of upstream
-- 120 files changed, +9,520 / -613 lines
+- 176 non-merge commits ahead of upstream
+- 167 files changed, +13,138 / -758 lines
 - Regenerate with:
   ```bash
   git fetch decolua master
@@ -31,9 +31,9 @@ Three-stage pipeline: Vitest unit tests, Docker build with live API smoke tests,
 Files: `azure-pipelines.yml`, `check-pipeline.sh`.
 
 ### 2. Smart routing
-Quota-aware combo execution. A scheduler periodically refreshes provider quotas and reorders combo entries so providers with remaining capacity run first. Adds three combo strategies (fallback, round-robin, smart-routing), recursive sub-combo expansion with cycle detection, exponential backoff on retries (1.5s → 60s cap), and abort-signal support so retry loops cancel on client disconnect.
+Quota-aware combo execution. A scheduler (auto-started on boot via `instrumentation.js`) periodically refreshes provider quotas and reorders combo entries so providers with remaining capacity run first. Three combo strategies (fallback, round-robin, smart-routing), recursive sub-combo expansion with cycle detection, exponential backoff on retries (1.5s → 60s cap), and abort-signal support so retry loops cancel on client disconnect. A health tracker dynamically demotes providers that return empty completions, bypassing the periodic refresh cycle. Smart routing auto-disables for a combo when all its models lose quota support.
 
-Files: `src/lib/smartRouting/scheduler.js`, `src/lib/smartRouting/quotaCheck.js`, `open-sse/services/combo.js`, `src/app/api/combos/[id]/smart-routing/`.
+Files: `src/lib/smartRouting/scheduler.js`, `src/lib/smartRouting/quotaCheck.js`, `src/lib/smartRouting/healthTracker.js`, `src/lib/smartRouting/getEffectivePriority.js`, `open-sse/services/combo.js`, `src/app/api/combos/[id]/smart-routing/`.
 
 ### 3. Observability
 Abnormal-response logger writes structured artifacts (with masked auth) for empty completions, malformed SSE chunks, bad finish reasons, and format mismatches. Provider health is rolled up daily into a `providerHealthDaily` table (success rate, latency, TTFT, rate-limit hits) so dashboards stop scanning live request rows. New Error Log dashboard mirrors the existing Console Log.
@@ -46,9 +46,9 @@ Separate HTTPS entry point that resolves certs from env vars or `DATA_DIR/ssl`, 
 Files: `server-https.js`, `src/lib/ssl.js`, `src/app/api/settings/ssl/route.js`.
 
 ### 5. New / extended providers
-Claudible family (vip-claudible, cn-claudible, minimax-claudible), Techopenclaw, DevGo, and several free-tier providers. Includes Copilot SSE handler hardening (logs malformed chunks, retains stream order so `message_start` is emitted first).
+Claudible family (vip-claudible, cn-claudible, minimax-claudible, cc-claudible, claude-claudible, codex-claudible), Techopenclaw, DevGo, Open Claude (`oc`) with username+password quota monitoring, and Troll LLM (`tl`) with bearer-token quota tracking. Includes Copilot SSE handler hardening (logs malformed chunks, retains stream order so `message_start` is emitted first). Provider streaming can be disabled per-provider.
 
-Files: `open-sse/config/providers.js`, `src/shared/constants/providers.js`, `src/mitm/handlers/copilot.js`.
+Files: `open-sse/config/providers.js`, `src/shared/constants/providers.js`, `src/mitm/handlers/copilot.js`, `open-sse/services/openClaudeQuota.js`.
 
 ### 6. Usage tracking
 Cached-tokens column in request details, dedicated **API Key Usage** tab, **Provider Health** tab with 24h / 7d / 30d / 90d filtering and weighted aggregates.
@@ -56,7 +56,7 @@ Cached-tokens column in request details, dedicated **API Key Usage** tab, **Prov
 Files: `src/app/(dashboard)/dashboard/usage/components/ApiKeyUsageTab.js`, `src/app/(dashboard)/dashboard/usage/components/ProviderHealthTab.js`, `src/lib/db/schema.js`, `src/app/api/usage/provider-health/route.js`.
 
 ### 7. Testing
-Vitest unit suite covering combo fallback / expand / retry-backoff / empty-stream, provider health, OAuth auto-import, Claude header forwarding, and dashboard guards. Wired into pipeline stage 1.
+Vitest unit suite covering combo fallback / expand / retry-backoff / empty-stream / routing, provider health, OAuth auto-import, Claude header forwarding, dashboard guards, DB migration chain / concurrency / benchmarks, translator request normalization, and more. Wired into pipeline stage 1.
 
 Files: `tests/unit/*.test.js`, `tests/vitest.config.js`.
 
@@ -65,8 +65,28 @@ When the client and provider share the same API family (Claude↔Claude or OpenA
 
 Files: `open-sse/utils/clientDetector.js`, `open-sse/handlers/chatCore.js`, `open-sse/executors/base.js`.
 
-### 9. Misc hardening
-Tailwind/PostCSS config fix so the Docker build keeps Tailwind content scanning, `KEEP_BACKUPS` lowered from 5 → 2, retry on empty completions, fallback user message changed from `continue` to `continue where you left off`, and a `.next` exclusion in the Vitest glob.
+### 9. Fetch retry hardening
+All bare `fetch()` calls are wrapped in a `fetchWithRetry` utility that adds per-request jitter, configurable backoff, and abort-signal awareness so in-flight retries cancel cleanly on client disconnect.
+
+Files: `open-sse/utils/retry.js`.
+
+### 10. Per-API-key rate limiter
+Enforces a 30 req/min cap at the SSE entry point, keyed by API key. Prevents a single key from flooding the proxy.
+
+Files: `src/lib/rateLimiter.js`, `src/sse/utils/rateLimiter.js`.
+
+### 11. Security hardening
+Brute-force prevention on the login and password-change endpoints (lock-out after repeated failures). Auth session lifetime extended to 7 days with sliding refresh.
+
+Files: `src/sse/services/auth.js`, `src/app/(dashboard)/dashboard/profile/page.js`.
+
+### 12. Prompt caching and context controls
+Per-connection `setCacheKey` toggle activates Anthropic prompt caching for that connection. Global auto-compact context setting lets operators configure a token threshold at which the context compactor fires automatically.
+
+Files: `src/shared/components/EditConnectionModal.js`, `open-sse/utils/contextCompactor.js`, `src/app/api/settings/route.js`.
+
+### 13. Misc hardening
+Tailwind/PostCSS config fix so the Docker build keeps Tailwind content scanning, `KEEP_BACKUPS` lowered from 5 → 2, retry on empty completions, fallback user message changed from `continue` to `continue where you left off`, empty stream detection timeout raised to 60s, `message_start` guaranteed to be emitted first in Claude-format streams, 502 returned on empty completion so combos fall through to the next model, timestamps added to error-log and console-log lines, and a `.next` exclusion in the Vitest glob.
 
 ## What is unchanged from upstream
 

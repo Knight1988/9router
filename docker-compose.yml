@@ -5,6 +5,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      cache_from:
+        - type=local,src=/home/knight1988/docker-buildcache
+      cache_to:
+        - type=local,dest=/home/knight1988/docker-buildcache,mode=max
     ports:
       - "20128:20128"
       - "20129:20129"
