@@ -31,8 +31,16 @@ if (!state.errorLogs) {
   state.errorLogs = [];
 }
 
+function getTimestamp() {
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2, "0");
+  const m = String(now.getMinutes()).padStart(2, "0");
+  const s = String(now.getSeconds()).padStart(2, "0");
+  return `[${h}:${m}:${s}]`;
+}
+
 function toLogLine(level, args) {
-  return args.map(formatArg).join(" ");
+  return `${getTimestamp()} ${args.map(formatArg).join(" ")}`;
 }
 
 // Strip ANSI escape codes so terminal colors don't bleed into UI
