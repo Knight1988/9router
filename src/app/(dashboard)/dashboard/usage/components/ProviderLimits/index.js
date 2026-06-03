@@ -573,11 +573,14 @@ export default function ProviderLimits() {
       const visibleConnections = await fetchConnections(page);
       setConnectionsLoading(false);
 
-      const cache = getQuotaCache();
-      const nextLoading = {};
-      const cachedQuotas = {};
-      const connectionsToFetch = [];
-      let latestCachedAt = null;
+      // Always fetch fresh quota on mount, no cache display
+      setLoading(buildLoadingState(visibleConnections));
+      setErrors((prev) =>
+        filterQuotaStateByConnections(prev, visibleConnections),
+      );
+      setQuotaData((prev) =>
+        filterQuotaStateByConnections(prev, visibleConnections),
+      );
 
       visibleConnections.forEach((conn) => {
         const cachedEntry = cache[conn.id];
