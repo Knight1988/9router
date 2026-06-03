@@ -16,6 +16,9 @@ export default defineConfig({
     ],
     // Suppress noisy console output from handlers under test
     silent: false,
+    // DB-heavy tests (db-concurrent, db-sqlite-vs-lowdb) need extra time on CI
+    // because better-sqlite3 may fall back to sql.js (slower native rebuild).
+    hookTimeout: 60000,
   },
   resolve: {
     alias: {
