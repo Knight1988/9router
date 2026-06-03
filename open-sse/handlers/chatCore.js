@@ -60,13 +60,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   const clientRequestedStreaming = body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI;
   const providerRequiresStreaming = provider === "openai" || provider === "codex" || provider === "commandcode";
-  const providerForcesNonStreaming = provider === "techopenclaw";
+  const providerForcesNonStreaming = false;
   let stream = providerRequiresStreaming ? true : (body.stream !== false);
-
-  // Force non-streaming for providers that don't support stream=true
-  if (providerForcesNonStreaming) {
-    stream = false;
-  }
 
   // DeepSeek-TUI: interactive TUI panel sends stream:true and needs SSE.
   // Non-interactive mode (-p flag) sends without stream and can't parse SSE.
