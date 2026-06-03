@@ -102,7 +102,7 @@ export class BaseExecutor {
     return { status: response.status, message: bodyText || `HTTP ${response.status}` };
   }
 
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, clientHeaders = {} }) {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
     let lastStatus = 0;
@@ -139,6 +139,12 @@ export class BaseExecutor {
         transformedBody.stream = stream;
       }
       const headers = this.buildHeaders(credentials, stream);
+      // Merge forwardable client headers under provider headers:
+      // clientHeaders go in first, then provider-specific headers override on conflict,
+      // ensuring 9router's auth, Content-Type, and Accept always win.
+      const mergedHeaders = Object.keys(clientHeaders).length > 0
+        ? { ...clientHeaders, ...headers }
+        : headers;
 
       if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
 
@@ -153,7 +159,7 @@ export class BaseExecutor {
         dbg("FETCH", `${this.provider.toUpperCase()} → ${url} | body=${bodyStr.length}B | connectTimeout=${FETCH_CONNECT_TIMEOUT_MS}ms`);
         const response = await proxyAwareFetch(url, {
           method: "POST",
-          headers,
+          headers: mergedHeaders,
           body: bodyStr,
           signal: mergedSignal
         }, proxyOptions);
@@ -170,7 +176,7 @@ export class BaseExecutor {
           continue;
         }
 
-        return { response, url, headers, transformedBody };
+        return { response, url, headers: mergedHeaders, transformedBody };
       } catch (error) {
         clearTimeout(connectTimer);
         lastError = error;

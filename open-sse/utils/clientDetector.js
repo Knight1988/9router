@@ -61,3 +61,46 @@ export function isNativePassthrough(clientTool, provider) {
     : provider;
   return nativeProviders.includes(normalizedProvider);
 }
+
+// Format families for same-API header forwarding
+const CLAUDE_FORMATS = new Set(["claude"]);
+const OPENAI_FORMATS = new Set(["openai", "openai-responses", "openai-response"]);
+
+/**
+ * Check if the client and provider speak the same API family.
+ * When true, client headers should be forwarded to the provider.
+ * @param {string} sourceFormat - Detected client request format
+ * @param {string} targetFormat - Provider target format
+ */
+export function isSameApiFamily(sourceFormat, targetFormat) {
+  if (!sourceFormat || !targetFormat) return false;
+  if (CLAUDE_FORMATS.has(sourceFormat) && CLAUDE_FORMATS.has(targetFormat)) return true;
+  if (OPENAI_FORMATS.has(sourceFormat) && OPENAI_FORMATS.has(targetFormat)) return true;
+  return false;
+}
+
+/**
+ * Headers that must never be forwarded to the upstream provider.
+ * Covers: hop-by-hop transport headers, headers 9router overrides, and internal headers.
+ */
+export const HEADER_FORWARD_BLOCKLIST = new Set([
+  "host", "connection", "keep-alive", "transfer-encoding",
+  "upgrade", "proxy-connection", "content-type", "content-length",
+  "authorization", "x-api-key", "x-request-source"
+]);
+
+/**
+ * Return a filtered copy of client headers safe to forward to the provider.
+ * Strips hop-by-hop, transport, and auth headers that 9router manages itself.
+ * @param {object} clientHeaders - Raw client request headers (lowercase keys)
+ */
+export function getForwardableClientHeaders(clientHeaders) {
+  if (!clientHeaders || typeof clientHeaders !== "object") return {};
+  const out = {};
+  for (const [k, v] of Object.entries(clientHeaders)) {
+    if (!HEADER_FORWARD_BLOCKLIST.has(k.toLowerCase())) {
+      out[k] = v;
+    }
+  }
+  return out;
+}
