@@ -267,10 +267,14 @@ export default function ProviderLimits() {
   const countdownRef = useRef(null);
 
   const fetchConnections = useCallback(
-    async (targetPage = page) => {
+    async (targetPage) => {
+      // targetPage must be passed explicitly — do NOT default to `page` state here,
+      // as that would put `page` in the dep array and cause an infinite re-creation loop
+      // (fetchConnections → setPage → page changes → fetchConnections recreated → repeat).
+      const resolvedPage = targetPage ?? 1;
       try {
         const params = new URLSearchParams({
-          page: String(targetPage),
+          page: String(resolvedPage),
           pageSize: String(pageSize),
           accountStatus: accountFilter,
           sort: "priority",
@@ -294,7 +298,7 @@ export default function ProviderLimits() {
         setProviderOptions(getProviderOptions(data.providerOptions));
         setPagination(nextPagination);
         setTotals(nextTotals);
-        setPage(getPaginationPageValue(data.pagination, targetPage));
+        setPage(getPaginationPageValue(data.pagination, resolvedPage));
 
         // Load saved monitor tokens from providerSpecificData
         setMonitorTokens((prev) => {
@@ -328,7 +332,11 @@ export default function ProviderLimits() {
         return [];
       }
     },
-    [accountFilter, expiringFirst, page, pageSize, providerFilter],
+    // `page` intentionally excluded — callers always pass targetPage explicitly.
+    // Including `page` here would cause fetchConnections to be recreated on every
+    // setPage() call, triggering an infinite render loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [accountFilter, expiringFirst, pageSize, providerFilter],
   );
 
   // Fetch quota for a specific connection
@@ -459,7 +467,7 @@ export default function ProviderLimits() {
             }
           }
 
-          await reconcileConnectionsPage(fetchConnections, page);
+          await reconcileConnectionsPage(fetchConnectionsRef.current, pageRef.current);
         }
       } catch (error) {
         console.error("Error deleting connection:", error);
@@ -467,7 +475,8 @@ export default function ProviderLimits() {
         setDeletingId(null);
       }
     },
-    [fetchConnections, page],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
   );
 
   const handleToggleConnectionActive = useCallback(
@@ -484,7 +493,7 @@ export default function ProviderLimits() {
             const next = { ...prev };
             return next;
           });
-          await reconcileConnectionsPage(fetchConnections, page);
+          await reconcileConnectionsPage(fetchConnectionsRef.current, pageRef.current);
         }
       } catch (error) {
         console.error("Error updating connection status:", error);
@@ -492,7 +501,8 @@ export default function ProviderLimits() {
         setTogglingId(null);
       }
     },
-    [fetchConnections, page],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
   );
 
   const handleUpdateConnection = useCallback(
@@ -507,18 +517,18 @@ export default function ProviderLimits() {
           body: JSON.stringify(formData),
         });
         if (res.ok) {
-          await fetchConnections();
+          await fetchConnectionsRef.current(pageRef.current);
           setShowEditModal(false);
           setSelectedConnection(null);
           if (USAGE_SUPPORTED_PROVIDERS.includes(provider)) {
-            await fetchQuota(connectionId, provider, monitorTokens[connectionId]);
+            await fetchQuotaRef.current(connectionId, provider, monitorTokensRef.current[connectionId]);
           }
         }
       } catch (error) {
         console.error("Error saving connection:", error);
       }
     },
-    [selectedConnection, fetchConnections, fetchQuota, monitorTokens],
+    [selectedConnection],
   );
 
   useEffect(() => {
@@ -536,6 +546,20 @@ export default function ProviderLimits() {
     };
   }, []);
 
+  // Stable ref so initializeData never needs fetchConnections/fetchQuota/monitorTokens
+  // in its own dep array (avoids the recreation → re-fire loop).
+  const fetchConnectionsRef = useRef(fetchConnections);
+  const fetchQuotaRef = useRef(fetchQuota);
+  const monitorTokensRef = useRef(monitorTokens);
+  useEffect(() => { fetchConnectionsRef.current = fetchConnections; }, [fetchConnections]);
+  useEffect(() => { fetchQuotaRef.current = fetchQuota; }, [fetchQuota]);
+  useEffect(() => { monitorTokensRef.current = monitorTokens; }, [monitorTokens]);
+
+  const pageRef = useRef(page);
+  useEffect(() => { pageRef.current = page; }, [page]);
+
+  const refreshAllRef = useRef(null);
+
   const refreshAll = useCallback(async () => {
     if (refreshingAll) return;
 
@@ -543,7 +567,7 @@ export default function ProviderLimits() {
     setCountdown(60);
 
     try {
-      const visibleConnections = await fetchConnections(page);
+      const visibleConnections = await fetchConnectionsRef.current(pageRef.current);
 
       setLoading(buildLoadingState(visibleConnections));
       setErrors((prev) =>
@@ -555,7 +579,7 @@ export default function ProviderLimits() {
 
       await Promise.all(
         visibleConnections.map((conn) =>
-          fetchQuota(conn.id, conn.provider, monitorTokens[conn.id]),
+          fetchQuotaRef.current(conn.id, conn.provider, monitorTokensRef.current[conn.id]),
         ),
       );
 
@@ -565,22 +589,32 @@ export default function ProviderLimits() {
     } finally {
       setRefreshingAll(false);
     }
-  }, [refreshingAll, fetchConnections, fetchQuota, monitorTokens, page]);
+  // `fetchConnections`, `fetchQuota`, `monitorTokens`, and `page` are accessed via
+  // stable refs — no need to list them here, which prevents refreshAll from being
+  // recreated on every render and breaking the auto-refresh interval.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshingAll]);
+  // Keep ref in sync so intervals always call the latest version without
+  // being listed as a dep (which would restart the interval on every render).
+  useEffect(() => { refreshAllRef.current = refreshAll; }, [refreshAll]);
 
+  // Run once on mount to load connections and populate quota from cache or network.
+  // Uses stable refs so we don't re-fire whenever fetchConnections is recreated.
   useEffect(() => {
+    let cancelled = false;
+
     const initializeData = async () => {
       setConnectionsLoading(true);
-      const visibleConnections = await fetchConnections(page);
+      const visibleConnections = await fetchConnectionsRef.current(1);
+      if (cancelled) return;
       setConnectionsLoading(false);
 
-      // Always fetch fresh quota on mount, no cache display
-      setLoading(buildLoadingState(visibleConnections));
-      setErrors((prev) =>
-        filterQuotaStateByConnections(prev, visibleConnections),
-      );
-      setQuotaData((prev) =>
-        filterQuotaStateByConnections(prev, visibleConnections),
-      );
+      // Populate from localStorage cache first so the UI isn't blank
+      const cache = getQuotaCache();
+      const nextLoading = {};
+      const cachedQuotas = {};
+      const connectionsToFetch = [];
+      let latestCachedAt = null;
 
       visibleConnections.forEach((conn) => {
         const cachedEntry = cache[conn.id];
@@ -604,16 +638,12 @@ export default function ProviderLimits() {
         }
       });
 
+      if (cancelled) return;
       setLoading(nextLoading);
       setErrors((prev) => {
-        const nextErrors = filterQuotaStateByConnections(
-          prev,
-          visibleConnections,
-        );
+        const nextErrors = filterQuotaStateByConnections(prev, visibleConnections);
         visibleConnections.forEach((conn) => {
-          if (cache[conn.id]) {
-            nextErrors[conn.id] = null;
-          }
+          if (cache[conn.id]) nextErrors[conn.id] = null;
         });
         return nextErrors;
       });
@@ -622,22 +652,24 @@ export default function ProviderLimits() {
         ...cachedQuotas,
       }));
 
-      if (latestCachedAt) {
-        setLastUpdated(latestCachedAt);
-      }
+      if (latestCachedAt) setLastUpdated(latestCachedAt);
 
       if (connectionsToFetch.length > 0) {
         await Promise.all(
           connectionsToFetch.map((conn) =>
-            fetchQuota(conn.id, conn.provider, monitorTokens[conn.id]),
+            cancelled
+              ? Promise.resolve()
+              : fetchQuotaRef.current(conn.id, conn.provider, monitorTokensRef.current[conn.id]),
           ),
         );
-        setLastUpdated(new Date());
+        if (!cancelled) setLastUpdated(new Date());
       }
     };
 
     initializeData();
-  }, [fetchConnections, fetchQuota, monitorTokens, page]);
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally empty — runs once on mount only
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -666,9 +698,10 @@ export default function ProviderLimits() {
       return;
     }
 
-    // Main refresh interval
+    // Main refresh interval — call via ref so recreating refreshAll doesn't
+    // restart this effect and immediately re-fire the interval.
     intervalRef.current = setInterval(() => {
-      refreshAll();
+      refreshAllRef.current?.();
     }, REFRESH_INTERVAL_MS);
 
     // Countdown interval
@@ -683,7 +716,7 @@ export default function ProviderLimits() {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (countdownRef.current) clearInterval(countdownRef.current);
     };
-  }, [autoRefresh, refreshAll, hasHydratedAutoRefresh]);
+  }, [autoRefresh, hasHydratedAutoRefresh]); // refreshAll intentionally omitted — accessed via ref
 
   // Pause auto-refresh when tab is hidden (Page Visibility API)
   useEffect(() => {
@@ -699,7 +732,7 @@ export default function ProviderLimits() {
         }
       } else if (autoRefresh && hasHydratedAutoRefresh) {
         // Resume auto-refresh when tab becomes visible
-        intervalRef.current = setInterval(refreshAll, REFRESH_INTERVAL_MS);
+        intervalRef.current = setInterval(() => refreshAllRef.current?.(), REFRESH_INTERVAL_MS);
         countdownRef.current = setInterval(() => {
           setCountdown((prev) => (prev <= 1 ? 60 : prev - 1));
         }, 1000);
@@ -710,7 +743,7 @@ export default function ProviderLimits() {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [autoRefresh, refreshAll, hasHydratedAutoRefresh]);
+  }, [autoRefresh, hasHydratedAutoRefresh]); // refreshAll intentionally omitted — accessed via ref
 
   const sortedConnections = useMemo(
     () =>
@@ -748,14 +781,15 @@ export default function ProviderLimits() {
             }),
           ),
         );
-        await reconcileConnectionsPage(fetchConnections, page);
+        await reconcileConnectionsPage(fetchConnectionsRef.current, pageRef.current);
       } catch (error) {
         console.error("Error bulk toggling connections:", error);
       } finally {
         setBulkToggling(false);
       }
     },
-    [bulkToggling, fetchConnections, page],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [bulkToggling],
   );
 
   const handleDisableDepleted = () => {
