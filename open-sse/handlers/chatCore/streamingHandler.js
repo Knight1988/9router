@@ -16,6 +16,7 @@ const SSE_HEADERS = {
 };
 
 const EMPTY_STREAM_TIMEOUT_MS = 60_000;
+const NO_TIMEOUT_PROVIDERS = new Set(["techopenclaw"]);
 
 /**
  * Determine which SSE transform stream to use based on provider/format.
@@ -59,12 +60,12 @@ async function detectContent(transformedBody, timeoutMs, onFirstContentSignal) {
   const loopDone = new Promise((res) => { loopResolve = res; });
 
   const result = await new Promise((resolve) => {
-    const timer = setTimeout(() => {
+    const timer = timeoutMs != null ? setTimeout(() => {
       if (!settled) {
         settled = true;
         resolve({ kind: "empty", reason: "timeout" });
       }
-    }, timeoutMs);
+    }, timeoutMs) : null;
 
     onFirstContentSignal.callback = () => {
       contentDetected = true;
@@ -159,7 +160,8 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 
   const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController);
 
-  const { result: guardResult, reader, buffered } = await detectContent(transformedBody, EMPTY_STREAM_TIMEOUT_MS, onFirstContentSignal);
+  const timeoutMs = NO_TIMEOUT_PROVIDERS.has(provider) ? null : EMPTY_STREAM_TIMEOUT_MS;
+  const { result: guardResult, reader, buffered } = await detectContent(transformedBody, timeoutMs, onFirstContentSignal);
 
   if (guardResult.kind === "empty") {
     const reason = guardResult.reason === "timeout" ? "timeout waiting for first content" : "stream ended with no content";
