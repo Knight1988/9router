@@ -2,6 +2,7 @@ import { HTTP_STATUS, DEFAULT_RETRY_CONFIG, resolveRetryEntry, FETCH_CONNECT_TIM
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { addJitter, abortableSleep } from "../utils/retry.js";
 import { dbg } from "../utils/debugLog.js";
+import { decompressResponse } from "../utils/decompress.js";
 
 /**
  * BaseExecutor - Base class for provider executors
@@ -68,6 +69,11 @@ export class BaseExecutor {
 
     if (stream) {
       headers["Accept"] = "text/event-stream";
+    }
+
+    // Default Accept-Encoding to prevent zstd (undici doesn't decompress it)
+    if (!headers["Accept-Encoding"] && !headers["accept-encoding"]) {
+      headers["Accept-Encoding"] = "gzip, deflate, br";
     }
 
     return headers;
@@ -176,7 +182,10 @@ export class BaseExecutor {
           continue;
         }
 
-        return { response, url, headers: mergedHeaders, transformedBody };
+        // Decompress response if undici left it compressed (zstd/br/gzip/deflate)
+        const decompressed = await decompressResponse(response);
+
+        return { response: decompressed, url, headers: mergedHeaders, transformedBody };
       } catch (error) {
         clearTimeout(connectTimer);
         lastError = error;

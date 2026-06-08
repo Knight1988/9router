@@ -10,6 +10,7 @@ import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { logAbnormal, ABNORMAL_SIGNALS, isAbnormalFinishReason } from "../../utils/abnormalLogger.js";
 import { recordRequestResult } from "@/lib/smartRouting/healthTracker.js";
+import { parseJsonWithRetry } from "../chatCore.js";
 
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
@@ -130,7 +131,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, trackDone, appendLog }) {
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, trackDone, appendLog, retryContext }) {
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
@@ -144,12 +145,24 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     }
     responseBody = parsed;
   } else {
-    try {
-      responseBody = await providerResponse.json();
-    } catch (err) {
-      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-      console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
+    // Parse JSON with retry if retryContext is provided
+    if (retryContext) {
+      const parseResult = await parseJsonWithRetry(providerResponse, retryContext);
+      if (!parseResult.success) {
+        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, parseResult.error.message);
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
+      }
+      responseBody = parseResult.body;
+    } else {
+      // Fallback to direct parsing (for backward compatibility if retryContext not provided)
+      try {
+        responseBody = await providerResponse.json();
+      } catch (err) {
+        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
+      }
     }
   }
 
