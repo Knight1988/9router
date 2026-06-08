@@ -21,6 +21,76 @@ import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 import { logAbnormal, ABNORMAL_SIGNALS } from "../utils/abnormalLogger.js";
+import { addJitter, abortableSleep } from "../utils/retry.js";
+
+/**
+ * Parse JSON from a Response with automatic retry on failure.
+ * If parsing fails, re-executes the request up to maxRetries times.
+ *
+ * @param {Response} response - The Response to parse
+ * @param {object} retryContext - Context needed for retry: { executor, model, body, stream, credentials, signal, log, proxyOptions, clientHeaders, provider }
+ * @param {number} maxRetries - Maximum retry attempts (default 2)
+ * @returns {Promise<{success: boolean, body?: object, error?: Error}>}
+ */
+export async function parseJsonWithRetry(response, retryContext, maxRetries = 2) {
+  const { executor, model, body, stream, credentials, signal, log, proxyOptions, clientHeaders, provider } = retryContext;
+
+  // Try parsing the current response
+  try {
+    const parsed = await response.json();
+    return { success: true, body: parsed };
+  } catch (firstError) {
+    // JSON parse failed — retry by re-executing the request
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      if (signal?.aborted) {
+        return { success: false, error: new Error("Aborted during JSON parse retry") };
+      }
+
+      // Exponential backoff with equal jitter: 1s, 2s base delays
+      const baseDelay = 1000 * attempt;
+      const jitteredDelay = addJitter(baseDelay, { mode: 'equal' });
+      log?.debug?.("RETRY", `JSON parse failed, retry ${attempt}/${maxRetries} after ${(jitteredDelay / 1000).toFixed(1)}s`);
+
+      const { aborted } = await abortableSleep(jitteredDelay, signal);
+      if (aborted) {
+        return { success: false, error: new Error("Aborted during JSON parse retry delay") };
+      }
+
+      // Re-execute the request
+      try {
+        const result = await executor.execute({ model, body, stream, credentials, signal, log, proxyOptions, clientHeaders });
+        if (!result.response.ok) {
+          // Provider returned error on retry — give up
+          return { success: false, error: new Error(`Retry ${attempt} got HTTP ${result.response.status}`) };
+        }
+
+        // Try parsing the new response
+        try {
+          const parsed = await result.response.json();
+          log?.debug?.("RETRY", `JSON parse succeeded on retry ${attempt}`);
+          return { success: true, body: parsed };
+        } catch (retryError) {
+          if (attempt === maxRetries) {
+            // Final attempt failed
+            return { success: false, error: retryError };
+          }
+          // Continue to next retry
+        }
+      } catch (execError) {
+        if (execError.name === "AbortError") {
+          return { success: false, error: execError };
+        }
+        if (attempt === maxRetries) {
+          return { success: false, error: execError };
+        }
+        // Continue to next retry
+      }
+    }
+
+    // All retries exhausted
+    return { success: false, error: firstError };
+  }
+}
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -322,15 +392,21 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       }
 
       trackDone();
-      let responseBody;
-      try {
-        responseBody = await providerResponse.json();
-      } catch (err) {
+
+      // Parse JSON with retry on failure
+      const parseResult = await parseJsonWithRetry(providerResponse, {
+        executor, model, body: translatedBody, stream, credentials,
+        signal: streamController.signal, log, proxyOptions, clientHeaders, provider
+      });
+
+      if (!parseResult.success) {
         appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-        console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
+        console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, parseResult.error.message);
         streamController.handleComplete();
         return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
       }
+
+      const responseBody = parseResult.body;
 
       reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
       if (onRequestSuccess) await onRequestSuccess();
@@ -373,7 +449,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         })
       };
     } else {
-      const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, reqLogger, toolNameMap, trackDone, appendLog });
+      const retryContext = {
+        executor, model, body: translatedBody, stream, credentials,
+        signal: streamController.signal, log, proxyOptions, clientHeaders, provider
+      };
+      const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, reqLogger, toolNameMap, trackDone, appendLog, retryContext });
       streamController.handleComplete();
       return result;
     }

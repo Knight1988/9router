@@ -183,6 +183,12 @@ export class DefaultExecutor extends BaseExecutor {
     }
 
     if (stream) headers["Accept"] = "text/event-stream";
+
+    // Default Accept-Encoding to prevent zstd (undici doesn't decompress it)
+    if (!headers["Accept-Encoding"] && !headers["accept-encoding"]) {
+      headers["Accept-Encoding"] = "gzip, deflate, br";
+    }
+
     return headers;
   }
 
