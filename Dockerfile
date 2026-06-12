@@ -14,7 +14,7 @@ RUN npm run build
 FROM node:22-alpine AS runner
 WORKDIR /app
 
-RUN apk update && apk --no-cache upgrade && apk --no-cache add su-exec
+RUN apk update && apk --no-cache upgrade && apk --no-cache add su-exec tzdata
 
 LABEL org.opencontainers.image.title="9router"
 

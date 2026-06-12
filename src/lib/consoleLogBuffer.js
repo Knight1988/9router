@@ -39,8 +39,14 @@ function getTimestamp() {
   return `[${h}:${m}:${s}]`;
 }
 
+// Detect a leading [HH:MM:SS] or [H:MM:SS] timestamp already added by the caller
+const LEADING_TS_RE = /^\[\d{1,2}:\d{2}:\d{2}\]/;
+
 function toLogLine(level, args) {
-  return `${getTimestamp()} ${args.map(formatArg).join(" ")}`;
+  const text = args.map(formatArg).join(" ");
+  // Avoid double-stamping: if the caller already prepended [HH:MM:SS], don't add another
+  if (LEADING_TS_RE.test(text)) return text;
+  return `${getTimestamp()} ${text}`;
 }
 
 // Strip ANSI escape codes so terminal colors don't bleed into UI
