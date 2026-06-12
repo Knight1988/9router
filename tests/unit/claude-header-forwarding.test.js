@@ -8,9 +8,11 @@
  *  - default.js buildHeaders(): anthropic-compatible non-Anthropic host stripping
  *  - default.js buildHeaders(): anthropic-compatible official host keeps headers
  *  - proxyFetch.js: api.anthropic.com routes through anthropicFetch path
+ *  - mergeForwardedHeaders: case-insensitive merge prevents duplicate-cased header lines
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { mergeForwardedHeaders, getForwardableClientHeaders, HEADER_FORWARD_BLOCKLIST } from "open-sse/utils/clientDetector.js";
 
 // ─── claudeHeaderCache ────────────────────────────────────────────────────────
 
@@ -413,3 +415,115 @@ describe("proxyAwareFetch — api.anthropic.com routing", () => {
     expect(gotScrapingMock).not.toHaveBeenCalled();
   });
 });
+
+// ─── mergeForwardedHeaders ────────────────────────────────────────────────────
+
+describe("mergeForwardedHeaders — case-insensitive merge prevents duplicate wire headers", () => {
+  it("provider headers win on exact-case collision", () => {
+    const client = { "Content-Type": "text/plain" };
+    const provider = { "Content-Type": "application/json" };
+    const merged = mergeForwardedHeaders(client, provider);
+    expect(merged["Content-Type"]).toBe("application/json");
+    // No duplicate
+    expect(Object.keys(merged).filter((k) => k.toLowerCase() === "content-type")).toHaveLength(1);
+  });
+
+  it("provider Title-Case wins over client lowercase variant (the techopenclaw 502 scenario)", () => {
+    // This is the exact bug: client sends lowercase "accept-encoding" with zstd,
+    // provider builds Title-Case "Accept-Encoding" without zstd. Old spread kept both;
+    // mergeForwardedHeaders must drop the client copy.
+    const client = {
+      "accept-encoding": "gzip, br, zstd",
+      "accept": "application/json",
+      "anthropic-beta": "client-flag-x",
+      "user-agent": "claude-cli/2.1.92",
+    };
+    const provider = {
+      "Content-Type": "application/json",
+      "Anthropic-Version": "2023-06-01",
+      "Anthropic-Beta": "claude-code-20250219",
+      "Accept": "text/event-stream",
+      "Accept-Encoding": "gzip, deflate, br",
+      "Authorization": "Bearer tok",
+    };
+    const merged = mergeForwardedHeaders(client, provider);
+
+    // Exactly one Accept-Encoding, and it must be the provider's (no zstd)
+    const aeKeys = Object.keys(merged).filter((k) => k.toLowerCase() === "accept-encoding");
+    expect(aeKeys).toHaveLength(1);
+    expect(merged[aeKeys[0]]).toBe("gzip, deflate, br");
+
+    // Exactly one Accept — provider's wins
+    const acceptKeys = Object.keys(merged).filter((k) => k.toLowerCase() === "accept");
+    expect(acceptKeys).toHaveLength(1);
+    expect(merged[acceptKeys[0]]).toBe("text/event-stream");
+
+    // Exactly one Anthropic-Beta — provider's wins
+    const betaKeys = Object.keys(merged).filter((k) => k.toLowerCase() === "anthropic-beta");
+    expect(betaKeys).toHaveLength(1);
+    expect(merged[betaKeys[0]]).toBe("claude-code-20250219");
+
+    // Non-colliding client header passes through
+    expect(merged["user-agent"]).toBe("claude-cli/2.1.92");
+  });
+
+  it("non-colliding client headers are preserved", () => {
+    const client = { "user-agent": "claude-cli", "x-stainless-os": "Linux" };
+    const provider = { "Content-Type": "application/json", "Authorization": "Bearer tok" };
+    const merged = mergeForwardedHeaders(client, provider);
+    expect(merged["user-agent"]).toBe("claude-cli");
+    expect(merged["x-stainless-os"]).toBe("Linux");
+    expect(merged["Content-Type"]).toBe("application/json");
+  });
+
+  it("returns providerHeaders unchanged when clientHeaders is empty", () => {
+    const provider = { "Accept": "text/event-stream", "Authorization": "Bearer tok" };
+    expect(mergeForwardedHeaders({}, provider)).toBe(provider);
+    expect(mergeForwardedHeaders(null, provider)).toBe(provider);
+  });
+
+  it("produces no duplicate-cased keys in merged result", () => {
+    const client = {
+      "accept-encoding": "gzip, zstd",
+      "accept": "application/json",
+      "anthropic-version": "2023-01-01",
+      "anthropic-beta": "old-flag",
+    };
+    const provider = {
+      "Accept-Encoding": "gzip, deflate, br",
+      "Accept": "text/event-stream",
+      "Anthropic-Version": "2023-06-01",
+      "Anthropic-Beta": "claude-code-20250219",
+    };
+    const merged = mergeForwardedHeaders(client, provider);
+    const lcKeyCounts = {};
+    for (const k of Object.keys(merged)) {
+      const lc = k.toLowerCase();
+      lcKeyCounts[lc] = (lcKeyCounts[lc] || 0) + 1;
+    }
+    for (const [lc, count] of Object.entries(lcKeyCounts)) {
+      expect(count, `Duplicate key "${lc}" in merged headers`).toBe(1);
+    }
+  });
+});
+
+// ─── HEADER_FORWARD_BLOCKLIST — accept-encoding is blocked ────────────────────
+
+describe("HEADER_FORWARD_BLOCKLIST — accept-encoding must be blocked", () => {
+  it("blocks accept-encoding so client encoding preferences are never forwarded", () => {
+    expect(HEADER_FORWARD_BLOCKLIST.has("accept-encoding")).toBe(true);
+  });
+
+  it("getForwardableClientHeaders strips accept-encoding from client headers", () => {
+    const client = {
+      "accept-encoding": "gzip, br, zstd",
+      "user-agent": "claude-cli/2.1.92",
+      "anthropic-beta": "client-flag",
+    };
+    const forwarded = getForwardableClientHeaders(client);
+    expect(forwarded["accept-encoding"]).toBeUndefined();
+    expect(forwarded["user-agent"]).toBe("claude-cli/2.1.92");
+    expect(forwarded["anthropic-beta"]).toBe("client-flag");
+  });
+});
+

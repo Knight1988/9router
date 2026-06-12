@@ -86,7 +86,10 @@ export function isSameApiFamily(sourceFormat, targetFormat) {
 export const HEADER_FORWARD_BLOCKLIST = new Set([
   "host", "connection", "keep-alive", "transfer-encoding",
   "upgrade", "proxy-connection", "content-type", "content-length",
-  "authorization", "x-api-key", "x-request-source"
+  "authorization", "x-api-key", "x-request-source",
+  // 9router controls response decoding; client accept-encoding may advertise
+  // zstd (which undici won't decompress) and must never reach the upstream.
+  "accept-encoding",
 ]);
 
 /**
@@ -103,4 +106,25 @@ export function getForwardableClientHeaders(clientHeaders) {
     }
   }
   return out;
+}
+
+/**
+ * Merge forwarded client headers under provider headers, case-insensitively.
+ * Client headers arrive lowercase (request.headers.entries()); provider headers are
+ * mixed-case. A naive object spread leaves duplicate-cased keys (e.g. "accept-encoding"
+ * + "Accept-Encoding") that undici emits as two header lines on the wire, which
+ * Cloudflare-fronted upstreams reject with 502. Provider headers always win on any
+ * case-insensitive collision. Non-colliding client headers (e.g. "user-agent") pass through.
+ * @param {object} clientHeaders - Forwarded client headers (lowercase keys, pre-filtered)
+ * @param {object} providerHeaders - Provider-specific headers built by buildHeaders()
+ * @returns {object} Merged headers with no duplicate-cased keys
+ */
+export function mergeForwardedHeaders(clientHeaders, providerHeaders) {
+  if (!clientHeaders || Object.keys(clientHeaders).length === 0) return providerHeaders;
+  const providerLcKeys = new Set(Object.keys(providerHeaders).map((k) => k.toLowerCase()));
+  const out = {};
+  for (const [k, v] of Object.entries(clientHeaders)) {
+    if (!providerLcKeys.has(k.toLowerCase())) out[k] = v;
+  }
+  return Object.assign(out, providerHeaders);
 }

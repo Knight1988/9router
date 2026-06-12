@@ -3,6 +3,7 @@ import { proxyAwareRawFetch } from "../utils/proxyFetch.js";
 import { addJitter, abortableSleep } from "../utils/retry.js";
 import { dbg } from "../utils/debugLog.js";
 import { decompressResponse } from "../utils/decompress.js";
+import { mergeForwardedHeaders } from "../utils/clientDetector.js";
 
 /**
  * BaseExecutor - Base class for provider executors
@@ -145,12 +146,11 @@ export class BaseExecutor {
         transformedBody.stream = stream;
       }
       const headers = this.buildHeaders(credentials, stream);
-      // Merge forwardable client headers under provider headers:
-      // clientHeaders go in first, then provider-specific headers override on conflict,
-      // ensuring 9router's auth, Content-Type, and Accept always win.
-      const mergedHeaders = Object.keys(clientHeaders).length > 0
-        ? { ...clientHeaders, ...headers }
-        : headers;
+      // Merge forwarded client headers under provider headers case-insensitively.
+      // Client headers arrive lowercase (request.headers.entries()); provider headers are
+      // mixed-case. A naive spread would leave duplicate-cased keys (e.g. "accept-encoding"
+      // + "Accept-Encoding") that undici emits as two lines, breaking Cloudflare upstreams.
+      const mergedHeaders = mergeForwardedHeaders(clientHeaders, headers);
 
       if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
 

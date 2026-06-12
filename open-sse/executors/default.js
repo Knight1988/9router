@@ -149,7 +149,9 @@ export class DefaultExecutor extends BaseExecutor {
         } else if (this.config?.format === "claude") {
           // Generic claude-format provider (e.g. agentrouter): x-api-key + anthropic-version
           headers["x-api-key"] = credentials.apiKey || credentials.accessToken;
-          if (!headers["anthropic-version"]) headers["anthropic-version"] = "2023-06-01";
+          // Guard case-insensitively: CLAUDE_API_HEADERS sets Title-Case "Anthropic-Version",
+          // so checking only the lowercase key would miss it and produce a duplicate header.
+          if (!headers["anthropic-version"] && !headers["Anthropic-Version"]) headers["anthropic-version"] = "2023-06-01";
         } else {
           headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
         }
