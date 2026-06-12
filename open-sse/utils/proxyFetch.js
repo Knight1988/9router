@@ -1,4 +1,5 @@
 import { Readable } from "stream";
+import { request as undiciRequest } from "undici";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
 
@@ -351,6 +352,119 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   // got-scraping disabled — use native fetch directly
   // (Re-enable per-host by wrapping with tryGotScrapingFetch when needed)
   return originalFetch(url, options);
+}
+
+/**
+ * Dispatch a request via undici.request() — no auto-decompression, raw bytes,
+ * content-encoding header preserved. Builds a standard web Response.
+ *
+ * @param {string} targetUrl
+ * @param {object} options - { method, headers, body, signal }
+ * @param {import("undici").Dispatcher|null} dispatcher
+ * @returns {Promise<Response>}
+ */
+async function undiciRawDispatch(targetUrl, options, dispatcher) {
+  // undici wants plain object headers, not a Headers instance
+  const headersObj = options.headers instanceof Headers
+    ? Object.fromEntries(options.headers.entries())
+    : { ...(options.headers || {}) };
+
+  const undiciOptions = {
+    method: options.method || "POST",
+    headers: headersObj,
+    body: options.body,
+    signal: options.signal,
+    maxRedirections: 0, // chat endpoints don't redirect
+  };
+  if (dispatcher) undiciOptions.dispatcher = dispatcher;
+
+  const res = await undiciRequest(targetUrl, undiciOptions);
+
+  // Build web-compatible Headers — undici lowercases keys, handle array values
+  const webHeaders = new Headers();
+  for (const [k, v] of Object.entries(res.headers)) {
+    if (Array.isArray(v)) {
+      for (const val of v) webHeaders.append(k, String(val));
+    } else if (v != null) {
+      webHeaders.set(k, String(v));
+    }
+  }
+
+  // Wrap undici's Node Readable body as a web ReadableStream
+  const webBody = Readable.toWeb(res.body);
+  return new Response(webBody, {
+    status: res.statusCode,
+    statusText: "",
+    headers: webHeaders,
+  });
+}
+
+/**
+ * Like proxyAwareFetch() but uses undici.request() instead of native fetch —
+ * no automatic decompression, raw bytes returned, content-encoding header
+ * preserved. Use for paths that call decompressResponse() themselves.
+ *
+ * All routing logic (Vercel relay, proxy, MITM DNS bypass) is identical to
+ * proxyAwareFetch(). Vercel relay falls back to native fetch (relay responses
+ * are typically clean and don't need raw handling).
+ */
+export async function proxyAwareRawFetch(url, options = {}, proxyOptions = null) {
+  const targetUrl = typeof url === "string" ? url : url.toString();
+
+  // Vercel relay — fall back to native fetch (relay responses are clean)
+  const vercelRelayUrl = normalizeString(proxyOptions?.vercelRelayUrl);
+  if (vercelRelayUrl) {
+    const parsed = new URL(targetUrl);
+    const relayHeaders = {
+      ...options.headers,
+      "x-relay-target": `${parsed.protocol}//${parsed.host}`,
+      "x-relay-path": `${parsed.pathname}${parsed.search}`,
+    };
+    return originalFetch(vercelRelayUrl, { ...options, headers: relayHeaders });
+  }
+
+  const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
+  const envProxyUrl = connectionProxyUrl ? null : normalizeProxyUrl(getEnvProxyUrl(targetUrl));
+  const proxyUrl = connectionProxyUrl || envProxyUrl;
+
+  // MITM DNS bypass: these are public-CA hosts (Google/GitHub/AWS/Cursor) that
+  // don't mislabel content-encoding, so raw mode is not needed there. Keep the
+  // same routing logic but use createBypassRequest (already returns raw bytes).
+  if (shouldBypassMitmDns(targetUrl)) {
+    if (proxyUrl) {
+      try {
+        const dispatcher = await getDispatcher(proxyUrl);
+        return await undiciRawDispatch(targetUrl, options, dispatcher);
+      } catch (proxyError) {
+        if (proxyOptions?.strictProxy === true) {
+          throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
+        }
+        console.warn(`[ProxyFetch] Proxy failed, falling back to direct bypass: ${proxyError.message}`);
+      }
+    }
+    try {
+      const parsedUrl = new URL(targetUrl);
+      const realIP = await resolveRealIP(parsedUrl.hostname);
+      if (realIP) return await createBypassRequest(parsedUrl, realIP, options);
+    } catch (error) {
+      console.warn(`[ProxyFetch] MITM bypass failed: ${error.message}`);
+    }
+  }
+
+  if (proxyUrl) {
+    try {
+      const dispatcher = await getDispatcher(proxyUrl);
+      return await undiciRawDispatch(targetUrl, options, dispatcher);
+    } catch (proxyError) {
+      if (proxyOptions?.strictProxy === true) {
+        throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
+      }
+      console.warn(`[ProxyFetch] Proxy failed, falling back to direct: ${proxyError.message}`);
+      return await undiciRawDispatch(targetUrl, options, null);
+    }
+  }
+
+  return await undiciRawDispatch(targetUrl, options, null);
 }
 
 /**

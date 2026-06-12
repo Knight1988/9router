@@ -1,5 +1,5 @@
 import { HTTP_STATUS, DEFAULT_RETRY_CONFIG, resolveRetryEntry, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
-import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { proxyAwareRawFetch } from "../utils/proxyFetch.js";
 import { addJitter, abortableSleep } from "../utils/retry.js";
 import { dbg } from "../utils/debugLog.js";
 import { decompressResponse } from "../utils/decompress.js";
@@ -163,7 +163,7 @@ export class BaseExecutor {
         const bodyStr = JSON.stringify(transformedBody);
         const fetchT0 = Date.now();
         dbg("FETCH", `${this.provider.toUpperCase()} → ${url} | body=${bodyStr.length}B | connectTimeout=${FETCH_CONNECT_TIMEOUT_MS}ms`);
-        const response = await proxyAwareFetch(url, {
+        const response = await proxyAwareRawFetch(url, {
           method: "POST",
           headers: mergedHeaders,
           body: bodyStr,

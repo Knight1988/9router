@@ -135,4 +135,75 @@ describe("decompressResponse", () => {
     expect(decompressed.status).toBe(201);
     expect(decompressed.statusText).toBe("Created");
   });
+
+  // ── Mislabeled content-encoding tests ────────────────────────────────────
+  // Providers like open-claude / techopenclaw sometimes return a content-encoding
+  // header that doesn't match the actual body. undici auto-decompresses based on
+  // the header and throws "Decompression failed" inside .json(). The hardened
+  // decompressResponse() must handle these gracefully.
+
+  it("handles mislabeled br: plain JSON body labeled as br", async () => {
+    // Header says "br" but body is plain (uncompressed) JSON
+    const raw = Buffer.from(testPayloadJson);
+    const headers = new Headers({
+      "content-type": "application/json",
+      "content-encoding": "br"
+    });
+    const response = new Response(raw, { status: 200, headers });
+
+    const decompressed = await decompressResponse(response);
+
+    expect(decompressed.headers.get("content-encoding")).toBeNull();
+    const parsed = await decompressed.json();
+    expect(parsed).toEqual(testPayload);
+  });
+
+  it("handles mislabeled gzip: plain JSON body labeled as gzip", async () => {
+    // Header says "gzip" but body is plain (uncompressed) JSON
+    const raw = Buffer.from(testPayloadJson);
+    const headers = new Headers({
+      "content-type": "application/json",
+      "content-encoding": "gzip"
+    });
+    const response = new Response(raw, { status: 200, headers });
+
+    const decompressed = await decompressResponse(response);
+
+    expect(decompressed.headers.get("content-encoding")).toBeNull();
+    const parsed = await decompressed.json();
+    expect(parsed).toEqual(testPayload);
+  });
+
+  it("handles mislabeled br: zstd body labeled as br", async () => {
+    // Header says "br" but body is actually zstd-compressed (CDN/provider lie)
+    const compressed = zlib.zstdCompressSync(Buffer.from(testPayloadJson));
+    const headers = new Headers({
+      "content-type": "application/json",
+      "content-encoding": "br"
+    });
+    const response = new Response(compressed, { status: 200, headers });
+
+    const decompressed = await decompressResponse(response);
+
+    expect(decompressed.headers.get("content-encoding")).toBeNull();
+    const parsed = await decompressed.json();
+    expect(parsed).toEqual(testPayload);
+  });
+
+  it("handles mislabeled deflate: raw deflate body (no zlib header)", async () => {
+    // deflateRawSync produces a raw deflate stream (no zlib wrapper)
+    // inflateSync fails on this, but inflateRawSync handles it
+    const compressed = zlib.deflateRawSync(Buffer.from(testPayloadJson));
+    const headers = new Headers({
+      "content-type": "application/json",
+      "content-encoding": "deflate"
+    });
+    const response = new Response(compressed, { status: 200, headers });
+
+    const decompressed = await decompressResponse(response);
+
+    expect(decompressed.headers.get("content-encoding")).toBeNull();
+    const parsed = await decompressed.json();
+    expect(parsed).toEqual(testPayload);
+  });
 });
