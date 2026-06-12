@@ -114,7 +114,7 @@ describe("CodexExecutor image handling", () => {
     global.fetch = vi.fn(async () => mockImageFetch(IMAGE_1MB_BYTES));
 
     let capturedBodyString = null;
-    vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockImplementation(async (url, init) => {
+    vi.spyOn(proxyFetchModule, "proxyAwareRawFetch").mockImplementation(async (url, init) => {
       capturedBodyString = init.body;
       return { ok: true, status: 200, headers: new Map() };
     });
