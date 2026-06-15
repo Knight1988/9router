@@ -132,59 +132,41 @@ stages:
             displayName: Push Docker image
 
   - stage: Deploy
-    displayName: Redeploy Portainer
+    displayName: Redeploy Dockge
     dependsOn: Build
     condition: and(succeeded(), eq(variables['Build.SourceBranchName'], 'beta'))
     jobs:
       - job: Deploy
-        displayName: Redeploy via Portainer
+        displayName: Redeploy via Dockge
         pool:
           name: Ubuntu
         steps:
           - script: |
               set -euo pipefail
-              PORTAINER_URL="https://dk-server.linkpc.net/portainer"
-              STACK_ID=23
-              ENDPOINT_ID=3
+              DOCKGE_URL="https://dk-server.linkpc.net/dockge"
+              STACK_NAME=9router
               MAX_RETRIES=3
               RETRY_DELAY=10
 
-              echo "Fetching current stack file from Portainer..."
-              STACK_FILE=$(curl -fsSL --max-time 30 \
-                -H "X-API-Key: $(PORTAINER_API_KEY)" \
-                "${PORTAINER_URL}/api/stacks/${STACK_ID}/file" \
-                | jq -r '.StackFileContent')
-
-              if [ -z "$STACK_FILE" ] || [ "$STACK_FILE" = "null" ]; then
-                echo "Failed to retrieve stack file"; exit 1
-              fi
-
-              echo "Triggering Portainer redeploy with image pull..."
-              PAYLOAD=$(jq -n \
-                --arg file "$STACK_FILE" \
-                '{stackFileContent: $file, env: [], prune: false, pullImage: true}')
-
+              echo "Triggering Dockge update (pull + redeploy) for stack ${STACK_NAME}..."
               for i in $(seq 1 $MAX_RETRIES); do
                 echo "Attempt $i of $MAX_RETRIES..."
-                if curl -fsSL -X PUT --max-time 120 \
-                  -H "X-API-Key: $(PORTAINER_API_KEY)" \
-                  -H "Content-Type: application/json" \
-                  --data "$PAYLOAD" \
-                  "${PORTAINER_URL}/api/stacks/${STACK_ID}?endpointId=${ENDPOINT_ID}"; then
-                  echo
-                  echo "Portainer redeploy successful."
+                RESPONSE=$(curl -sS -X POST --max-time 120 \
+                  -H "Authorization: Bearer $(DOCKGE_API_TOKEN)" \
+                  "${DOCKGE_URL}/api/stacks/${STACK_NAME}/update" 2>&1)
+                if echo "$RESPONSE" | grep -q '"ok":[[:space:]]*true'; then
+                  echo "$RESPONSE"
+                  echo "Dockge redeploy successful."
                   exit 0
-                else
-                  EXIT_CODE=$?
-                  echo "Attempt $i failed with exit code $EXIT_CODE"
-                  if [ $i -lt $MAX_RETRIES ]; then
-                    echo "Waiting ${RETRY_DELAY}s before retry..."
-                    sleep $RETRY_DELAY
-                  fi
+                fi
+                echo "Attempt $i failed: $RESPONSE"
+                if [ $i -lt $MAX_RETRIES ]; then
+                  echo "Waiting ${RETRY_DELAY}s before retry..."
+                  sleep $RETRY_DELAY
                 fi
               done
               echo "All retry attempts failed."
               exit 1
-            displayName: Redeploy 9router stack via Portainer
+            displayName: Redeploy 9router stack via Dockge
             env:
-              PORTAINER_API_KEY: $(PORTAINER_API_KEY)
+              DOCKGE_API_TOKEN: $(DOCKGE_API_TOKEN)
