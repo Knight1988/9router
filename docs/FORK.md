@@ -1,6 +1,6 @@
 # Fork Notes — Knight1988/9router vs decolua/9router
 
-_Last updated: 2026-06-03 (refreshed)_
+_Last updated: 2026-06-15 (refreshed after merging upstream v0.4.77)_
 
 This repository is a fork of [decolua/9router](https://github.com/decolua/9router). The active branch is `beta`. This document summarizes how it differs from upstream `decolua/master` so contributors don't confuse fork-specific behavior with upstream behavior.
 
@@ -8,8 +8,8 @@ This repository is a fork of [decolua/9router](https://github.com/decolua/9route
 
 Comparison baseline: `decolua/master` → `Knight1988/9router` `beta`.
 
-- 176 non-merge commits ahead of upstream
-- 167 files changed, +13,138 / -758 lines
+- 188 non-merge commits ahead of upstream
+- 172 files changed, +14,002 / -799 lines
 - Regenerate with:
   ```bash
   git fetch decolua master
@@ -21,7 +21,8 @@ Comparison baseline: `decolua/master` → `Knight1988/9router` `beta`.
 
 - Azure DevOps CI/CD pipeline (test → build → deploy) with a real Vitest test suite.
 - Smart routing + provider health observability layered on top of upstream's combo system.
-- HTTPS support, additional providers (Claudible family, Techopenclaw, DevGo), and various stream/usage hardening.
+- HTTPS support, additional providers (Claudible family, Techopenclaw, DevGo, Open Claude, Troll LLM), and various stream/usage hardening.
+- Upstream v0.4.77 merged: Vercel AI Gateway, MiMo Free provider, SSRF guard on web-fetch, OpenAI-Responses terminal synthesis, real client IP rate-limiting, and Kiro multi-endpoint failover.
 
 ## What this fork adds
 
@@ -86,7 +87,12 @@ Per-connection `setCacheKey` toggle activates Anthropic prompt caching for that 
 Files: `src/shared/components/EditConnectionModal.js`, `open-sse/utils/contextCompactor.js`, `src/app/api/settings/route.js`.
 
 ### 13. Misc hardening
-Tailwind/PostCSS config fix so the Docker build keeps Tailwind content scanning, `KEEP_BACKUPS` lowered from 5 → 2, retry on empty completions, fallback user message changed from `continue` to `continue where you left off`, empty stream detection timeout raised to 60s, `message_start` guaranteed to be emitted first in Claude-format streams, 502 returned on empty completion so combos fall through to the next model, timestamps added to error-log and console-log lines, and a `.next` exclusion in the Vitest glob.
+Tailwind/PostCSS config fix so the Docker build keeps Tailwind content scanning, `KEEP_BACKUPS` lowered from 5 → 2, retry on empty completions, fallback user message changed from `continue` to `continue where you left off`, empty stream detection timeout raised to 60s, `message_start` guaranteed to be emitted first in Claude-format streams, 502 returned on empty completion so combos fall through to the next model, timestamps added to error-log and console-log lines, a `.next` exclusion in the Vitest glob, and fetch connect timeout extended to 5 min for long-reasoning providers.
+
+### 14. Upstream v0.4.77 adopted features
+Features from upstream v0.4.77 now live in this fork: **Vercel AI Gateway** provider (embeddings, images, credit usage); **MiMo Free** no-auth provider; **SSRF guard** on web-fetch endpoints (`assertPublicUrl`); **OpenAI-Responses terminal synthesis** — synthesize `response.failed` + `[DONE]` when a Responses passthrough stream aborts/stalls before a terminal event; **real client IP rate-limiting** and remote default-password guard; **Kiro multi-endpoint failover** for GenerateAssistantResponse; **combo page** now shows explicit `kind="llm"` combos. Also adopted: `Vitest maxConcurrency: 60` and the `codex-refresh-token` test cleanup fix.
+
+Files: `open-sse/config/providerModels.js`, `src/shared/constants/providers.js`, `open-sse/services/usage.js`, `src/sse/handlers/fetch.js`, `open-sse/utils/stream.js`, `open-sse/handlers/chatCore/streamingHandler.js`, `src/app/(dashboard)/dashboard/combos/page.js`.
 
 ## What is unchanged from upstream
 

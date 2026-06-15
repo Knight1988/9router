@@ -8,6 +8,7 @@ import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthW
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS, THINKING_CONFIG } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
@@ -16,6 +17,7 @@ import ConnectionRow from "./ConnectionRow";
 import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
+import BulkImportCodexModal from "./BulkImportCodexModal";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
@@ -35,6 +37,7 @@ export default function ProviderDetailPage() {
   const [showIFlowCookieModal, setShowIFlowCookieModal] = useState(false);
   const [showAddApiKeyModal, setShowAddApiKeyModal] = useState(false);
   const [addConnectionError, setAddConnectionError] = useState("");
+  const [showBulkImportCodex, setShowBulkImportCodex] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showEditNodeModal, setShowEditNodeModal] = useState(false);
   const [showBulkProxyModal, setShowBulkProxyModal] = useState(false);
@@ -62,6 +65,7 @@ export default function ProviderDetailPage() {
   const [oneByOneResults, setOneByOneResults] = useState({});
   const [oneByOneSummary, setOneByOneSummary] = useState(null);
   const stopOneByOneRef = useRef(false);
+  const [importingQoderModels, setImportingQoderModels] = useState(false);
   const { copied, copy } = useCopyToClipboard();
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
@@ -416,6 +420,66 @@ export default function ProviderDetailPage() {
       }
     } catch (error) {
       console.log("Error deleting alias:", error);
+    }
+  };
+
+  // Fetch Qoder model list and automatically add to available models
+  const handleImportQoderModels = async () => {
+    if (importingQoderModels) return;
+    const activeConnection = connections.find((conn) => conn.isActive !== false);
+    if (!activeConnection) {
+      alert(translate("Please add an active Qoder connection first"));
+      return;
+    }
+
+    setImportingQoderModels(true);
+    try {
+      const res = await fetch(`/api/providers/${activeConnection.id}/models`);
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || translate("Failed to fetch models"));
+        return;
+      }
+      const models = data.models || [];
+      if (models.length === 0) {
+        alert(translate("No models returned"));
+        return;
+      }
+
+      let importedCount = 0;
+      for (const model of models) {
+        const modelId = model.id || model.name;
+        if (!modelId) continue;
+        
+        // Qoder model ID format may be "qoder/auto" or "auto", need to remove prefix
+        const cleanModelId = modelId.replace(/^qoder\//, "");
+        const fullModel = `${providerStorageAlias}/${cleanModelId}`;
+        
+        // Check if already exists
+        if (Object.values(modelAliases).includes(fullModel)) {
+          continue;
+        }
+        
+        // Use model ID as alias
+        const alias = cleanModelId;
+        if (modelAliases[alias]) {
+          continue;
+        }
+        
+        await handleSetAlias(cleanModelId, alias, providerStorageAlias);
+        importedCount += 1;
+      }
+      
+      if (importedCount === 0) {
+        alert(translate("All models already exist, no new models added"));
+      } else {
+        alert(translate("Successfully added") + ` ${importedCount} ` + translate("models"));
+      }
+    } catch (error) {
+      console.log("Error importing Qoder models:", error);
+      alert(translate("Error fetching models") + ": " + error.message);
+    } finally {
+      setImportingQoderModels(false);
     }
   };
 
@@ -937,6 +1001,20 @@ export default function ProviderDetailPage() {
           Add Model
         </button>
 
+        {/* Import Qoder models button — only show for qoder provider */}
+        {providerId === "qoder" && connections.some((conn) => conn.isActive !== false) && (
+          <button
+            onClick={handleImportQoderModels}
+            disabled={importingQoderModels}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-blue-500/40 px-3 py-2 text-xs text-blue-600 dark:text-blue-400 transition-colors hover:border-blue-500 hover:bg-blue-500/5 sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <span className="material-symbols-outlined text-sm" style={importingQoderModels ? { animation: "spin 1s linear infinite" } : undefined}>
+              {importingQoderModels ? "progress_activity" : "download"}
+            </span>
+            {importingQoderModels ? translate("Fetching...") : translate("Fetch Qoder Models")}
+          </button>
+        )}
+
         {/* Suggested models from provider API — show only models not yet added */}
         {suggestedModels.length > 0 && (() => {
           const addedFullModels = new Set(Object.values(modelAliases));
@@ -1275,6 +1353,11 @@ export default function ProviderDetailPage() {
                         Cookie
                       </Button>
                     )}
+                    {providerId === "codex" && (
+                      <Button size="sm" icon="playlist_add" variant="secondary" onClick={() => setShowBulkImportCodex(true)}>
+                        {translate("Bulk Add")}
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       icon="add"
@@ -1317,6 +1400,18 @@ export default function ProviderDetailPage() {
                       className="w-full sm:w-auto"
                     >
                       Cookie
+                    </Button>
+                  )}
+                  {providerId === "codex" && (
+                    <Button
+                      size="sm"
+                      icon="playlist_add"
+                      variant="secondary"
+                      onClick={() => setShowBulkImportCodex(true)}
+                      title={translate("Bulk import codex accounts from JSON")}
+                      className="w-full sm:w-auto"
+                    >
+                      {translate("Bulk Add")}
                     </Button>
                   )}
                   {hasDualAuthModes ? (
@@ -1477,6 +1572,14 @@ export default function ProviderDetailPage() {
             setShowAddCustomModel(false);
           }}
           onClose={() => setShowAddCustomModel(false)}
+        />
+      )}
+
+      {providerId === "codex" && (
+        <BulkImportCodexModal
+          isOpen={showBulkImportCodex}
+          onClose={() => setShowBulkImportCodex(false)}
+          onSuccess={fetchConnections}
         />
       )}
 

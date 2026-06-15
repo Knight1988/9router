@@ -1,6 +1,6 @@
 {
   "name": "9router-app",
-  "version": "0.4.66",
+  "version": "0.4.80",
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
@@ -10,7 +10,9 @@
     "start:http": "cross-env NODE_ENV=production next start",
     "dev:bun": "bun --bun next dev --webpack --port 20128",
     "build:bun": "NODE_ENV=production bun --bun next build --webpack",
-    "start:bun": "NODE_ENV=production bun ./server-https.js"
+    "start:bun": "NODE_ENV=production bun ./server-https.js",
+    "cli:pack": "npm --prefix cli run pack:cli",
+    "cli:publish": "npm --prefix cli run publish:cli"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

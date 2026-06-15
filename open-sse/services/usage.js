@@ -5,6 +5,7 @@
 import { CLIENT_METADATA, getPlatformUserAgent } from "../config/appConstants.js";
 import { fetchWithRetry } from "../utils/retry.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { resolveDefaultProfileArn } from "../config/kiroConstants.js";
 
 // GitHub API config
 const GITHUB_CONFIG = {
@@ -29,6 +30,11 @@ const MINIMAX_USAGE_URLS = {
     "https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains",
   ],
 };
+
+// Vercel AI Gateway credits endpoint
+// Returns { balance: "95.50", total_used: "4.50" } (USD as decimal strings).
+// Docs: https://vercel.com/docs/ai-gateway/usage
+const VERCEL_AI_GATEWAY_CREDITS_URL = "https://ai-gateway.vercel.sh/v1/credits";
 
 // Antigravity API config (from Quotio)
 const ANTIGRAVITY_CONFIG = {
@@ -136,6 +142,8 @@ export async function getUsageForProvider(connection, options = {}) {
     case "claude-claudible":
     case "codex-claudible":
       return await getClaudibleUsage(apiKey, proxyOptions);
+    case "vercel-ai-gateway":
+      return await getVercelAiGatewayUsage(apiKey, proxyOptions);
     default:
       return { message: `Usage API not implemented for ${provider}` };
   }
@@ -444,6 +452,7 @@ async function getAntigravityUsage(accessToken, providerSpecificData, proxyOptio
       const importantModels = [
         'gemini-3-flash-agent',
         'gemini-3.5-flash-low',
+        'gemini-3.5-flash-extra-low',
         'gemini-pro-agent',
         'gemini-3.1-pro-low',
         'claude-sonnet-4-6',
@@ -1048,10 +1057,8 @@ function parseKiroQuotaData(data) {
 }
 
 async function getKiroUsage(accessToken, providerSpecificData, proxyOptions = null) {
-  // Default profileArn fallback
-  const DEFAULT_PROFILE_ARN = "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
-  const profileArn = providerSpecificData?.profileArn || DEFAULT_PROFILE_ARN;
   const authMethod = providerSpecificData?.authMethod || "builder-id";
+  const profileArn = providerSpecificData?.profileArn || resolveDefaultProfileArn(authMethod);
 
   const getUsageParams = new URLSearchParams({
     isEmailRequired: "true",
@@ -1369,6 +1376,12 @@ function formatMiniMaxQuotaName(model) {
   const rawName = getMiniMaxModelName(model);
   if (!rawName) return "MiniMax";
 
+  // M3+ shared quota pool: MiniMax reports M-series as a single wildcard
+  // bucket ("MiniMax-M*"). Newer responses rename it to plain "general".
+  // Render both as a friendly series label rather than leaking the
+  // asterisk or the vague "general" word to the UI.
+  if (rawName === "MiniMax-M*" || rawName === "general") return "M-series";
+
   return rawName
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
@@ -1377,6 +1390,15 @@ function formatMiniMaxQuotaName(model) {
     .replace(/\bTo\b/g, "to")
     .replace(/\bTts\b/g, "TTS")
     .replace(/\bHd\b/g, "HD");
+}
+
+function getMiniMaxProvidedPercent(model, snakeKey, camelKey) {
+  if (!model || typeof model !== "object") return null;
+  const raw = model[snakeKey] ?? model[camelKey];
+  if (raw === null || raw === undefined) return null;
+  const num = Number(raw);
+  if (!Number.isFinite(num)) return null;
+  return Math.max(0, Math.min(100, num));
 }
 
 function getMiniMaxSessionTotal(model) {
@@ -1388,7 +1410,12 @@ function getMiniMaxWeeklyTotal(model) {
 }
 
 function hasMiniMaxQuota(model) {
-  return getMiniMaxSessionTotal(model) > 0 || getMiniMaxWeeklyTotal(model) > 0;
+  // Old format has real count totals; M3-era M-series buckets ship percent-only
+  // (count fields are 0) so accept those too.
+  if (getMiniMaxSessionTotal(model) > 0 || getMiniMaxWeeklyTotal(model) > 0) return true;
+  if (getMiniMaxProvidedPercent(model, "current_interval_remaining_percent", "currentIntervalRemainingPercent") !== null) return true;
+  if (getMiniMaxProvidedPercent(model, "current_weekly_remaining_percent", "currentWeeklyRemainingPercent") !== null) return true;
+  return false;
 }
 
 function getMiniMaxResetAt(model, capturedAtMs, remainsSnake, remainsCamel, endSnake, endCamel) {
@@ -1397,30 +1424,57 @@ function getMiniMaxResetAt(model, capturedAtMs, remainsSnake, remainsCamel, endS
   return parseResetTime(getMiniMaxField(model, endSnake, endCamel));
 }
 
-function buildMiniMaxQuota(total, count, resetAt, countMeansRemaining) {
+function buildMiniMaxQuota(total, count, resetAt, countMeansRemaining, providedPercent = null) {
   const safeTotal = Math.max(0, total);
   const used = countMeansRemaining ? Math.max(safeTotal - count, 0) : Math.min(Math.max(0, count), safeTotal);
   const remaining = Math.max(safeTotal - used, 0);
+  // M-series buckets ship percent-only (count = 0). Prefer the upstream value
+  // when present, otherwise fall back to the computed percentage. When the
+  // quota is unbounded (no count) and no upstream percent is available, surface
+  // the percent anyway as long as it is defined.
+  const remainingPercentage = providedPercentage(providedPercent, remaining, safeTotal);
   return {
     used,
     total: safeTotal,
     remaining,
-    remainingPercentage: safeTotal > 0 ? Math.max(0, Math.min(100, (remaining / safeTotal) * 100)) : 0,
+    remainingPercentage,
     resetAt,
     unlimited: false,
   };
 }
 
-function addMiniMaxQuota(quotas, key, model, getTotal, countSnake, countCamel, resetArgs, countMeansRemaining) {
+function providedPercentage(provided, remaining, total) {
+  if (provided !== null && provided !== undefined && Number.isFinite(provided)) {
+    return Math.max(0, Math.min(100, provided));
+  }
+  return total > 0 ? Math.max(0, Math.min(100, (remaining / total) * 100)) : 0;
+}
+
+function addMiniMaxQuota(quotas, key, model, getTotal, countSnake, countCamel, percentSnake, percentCamel, resetArgs, countMeansRemaining) {
   const total = getTotal(model);
-  if (total <= 0) return;
+  const providedPercent = getMiniMaxProvidedPercent(model, percentSnake, percentCamel);
+  if (total <= 0 && providedPercent === null) return;
 
   const count = Math.max(0, Number(getMiniMaxField(model, countSnake, countCamel)) || 0);
+  let effectiveTotal = total;
+  let effectiveCount = count;
+  if (total <= 0) {
+    // M-series bucket: API only ships *_remaining_percent (count = 0). Normalize
+    // to total=100. The downstream buildMiniMaxQuota treats the count as
+    // "used" or "remaining" depending on countMeansRemaining, so the synthetic
+    // count has to match that semantic — otherwise the UI flips the percentage.
+    effectiveTotal = 100;
+    const pct = providedPercent;
+    effectiveCount = countMeansRemaining
+      ? Math.round(effectiveTotal * (pct / 100))
+      : Math.round(effectiveTotal * (1 - pct / 100));
+  }
   quotas[key] = buildMiniMaxQuota(
-    total,
-    count,
+    effectiveTotal,
+    effectiveCount,
     getMiniMaxResetAt(model, ...resetArgs),
-    countMeansRemaining
+    countMeansRemaining,
+    providedPercent
   );
 }
 
@@ -1496,6 +1550,8 @@ async function getMiniMaxUsage(apiKey, provider, proxyOptions = null) {
           getMiniMaxSessionTotal,
           "current_interval_usage_count",
           "currentIntervalUsageCount",
+          "current_interval_remaining_percent",
+          "currentIntervalRemainingPercent",
           [capturedAtMs, "remains_time", "remainsTime", "end_time", "endTime"],
           countMeansRemaining
         );
@@ -1507,6 +1563,8 @@ async function getMiniMaxUsage(apiKey, provider, proxyOptions = null) {
           getMiniMaxWeeklyTotal,
           "current_weekly_usage_count",
           "currentWeeklyUsageCount",
+          "current_weekly_remaining_percent",
+          "currentWeeklyRemainingPercent",
           [capturedAtMs, "weekly_remains_time", "weeklyRemainsTime", "weekly_end_time", "weeklyEndTime"],
           countMeansRemaining
         );
@@ -1524,6 +1582,88 @@ async function getMiniMaxUsage(apiKey, provider, proxyOptions = null) {
   }
 
   return { message: lastErrorMessage ? `MiniMax connected. Unable to fetch usage: ${lastErrorMessage}` : "MiniMax connected. Unable to fetch usage." };
+}
+
+/**
+ * Vercel AI Gateway usage — credit balance for the API key
+ *
+ * Calls GET /v1/credits which returns:
+ *   { "balance": "95.50", "total_used": "4.50" }   (USD as decimal strings)
+ *
+ * We surface this as a single "Balance ($)" quota row so the existing
+ * QuotaTable / progress-bar UI can render it. used = total_used,
+ * total = balance + total_used (the original credit allotment), so the
+ * remaining percentage equals balance / total.
+ *
+ * Docs: https://vercel.com/docs/ai-gateway/usage
+ */
+async function getVercelAiGatewayUsage(apiKey, proxyOptions = null) {
+  if (!apiKey) {
+    return { message: "Vercel AI Gateway API key not available." };
+  }
+
+  try {
+    const response = await proxyAwareFetch(VERCEL_AI_GATEWAY_CREDITS_URL, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
+    }, proxyOptions);
+
+    if (response.status === 401 || response.status === 403) {
+      return { message: "Vercel AI Gateway API key invalid or expired." };
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      const trimmed = errorText ? `: ${errorText.slice(0, 200)}` : "";
+      return { message: `Vercel AI Gateway credits API error (${response.status})${trimmed}` };
+    }
+
+    const data = await response.json();
+
+    // Vercel returns numeric strings; coerce safely.
+    const balance = Number(data?.balance) || 0;
+    const totalUsed = Number(data?.total_used) || 0;
+
+    // Vercel gives $5/month free credit. The API doesn't return the
+    // monthly allocation so we use the known constant as the denominator.
+    const MONTHLY_CREDIT = 5;
+    const remainingPercentage = (balance / MONTHLY_CREDIT) * 100;
+
+    if (balance <= 0 && totalUsed <= 0) {
+      return {
+        plan: "Pay-as-you-go",
+        message: "Vercel AI Gateway connected. No credit allocation found (BYOK or unfunded account).",
+        quotas: {},
+      };
+    }
+
+    // "Used (USD)": how much has been spent this month (no fixed cap → unlimited).
+    // "Remaining (USD)": balance remaining out of the $5 monthly allocation.
+    return {
+      plan: "Pay-as-you-go",
+      quotas: {
+        "Used (USD)": {
+          used: totalUsed,
+          total: 0,
+          remaining: 0,
+          remainingPercentage: 100,
+          unlimited: true,
+        },
+        "Remaining (USD)": {
+          used: balance,
+          total: MONTHLY_CREDIT,
+          remaining: balance,
+          remainingPercentage,
+          unlimited: false,
+        },
+      },
+    };
+  } catch (error) {
+    return { message: `Vercel AI Gateway error: ${error.message}` };
+  }
 }
 
 /**
