@@ -263,8 +263,8 @@ export default function ProviderLimits() {
     providerFilteredConnections: 0,
   });
 
-  const intervalRef = useRef(null);
-  const countdownRef = useRef(null);
+  const secondsLeftRef = useRef(60);
+  const hiddenSinceRef = useRef(null);
 
   const fetchConnections = useCallback(
     async (targetPage) => {
@@ -564,6 +564,7 @@ export default function ProviderLimits() {
     if (refreshingAll) return;
 
     setRefreshingAll(true);
+    secondsLeftRef.current = 60;
     setCountdown(60);
 
     try {
@@ -684,64 +685,48 @@ export default function ProviderLimits() {
     window.localStorage.setItem(AUTO_REFRESH_STORAGE_KEY, String(autoRefresh));
   }, [autoRefresh, hasHydratedAutoRefresh]);
 
-  // Auto-refresh interval
+  // Single consolidated auto-refresh ticker.
+  // One 1s interval drives both the countdown and the 60s refresh trigger.
+  // The ticker skips work while the tab is hidden (no background API calls, no
+  // double timers when the page is opened in a background tab and later focused).
+  // On returning to the tab after a full interval, refresh immediately (stale-gated).
+  // Single interval id + single listener, cleaned up together → no orphan/leak.
   useEffect(() => {
-    if (!hasHydratedAutoRefresh || !autoRefresh) {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-      if (countdownRef.current) {
-        clearInterval(countdownRef.current);
-        countdownRef.current = null;
-      }
-      return;
-    }
+    if (!hasHydratedAutoRefresh || !autoRefresh) return;
 
-    // Main refresh interval — call via ref so recreating refreshAll doesn't
-    // restart this effect and immediately re-fire the interval.
-    intervalRef.current = setInterval(() => {
-      refreshAllRef.current?.();
-    }, REFRESH_INTERVAL_MS);
+    secondsLeftRef.current = 60;
+    setCountdown(60);
 
-    // Countdown interval
-    countdownRef.current = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) return 60;
-        return prev - 1;
-      });
+    const id = setInterval(() => {
+      if (document.hidden) return;            // pause while hidden
+      secondsLeftRef.current -= 1;
+      if (secondsLeftRef.current <= 0) {
+        secondsLeftRef.current = 60;
+        refreshAllRef.current?.();            // refreshingAll-guarded; safe to call
+      }
+      setCountdown(secondsLeftRef.current);
     }, 1000);
 
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      if (countdownRef.current) clearInterval(countdownRef.current);
-    };
-  }, [autoRefresh, hasHydratedAutoRefresh]); // refreshAll intentionally omitted — accessed via ref
-
-  // Pause auto-refresh when tab is hidden (Page Visibility API)
-  useEffect(() => {
-    const handleVisibilityChange = () => {
+    const onVisibility = () => {
       if (document.hidden) {
-        if (intervalRef.current) {
-          clearInterval(intervalRef.current);
-          intervalRef.current = null;
+        hiddenSinceRef.current = Date.now();
+      } else {
+        const hiddenMs = hiddenSinceRef.current ? Date.now() - hiddenSinceRef.current : 0;
+        hiddenSinceRef.current = null;
+        if (hiddenMs >= REFRESH_INTERVAL_MS) {
+          // Tab was hidden for a full interval — data may be stale; refresh immediately.
+          secondsLeftRef.current = 60;
+          setCountdown(60);
+          refreshAllRef.current?.();
         }
-        if (countdownRef.current) {
-          clearInterval(countdownRef.current);
-          countdownRef.current = null;
-        }
-      } else if (autoRefresh && hasHydratedAutoRefresh) {
-        // Resume auto-refresh when tab becomes visible
-        intervalRef.current = setInterval(() => refreshAllRef.current?.(), REFRESH_INTERVAL_MS);
-        countdownRef.current = setInterval(() => {
-          setCountdown((prev) => (prev <= 1 ? 60 : prev - 1));
-        }, 1000);
+        // Shorter hide: leave secondsLeftRef as-is; the ticker resumes from the paused value.
       }
     };
+    document.addEventListener("visibilitychange", onVisibility);
 
-    document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [autoRefresh, hasHydratedAutoRefresh]); // refreshAll intentionally omitted — accessed via ref
 
