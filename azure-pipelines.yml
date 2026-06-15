@@ -151,15 +151,19 @@ stages:
               echo "Triggering Dockge update (pull + redeploy) for stack ${STACK_NAME}..."
               for i in $(seq 1 $MAX_RETRIES); do
                 echo "Attempt $i of $MAX_RETRIES..."
-                RESPONSE=$(curl -fsSL -X POST --max-time 120 \
+                HTTP_CODE=$(curl -sSL -o /tmp/dockge_response.json -w "%{http_code}" \
+                  -X POST --connect-timeout 30 --max-time 300 \
                   -H "Authorization: Bearer $(DOCKGE_API_TOKEN)" \
-                  "${DOCKGE_URL}/api/stacks/${STACK_NAME}/update" 2>&1)
+                  "${DOCKGE_URL}/api/stacks/${STACK_NAME}/update" 2>/tmp/dockge_curl_err.txt)
+                CURL_EXIT=$?
+                RESPONSE=$(cat /tmp/dockge_response.json 2>/dev/null || true)
+                CURL_ERR=$(cat /tmp/dockge_curl_err.txt 2>/dev/null || true)
+                echo "HTTP ${HTTP_CODE}: ${RESPONSE}${CURL_ERR}"
                 if echo "$RESPONSE" | grep -q '"ok":[[:space:]]*true'; then
-                  echo "$RESPONSE"
                   echo "Dockge redeploy successful."
                   exit 0
                 fi
-                echo "Attempt $i failed: $RESPONSE"
+                echo "Attempt $i failed (curl exit ${CURL_EXIT}, HTTP ${HTTP_CODE})"
                 if [ $i -lt $MAX_RETRIES ]; then
                   echo "Waiting ${RETRY_DELAY}s before retry..."
                   sleep $RETRY_DELAY
