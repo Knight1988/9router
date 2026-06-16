@@ -47,6 +47,30 @@ for (const entry of REGISTRY) {
 // TTS model/voice tables keyed by special names (openai-tts-models, ...), not provider ids
 Object.assign(PROVIDER_MODELS, buildTtsProviderModels());
 
+// Beta-only provider transports not yet in the registry — supplement PROVIDERS directly.
+// Format/URL taken from the pre-registry providers.js (open-sse/config/providers.js@beta).
+const CLAUDE_API_HEADERS = {
+  "Anthropic-Version": "2023-06-01",
+  "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
+};
+const CLAUDIBLE_HEADERS = {
+  ...CLAUDE_API_HEADERS,
+  "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
+  "X-App": "cli",
+};
+Object.assign(PROVIDERS, {
+  techopenclaw:         { format: "claude",           baseUrl: "https://api.techopenclaw.com/v1/messages",             headers: { ...CLAUDE_API_HEADERS } },
+  "vip-claudible":     { format: "claude",           baseUrl: "https://vip.claudible.io/v1/messages",                 headers: { ...CLAUDIBLE_HEADERS } },
+  "cc-claudible":      { format: "claude",           baseUrl: "https://cc.claudible.io/v1/messages",                  headers: { ...CLAUDIBLE_HEADERS } },
+  "cn-claudible":      { format: "openai",           baseUrl: "https://cn.claudible.io/v1/chat/completions" },
+  "minimax-claudible": { format: "claude",           baseUrl: "https://minimax.claudible.io/v1/messages",             headers: { ...CLAUDIBLE_HEADERS } },
+  "claude-claudible":  { format: "claude",           baseUrl: "https://claude.claudible.io/v1/messages",              headers: { ...CLAUDIBLE_HEADERS } },
+  "codex-claudible":   { format: "openai-responses", baseUrl: "https://codex.claudible.io/v1/responses" },
+  "open-claude":       { format: "openai",           baseUrl: "https://open-claude.com/v1/chat/completions",          retry: { 503: 3 } },
+  "troll-llm":         { format: "openai",           baseUrl: "https://chat.trollllm.xyz/v1/chat/completions" },
+  devgo:               { format: "openai",           baseUrl: "https://9router.tools.devgovietnam.io.vn/v2/chat/completions", retry: { 503: 3, 429: 2 } },
+});
+
 // Beta-only providers not yet in the registry — supplement model lists directly
 Object.assign(PROVIDER_MODELS, {
   techopenclaw: [
