@@ -7,7 +7,10 @@ import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./str
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
+import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
+
 export { COLORS, formatSSE };
+export { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER };
 
 // sharedEncoder is stateless — safe to share across streams
 const sharedEncoder = new TextEncoder();
@@ -276,6 +279,18 @@ export function createSSEStream(options = {}) {
         // Extract usage
         const extracted = extractUsage(parsed, body);
         if (extracted) { console.log("[USAGE-TRANSLATE] Extracted from chunk:", JSON.stringify(extracted)); state.usage = extracted; } // Keep original usage for logging
+
+        // Responses same-format passthrough: re-emit with original event framing
+        if (keepsOpenAIResponsesFormat && openAIResponsesEventName) {
+          const output = formatSSE({ event: openAIResponsesEventName, data: parsed }, sourceFormat);
+          reqLogger?.appendConvertedChunk?.(output);
+          controller.enqueue(sharedEncoder.encode(output));
+          currentOpenAIResponsesEvent = null;
+          sseEmittedCount++;
+          continue;
+        }
+
+        currentOpenAIResponsesEvent = null;
 
         // Responses same-format passthrough: re-emit with original event framing
         if (keepsOpenAIResponsesFormat && openAIResponsesEventName) {

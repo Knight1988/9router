@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { prepareClaudeRequest } from "../../open-sse/translator/helpers/claudeHelper.js";
+import { prepareClaudeRequest } from "../../open-sse/translator/formats/claude.js";
 
 function makeBody(thinking, extra = {}) {
   return {

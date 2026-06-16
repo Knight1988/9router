@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { filterToOpenAIFormat } from "../../open-sse/translator/helpers/openaiHelper.js";
+import { filterToOpenAIFormat } from "../../open-sse/translator/formats/openai.js";
 
 function makeBody(thinking, extra = {}) {
   return {

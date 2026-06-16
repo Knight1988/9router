@@ -1,10 +1,11 @@
 import { HTTP_STATUS, DEFAULT_RETRY_CONFIG, resolveRetryEntry, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { shouldRefreshCredentials } from "../services/oauthCredentialManager.js";
 import { proxyAwareRawFetch } from "../utils/proxyFetch.js";
 import { addJitter, abortableSleep } from "../utils/retry.js";
-import { shouldRefreshCredentials } from "../services/oauthCredentialManager.js";
 import { dbg } from "../utils/debugLog.js";
 import { decompressResponse } from "../utils/decompress.js";
 import { mergeForwardedHeaders } from "../utils/clientDetector.js";
+import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
 
 /**
  * BaseExecutor - Base class for provider executors
@@ -30,13 +31,13 @@ export class BaseExecutor {
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     if (this.provider?.startsWith?.("openai-compatible-")) {
-      const baseUrl = credentials?.providerSpecificData?.baseUrl || "https://api.openai.com/v1";
+      const baseUrl = credentials?.providerSpecificData?.baseUrl || OPENAI_COMPAT_BASE;
       const normalized = baseUrl.replace(/\/$/, "");
       const path = this.provider.includes("responses") ? "/responses" : "/chat/completions";
       return `${normalized}${path}`;
     }
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
-      const baseUrl = credentials?.providerSpecificData?.baseUrl || "https://api.anthropic.com/v1";
+      const baseUrl = credentials?.providerSpecificData?.baseUrl || ANTHROPIC_COMPAT_BASE;
       const normalized = baseUrl.replace(/\/$/, "");
       return `${normalized}/messages`;
     }
@@ -58,7 +59,7 @@ export class BaseExecutor {
         headers["Authorization"] = `Bearer ${credentials.accessToken}`;
       }
       if (!headers["anthropic-version"]) {
-        headers["anthropic-version"] = "2023-06-01";
+        headers["anthropic-version"] = ANTHROPIC_API_VERSION;
       }
     } else {
       // Standard Bearer token auth for other providers
@@ -121,12 +122,20 @@ export class BaseExecutor {
     credentials = await this.preExecute(credentials);
 
     // Schedule retry via retryConfig[statusKey]. Returns true when caller should `urlIndex--; continue`
-    const tryRetry = async (urlIndex, statusKey, reason) => {
+    // response (optional) lets a subclass hook compute a dynamic delay (e.g. antigravity Retry-After).
+    const tryRetry = async (urlIndex, statusKey, reason, response = null) => {
       const { attempts, delayMs } = resolveRetryEntry(retryConfig[statusKey]);
       if (attempts <= 0 || retryAttemptsByUrl[urlIndex] >= attempts) return false;
+      // Hook: subclass may derive delay from the response (headers/body). null → skip retry, use fallback.
+      let waitMs = delayMs;
+      if (response && this.computeRetryDelay) {
+        const dynamic = await this.computeRetryDelay(response, retryAttemptsByUrl[urlIndex] + 1, delayMs);
+        if (dynamic === false) return false; // hook vetoes retry (e.g. Retry-After too long)
+        if (dynamic != null) waitMs = dynamic;
+      }
       retryAttemptsByUrl[urlIndex]++;
       // Equal jitter: random between delayMs/2 and delayMs to prevent thundering herd
-      const jitteredDelay = addJitter(delayMs, { mode: 'equal' });
+      const jitteredDelay = addJitter(waitMs, { mode: 'equal' });
       log?.debug?.("RETRY", `${reason} retry ${retryAttemptsByUrl[urlIndex]}/${attempts} after ${(jitteredDelay / 1000).toFixed(1)}s`);
       const { aborted } = await abortableSleep(jitteredDelay, signal);
       if (aborted) {
@@ -174,7 +183,7 @@ export class BaseExecutor {
         const cl = response.headers?.get?.("content-length") || "?";
         dbg("FETCH", `${this.provider.toUpperCase()} ← ${response.status} | ttft=${Date.now() - fetchT0}ms | ct=${ct} | cl=${cl}`);
 
-        if (await tryRetry(urlIndex, response.status, `status ${response.status}`)) { urlIndex--; continue; }
+        if (await tryRetry(urlIndex, response.status, `status ${response.status}`, response)) { urlIndex--; continue; }
 
         if (this.shouldRetry(response.status, urlIndex)) {
           log?.debug?.("RETRY", `${response.status} on ${url}, trying fallback ${urlIndex + 1}`);

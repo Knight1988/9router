@@ -5,7 +5,7 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
-import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, Toggle, ConfirmModal } from "@/shared/components";
+import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, Toggle, ConfirmModal, CapacityBadges } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
@@ -29,6 +29,7 @@ export default function CombosPage() {
   const [editingCombo, setEditingCombo] = useState(null);
   const [activeProviders, setActiveProviders] = useState([]);
   const [comboStrategies, setComboStrategies] = useState({});
+  const [modelCaps, setModelCaps] = useState({});
   const [confirmState, setConfirmState] = useState(null);
   const [smartRoutingErrors, setSmartRoutingErrors] = useState({});
   const [smartRoutingRefreshing, setSmartRoutingRefreshing] = useState({});
@@ -40,10 +41,11 @@ export default function CombosPage() {
 
   const fetchData = async () => {
     try {
-      const [combosRes, providersRes, settingsRes] = await Promise.all([
+      const [combosRes, providersRes, settingsRes, modelsRes] = await Promise.all([
         fetch("/api/combos"),
         fetch("/api/providers"),
         fetch("/api/settings"),
+        fetch("/api/models"),
       ]);
       const combosData = await combosRes.json();
       const providersData = await providersRes.json();
@@ -53,6 +55,13 @@ export default function CombosPage() {
       if (combosRes.ok) setCombos((combosData.combos || []).filter(c => !c.kind || c.kind === "llm"));
       if (providersRes.ok) {
         setActiveProviders(providersData.connections || []);
+      }
+      if (modelsRes.ok) {
+        const md = await modelsRes.json();
+        // Build fullModel -> caps map for badge lookup
+        const map = {};
+        for (const m of md.models || []) if (m.caps) map[m.fullModel] = m.caps;
+        setModelCaps(map);
       }
       setComboStrategies(settingsData.comboStrategies || {});
     } catch (error) {
@@ -222,7 +231,7 @@ export default function CombosPage() {
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold">Combos</h1>
           <p className="text-sm text-text-muted mt-1">
-            Create model combos with fallback support
+            Create model combos with fallback support — auto-adapts per request: routes images to vision models and web search to search-capable models.
           </p>
         </div>
         <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto">
@@ -250,6 +259,7 @@ export default function CombosPage() {
             <ComboCard
               key={combo.id}
               combo={combo}
+              modelCaps={modelCaps}
               copied={copied}
               onCopy={copy}
               onEdit={() => setEditingCombo(combo)}
@@ -331,7 +341,7 @@ function StrategySelector({ strategy, onChange }) {
   );
 }
 
-function ComboCard({ combo, copied, onCopy, onEdit, onDelete, strategy, onSetStrategy, smartRouting, smartRoutingError, smartRoutingRefreshing, onSmartRoutingRefresh }) {
+function ComboCard({ combo, modelCaps = {}, copied, onCopy, onEdit, onDelete, strategy, onSetStrategy, smartRouting, smartRoutingError, smartRoutingRefreshing, onSmartRoutingRefresh }) {
   const isSmartRouting = strategy === "smart-routing";
   const updatedAt = smartRouting?.smartPriorityUpdatedAt;
   const srError = smartRouting?.smartPriorityError;
@@ -353,10 +363,11 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete, strategy, onSetStr
                 <span className="text-xs text-text-muted italic">No models</span>
               ) : (
                 displayedModels.slice(0, 3).map((model, index) => (
-                  <code key={index} className="max-w-full truncate rounded bg-black/5 px-1.5 py-0.5 font-mono text-[10px] text-text-muted dark:bg-white/5 sm:max-w-[220px]">
+                  <code key={index} className="inline-flex items-center gap-1 max-w-full truncate rounded bg-black/5 px-1.5 py-0.5 font-mono text-[10px] text-text-muted dark:bg-white/5 sm:max-w-[220px]">
                     {isSmartRouting && index === 0 && displayedModels.length > 1 ? (
                       <span className="text-emerald-600 dark:text-emerald-400">{model}</span>
                     ) : model}
+                    <CapacityBadges caps={modelCaps[model]} />
                   </code>
                 ))
               )}

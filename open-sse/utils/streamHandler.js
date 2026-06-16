@@ -112,9 +112,6 @@ export function createDisconnectAwareStream(transformStream, streamController, o
   return new ReadableStream({
     async pull(controller) {
       if (!streamController.isConnected()) {
-        if (process.env.DEBUG === "1") {
-          console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] 🔍 [DEBUG-disconnectStream] isConnected=false → closing stream`);
-        }
         emitTerminal(controller);
         controller.close();
         return;
@@ -135,7 +132,10 @@ export function createDisconnectAwareStream(transformStream, streamController, o
         controller.enqueue(value);
       } catch (error) {
         const wasConnected = streamController.isConnected();
-        streamController.handleError(error);
+        // Controller already closed = downstream ended; not an upstream error, skip noisy log.
+        const msg0 = error?.message || "";
+        const isControllerClosed = msg0.includes("already closed") || msg0.includes("Invalid state");
+        if (!isControllerClosed) streamController.handleError(error);
         reader.cancel().catch(() => {});
         writer.abort().catch(() => {});
 

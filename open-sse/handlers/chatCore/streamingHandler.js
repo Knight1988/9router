@@ -10,12 +10,16 @@ import { saveRequestDetail } from "@/lib/usageDb.js";
 import { createErrorResult } from "../../utils/error.js";
 import { logAbnormal, ABNORMAL_SIGNALS, isAbnormalFinishReason } from "../../utils/abnormalLogger.js";
 import { recordRequestResult } from "@/lib/smartRouting/healthTracker.js";
+import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
 
-const SSE_HEADERS = {
-  "Content-Type": "text/event-stream",
-  "Cache-Control": "no-cache",
-  "Connection": "keep-alive",
-  "Access-Control-Allow-Origin": "*"
+// Codex returns Responses API SSE → which client format to translate INTO, by request sourceFormat.
+// Gemini-family all map to ANTIGRAVITY decoder; unknown sources fall back to OPENAI.
+const CODEX_SOURCE_TO_TARGET = {
+  [FORMATS.OPENAI_RESPONSES]: FORMATS.OPENAI_RESPONSES,
+  [FORMATS.CLAUDE]: FORMATS.CLAUDE,
+  [FORMATS.ANTIGRAVITY]: FORMATS.ANTIGRAVITY,
+  [FORMATS.GEMINI]: FORMATS.ANTIGRAVITY,
+  [FORMATS.GEMINI_CLI]: FORMATS.ANTIGRAVITY,
 };
 
 const EMPTY_STREAM_TIMEOUT_MS = 60_000;
@@ -26,14 +30,12 @@ const NO_TIMEOUT_PROVIDERS = new Set(["techopenclaw"]);
  */
 function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, onFirstContent }) {
   const isDroidCLI = userAgent?.toLowerCase().includes("droid") || userAgent?.toLowerCase().includes("codex-cli");
-  const needsCodexTranslation = provider === "codex" && targetFormat === FORMATS.OPENAI_RESPONSES && !isDroidCLI;
+  // Responses-API providers (e.g. codex) emit Responses SSE → translate into client format
+  const isResponsesProvider = PROVIDERS[provider]?.format === FORMATS.OPENAI_RESPONSES;
+  const needsCodexTranslation = isResponsesProvider && targetFormat === FORMATS.OPENAI_RESPONSES && !isDroidCLI;
 
   if (needsCodexTranslation) {
-    let codexTarget;
-    if (sourceFormat === FORMATS.OPENAI_RESPONSES) codexTarget = FORMATS.OPENAI_RESPONSES;
-    else if (sourceFormat === FORMATS.CLAUDE) codexTarget = FORMATS.CLAUDE;
-    else if (sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI) codexTarget = FORMATS.ANTIGRAVITY;
-    else codexTarget = FORMATS.OPENAI;
+    const codexTarget = CODEX_SOURCE_TO_TARGET[sourceFormat] || FORMATS.OPENAI;
     return createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, onFirstContent);
   }
 
@@ -166,14 +168,13 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   const onAbortTerminal = isResponsesPassthrough ? buildAbortedResponsesTerminalBytes : null;
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
   const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
-
   const timeoutMs = NO_TIMEOUT_PROVIDERS.has(provider) ? null : EMPTY_STREAM_TIMEOUT_MS;
   const { result: guardResult, reader, buffered } = await detectContent(transformedBody, timeoutMs, onFirstContentSignal);
 
   if (guardResult.kind === "empty") {
     const reason = guardResult.reason === "timeout" ? "timeout waiting for first content" : "stream ended with no content";
     try { reader.releaseLock(); } catch {}
-    
+
     logAbnormal({
       signal: ABNORMAL_SIGNALS.EMPTY_STREAM,
       provider,
