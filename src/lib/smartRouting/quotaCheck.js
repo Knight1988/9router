@@ -1,6 +1,7 @@
 import { getProviderConnections, getCombos } from "@/lib/localDb";
 import { USAGE_SUPPORTED_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
 import { fetchUsageForConnection, bestRemainingPercentage } from "@/lib/usage/connectionUsage";
+import { getCachedUsage, setCachedUsage } from "@/lib/usage/quotaCache";
 import { expandComboModels } from "open-sse/services/combo.js";
 import { applyHealthScoring } from "./healthTracker.js";
 
@@ -63,9 +64,14 @@ export async function validateComboForSmartRouting(combo) {
 /**
  * Fetch the best remaining-quota percentage for a single model string.
  * Uses the best active connection for the model's provider.
+ * Reads from the shared quota cache when the entry is fresh (≤ 2× the cache
+ * scheduler interval, default 10 min); falls through to a live fetch only on a
+ * cold cache, ensuring SmartRouting sees the same numbers as the dashboard.
  * @param {string} modelStr
  * @returns {Promise<{ ok: boolean, percent: number|null, reason?: string }>}
  */
+const QUOTA_CACHE_STALE_MS = 10 * 60 * 1000; // 2× default 5-min interval
+
 export async function getProviderQuotaPercentForModel(modelStr) {
   const providerId = modelStringToProviderId(modelStr);
   if (!providerId) return { ok: false, percent: null, reason: "Cannot resolve provider" };
@@ -93,7 +99,15 @@ export async function getProviderQuotaPercentForModel(modelStr) {
 
   for (const conn of connections) {
     try {
-      const usage = await fetchUsageForConnection(conn);
+      // Read from shared cache first (avoids double-fetching while the sweep is running)
+      const cached = getCachedUsage(conn.id, { maxAgeMs: QUOTA_CACHE_STALE_MS });
+      let usage;
+      if (cached) {
+        usage = cached.usage;
+      } else {
+        usage = await fetchUsageForConnection(conn);
+        setCachedUsage(conn.id, usage, null);
+      }
       const pct = bestRemainingPercentage(usage);
       if (pct !== null) {
         bestPercent = bestPercent === null ? pct : Math.max(bestPercent, pct);

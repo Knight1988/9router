@@ -37,6 +37,7 @@ const DEFAULT_SETTINGS = {
   cavemanEnabled: false,
   cavemanLevel: "full",
   smartRoutingIntervalMinutes: 15,
+  quotaRefreshIntervalMinutes: 5,
 };
 
 async function readRaw() {

@@ -419,7 +419,58 @@ export default function ProviderLimits() {
     }
   }, []);
 
-  // Refresh quota for a specific provider
+  /**
+   * Apply a snapshot response from /api/usage/snapshot to component state.
+   * `connections` is the current visible list; `snapshot` is the raw server response
+   * keyed by connection id with { usage, fetchedAt, error } entries.
+   * Converts each raw usage object through parseQuotaData and updates all three
+   * state slices (quotaData, loading, errors) in one pass.
+   */
+  const applySnapshotToState = useCallback((connections, snapshot) => {
+    if (!snapshot) return;
+    const nextQuota = {};
+    const nextLoading = {};
+    const nextErrors = {};
+
+    connections.forEach((conn) => {
+      const entry = snapshot[conn.id];
+      if (!entry) return;
+
+      nextLoading[conn.id] = false;
+
+      if (entry.error) {
+        nextErrors[conn.id] = entry.error;
+        return;
+      }
+
+      const raw = entry.usage;
+      if (!raw) return;
+
+      const parsedQuotas = parseQuotaData(conn.provider, raw);
+      const quotaEntry = {
+        quotas: parsedQuotas,
+        plan: raw.plan || null,
+        message: raw.message || null,
+        raw,
+      };
+
+      nextQuota[conn.id] = quotaEntry;
+      nextErrors[conn.id] = null;
+      // Keep localStorage in sync
+      setQuotaCache(conn.id, quotaEntry);
+    });
+
+    if (Object.keys(nextQuota).length > 0) {
+      setQuotaData((prev) => ({ ...prev, ...nextQuota }));
+    }
+    if (Object.keys(nextLoading).length > 0) {
+      setLoading((prev) => ({ ...prev, ...nextLoading }));
+    }
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors((prev) => ({ ...prev, ...nextErrors }));
+    }
+  }, []);
+  useEffect(() => { applySnapshotRef.current = applySnapshotToState; }, [applySnapshotToState]);
   const refreshProvider = useCallback(
     async (connectionId, provider) => {
       const token = monitorTokens[connectionId];
@@ -555,10 +606,18 @@ export default function ProviderLimits() {
   useEffect(() => { fetchQuotaRef.current = fetchQuota; }, [fetchQuota]);
   useEffect(() => { monitorTokensRef.current = monitorTokens; }, [monitorTokens]);
 
+  const applySnapshotRef = useRef(null);
+
   const pageRef = useRef(page);
   useEffect(() => { pageRef.current = page; }, [page]);
 
+  // Stable ref to the current visible connections list — used by the lightweight
+  // ticker refresh so it doesn't need `connections` in its dependency array.
+  const connectionsRef = useRef([]);
+  useEffect(() => { connectionsRef.current = connections; }, [connections]);
+
   const refreshAllRef = useRef(null);
+  const tickerRefreshRef = useRef(null);
 
   const refreshAll = useCallback(async () => {
     if (refreshingAll) return;
@@ -578,11 +637,20 @@ export default function ProviderLimits() {
         filterQuotaStateByConnections(prev, visibleConnections),
       );
 
-      await Promise.all(
-        visibleConnections.map((conn) =>
-          fetchQuotaRef.current(conn.id, conn.provider, monitorTokensRef.current[conn.id]),
-        ),
-      );
+      // POST to the snapshot endpoint — forces a full server-side sweep, then
+      // returns all fresh entries in a single response instead of N parallel requests.
+      const res = await fetch(`/api/usage/snapshot`, { method: "POST" });
+      if (!res.ok) {
+        // Fall back to per-connection fetches if the snapshot endpoint fails
+        await Promise.all(
+          visibleConnections.map((conn) =>
+            fetchQuotaRef.current(conn.id, conn.provider, monitorTokensRef.current[conn.id]),
+          ),
+        );
+      } else {
+        const { snapshot } = await res.json();
+        applySnapshotRef.current?.(visibleConnections, snapshot);
+      }
 
       setLastUpdated(new Date());
     } catch (error) {
@@ -598,6 +666,42 @@ export default function ProviderLimits() {
   // Keep ref in sync so intervals always call the latest version without
   // being listed as a dep (which would restart the interval on every render).
   useEffect(() => { refreshAllRef.current = refreshAll; }, [refreshAll]);
+
+  /**
+   * Lightweight ticker refresh: reads the server-side quota cache snapshot for
+   * the currently visible connections (GET, no upstream fetch). Falls back to
+   * the full refreshAll if the snapshot request fails or the cache is cold.
+   * Called by the 60s auto-refresh ticker so a single cheap request replaces N
+   * per-connection requests while the tab is open.
+   */
+  const tickerRefresh = useCallback(async () => {
+    if (refreshingAll) return; // yield if a full manual refresh is in progress
+    const currentConnections = connectionsRef.current;
+    if (!currentConnections || currentConnections.length === 0) return;
+
+    try {
+      const ids = currentConnections.map((c) => c.id).join(",");
+      const res = await fetch(`/api/usage/snapshot?ids=${encodeURIComponent(ids)}`);
+      if (!res.ok) throw new Error(`Snapshot GET failed: ${res.status}`);
+      const { snapshot } = await res.json();
+
+      // If the server cache is cold (snapshot empty), trigger a full refresh
+      const hasData = snapshot && currentConnections.some((c) => snapshot[c.id]);
+      if (!hasData) {
+        refreshAllRef.current?.();
+        return;
+      }
+
+      applySnapshotRef.current?.(currentConnections, snapshot);
+      setLastUpdated(new Date());
+    } catch (err) {
+      console.warn("[ProviderLimits] Ticker snapshot failed, falling back to full refresh:", err.message);
+      refreshAllRef.current?.();
+    }
+  // connectionsRef, applySnapshotToState accessed via refs/stable callbacks
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshingAll]);
+  useEffect(() => { tickerRefreshRef.current = tickerRefresh; }, [tickerRefresh]);
 
   // Run once on mount to load connections and populate quota from cache or network.
   // Uses stable refs so we don't re-fire whenever fetchConnections is recreated.
@@ -656,13 +760,45 @@ export default function ProviderLimits() {
       if (latestCachedAt) setLastUpdated(latestCachedAt);
 
       if (connectionsToFetch.length > 0) {
-        await Promise.all(
-          connectionsToFetch.map((conn) =>
-            cancelled
-              ? Promise.resolve()
-              : fetchQuotaRef.current(conn.id, conn.provider, monitorTokensRef.current[conn.id]),
-          ),
-        );
+        // First try the server-side snapshot cache (avoids hitting provider APIs
+        // if the background sweep already ran since the last server restart).
+        let fetchedFromSnapshot = false;
+        try {
+          const snapshotIds = connectionsToFetch.map((c) => c.id).join(",");
+          const snapRes = await fetch(`/api/usage/snapshot?ids=${encodeURIComponent(snapshotIds)}`);
+          if (!cancelled && snapRes.ok) {
+            const { snapshot } = await snapRes.json();
+            const hasData = snapshot && connectionsToFetch.some((c) => snapshot[c.id]);
+            if (hasData) {
+              applySnapshotRef.current?.(connectionsToFetch, snapshot);
+              // Any connections still missing from the snapshot fall through to live fetch
+              const stillMissing = connectionsToFetch.filter((c) => !snapshot[c.id]);
+              if (!cancelled && stillMissing.length > 0) {
+                await Promise.all(
+                  stillMissing.map((conn) =>
+                    cancelled
+                      ? Promise.resolve()
+                      : fetchQuotaRef.current(conn.id, conn.provider, monitorTokensRef.current[conn.id]),
+                  ),
+                );
+              }
+              fetchedFromSnapshot = true;
+            }
+          }
+        } catch {
+          // fall through to live fetch
+        }
+
+        if (!cancelled && !fetchedFromSnapshot) {
+          await Promise.all(
+            connectionsToFetch.map((conn) =>
+              cancelled
+                ? Promise.resolve()
+                : fetchQuotaRef.current(conn.id, conn.provider, monitorTokensRef.current[conn.id]),
+            ),
+          );
+        }
+
         if (!cancelled) setLastUpdated(new Date());
       }
     };
@@ -702,7 +838,7 @@ export default function ProviderLimits() {
       secondsLeftRef.current -= 1;
       if (secondsLeftRef.current <= 0) {
         secondsLeftRef.current = 60;
-        refreshAllRef.current?.();            // refreshingAll-guarded; safe to call
+        tickerRefreshRef.current?.();         // lightweight GET snapshot; falls back to full refresh
       }
       setCountdown(secondsLeftRef.current);
     }, 1000);
@@ -717,7 +853,7 @@ export default function ProviderLimits() {
           // Tab was hidden for a full interval — data may be stale; refresh immediately.
           secondsLeftRef.current = 60;
           setCountdown(60);
-          refreshAllRef.current?.();
+          tickerRefreshRef.current?.();       // lightweight on tab return too
         }
         // Shorter hide: leave secondsLeftRef as-is; the ticker resumes from the paused value.
       }

@@ -7,6 +7,7 @@ import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
+import { setCachedUsage } from "@/lib/usage/quotaCache";
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
@@ -214,6 +215,14 @@ export async function GET(request, { params }) {
       } catch (retryError) {
         console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
       }
+    }
+
+    // Write through to the shared server-side quota cache so SmartRouting and
+    // the snapshot endpoint see the freshest data after a manual per-connection refresh.
+    try {
+      setCachedUsage(connection.id, usage, null);
+    } catch {
+      // non-fatal
     }
 
     return Response.json(usage);

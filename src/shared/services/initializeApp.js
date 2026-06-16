@@ -91,6 +91,7 @@ export async function initializeApp() {
     startDailyAggregator();
     autoStartMitm();
     startSmartRoutingSchedulerSafe();
+    startQuotaCacheSchedulerSafe();
   } catch (error) {
     console.error("[InitApp] Error:", error);
   }
@@ -328,5 +329,14 @@ async function startSmartRoutingSchedulerSafe() {
     await startSmartRoutingScheduler();
   } catch (err) {
     console.warn("[InitApp] Smart routing scheduler failed to start:", err.message);
+  }
+}
+
+async function startQuotaCacheSchedulerSafe() {
+  try {
+    const { startQuotaCacheScheduler } = await import("@/lib/usage/quotaCache.js");
+    await startQuotaCacheScheduler();
+  } catch (err) {
+    console.warn("[InitApp] Quota cache scheduler failed to start:", err.message);
   }
 }

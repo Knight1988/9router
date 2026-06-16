@@ -1024,6 +1024,31 @@ export default function ProfilePage() {
               />
             </div>
 
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <label className="text-sm font-medium">Quota refresh interval (min)</label>
+                <p className="text-xs sm:text-sm text-text-muted">
+                  How often (minutes) to refresh provider quota in the background cache — keeps the Quota dashboard and Smart Routing in sync
+                </p>
+              </div>
+              <Input
+                type="number"
+                min="1"
+                max="1440"
+                value={settings.quotaRefreshIntervalMinutes ?? 5}
+                onChange={(e) => {
+                  const val = Math.max(1, Math.min(1440, parseInt(e.target.value, 10) || 5));
+                  fetch("/api/settings", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ quotaRefreshIntervalMinutes: val }),
+                  }).then(() => setSettings(prev => ({ ...prev, quotaRefreshIntervalMinutes: val }))).catch(() => {});
+                }}
+                disabled={loading}
+                className="w-20 text-center shrink-0"
+              />
+            </div>
+
             <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
               {settings.fallbackStrategy === "round-robin"
                 ? `Currently distributing requests across all available accounts with ${settings.stickyRoundRobinLimit || 3} calls per account.`

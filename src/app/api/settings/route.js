@@ -100,6 +100,16 @@ export async function PATCH(request) {
       }
     }
 
+    // Restart quota cache scheduler when interval changes
+    if (Object.prototype.hasOwnProperty.call(body, "quotaRefreshIntervalMinutes")) {
+      try {
+        const { startQuotaCacheScheduler } = await import("@/lib/usage/quotaCache.js");
+        await startQuotaCacheScheduler();
+      } catch (err) {
+        console.warn("[Settings] Failed to restart quota cache scheduler:", err.message);
+      }
+    }
+
     const { password, oidcClientSecret, ...safeSettings } = settings;
     safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
     return NextResponse.json(safeSettings, { headers: SETTINGS_RESPONSE_HEADERS });
