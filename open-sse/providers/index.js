@@ -59,16 +59,16 @@ const CLAUDIBLE_HEADERS = {
   "X-App": "cli",
 };
 Object.assign(PROVIDERS, {
-  techopenclaw:         { format: "claude",           baseUrl: "https://api.techopenclaw.com/v1/messages",             headers: { ...CLAUDE_API_HEADERS } },
-  "vip-claudible":     { format: "claude",           baseUrl: "https://vip.claudible.io/v1/messages",                 headers: { ...CLAUDIBLE_HEADERS } },
-  "cc-claudible":      { format: "claude",           baseUrl: "https://cc.claudible.io/v1/messages",                  headers: { ...CLAUDIBLE_HEADERS } },
-  "cn-claudible":      { format: "openai",           baseUrl: "https://cn.claudible.io/v1/chat/completions" },
-  "minimax-claudible": { format: "claude",           baseUrl: "https://minimax.claudible.io/v1/messages",             headers: { ...CLAUDIBLE_HEADERS } },
-  "claude-claudible":  { format: "claude",           baseUrl: "https://claude.claudible.io/v1/messages",              headers: { ...CLAUDIBLE_HEADERS } },
-  "codex-claudible":   { format: "openai-responses", baseUrl: "https://codex.claudible.io/v1/responses" },
-  "open-claude":       { format: "openai",           baseUrl: "https://open-claude.com/v1/chat/completions",          retry: { 503: 3 } },
-  "troll-llm":         { format: "openai",           baseUrl: "https://chat.trollllm.xyz/v1/chat/completions" },
-  devgo:               { format: "openai",           baseUrl: "https://9router.tools.devgovietnam.io.vn/v2/chat/completions", retry: { 503: 3, 429: 2 } },
+  techopenclaw:         { format: "claude",           baseUrl: "https://api.techopenclaw.com/v1/messages",             headers: { ...CLAUDE_API_HEADERS }, stallTimeoutMs: 300_000 },
+  "vip-claudible":     { format: "claude",           baseUrl: "https://vip.claudible.io/v1/messages",                 headers: { ...CLAUDIBLE_HEADERS },  stallTimeoutMs: 300_000 },
+  "cc-claudible":      { format: "claude",           baseUrl: "https://cc.claudible.io/v1/messages",                  headers: { ...CLAUDIBLE_HEADERS },  stallTimeoutMs: 300_000 },
+  "cn-claudible":      { format: "openai",           baseUrl: "https://cn.claudible.io/v1/chat/completions",                                              stallTimeoutMs: 300_000 },
+  "minimax-claudible": { format: "claude",           baseUrl: "https://minimax.claudible.io/v1/messages",             headers: { ...CLAUDIBLE_HEADERS },  stallTimeoutMs: 300_000 },
+  "claude-claudible":  { format: "claude",           baseUrl: "https://claude.claudible.io/v1/messages",              headers: { ...CLAUDIBLE_HEADERS },  stallTimeoutMs: 300_000 },
+  "codex-claudible":   { format: "openai-responses", baseUrl: "https://codex.claudible.io/v1/responses",                                                  stallTimeoutMs: 300_000 },
+  "open-claude":       { format: "openai",           baseUrl: "https://open-claude.com/v1/chat/completions",          retry: { 503: 3 },                  stallTimeoutMs: 300_000 },
+  "troll-llm":         { format: "openai",           baseUrl: "https://chat.trollllm.xyz/v1/chat/completions",                                            stallTimeoutMs: 300_000 },
+  devgo:               { format: "openai",           baseUrl: "https://9router.tools.devgovietnam.io.vn/v2/chat/completions", retry: { 503: 3, 429: 2 },  stallTimeoutMs: 300_000 },
 });
 
 // Beta-only providers not yet in the registry — supplement model lists directly
