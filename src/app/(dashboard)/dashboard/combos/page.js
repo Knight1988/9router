@@ -192,6 +192,35 @@ export default function CombosPage() {
     }
   };
 
+  // Apply a partial patch to a combo's strategy entry (e.g. { judgeModel: "..." } for fusion).
+  // Unlike handleSetStrategy this doesn't trigger the smart-routing validation/refresh dance —
+  // it's a thin persistence helper for non-strategy sub-fields.
+  const handleSetStrategyPatch = async (comboName, patch) => {
+    try {
+      const updated = { ...comboStrategies };
+      const next = { ...(updated[comboName] || {}), ...patch };
+      if (!next.fallbackStrategy || next.fallbackStrategy === "fallback") {
+        // Don't keep the entry if the only field left is the default.
+        if (Object.keys(next).filter((k) => k !== "fallbackStrategy").length === 0) {
+          delete updated[comboName];
+        } else {
+          delete next.fallbackStrategy;
+          updated[comboName] = next;
+        }
+      } else {
+        updated[comboName] = next;
+      }
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comboStrategies: updated }),
+      });
+      setComboStrategies(updated);
+    } catch (error) {
+      console.log("Error updating combo patch:", error);
+    }
+  };
+
   const handleSmartRoutingRefresh = async (comboId, comboName) => {
     setSmartRoutingRefreshing(prev => ({ ...prev, [comboId]: true }));
     try {
@@ -266,6 +295,8 @@ export default function CombosPage() {
               onDelete={() => handleDelete(combo.id)}
               strategy={comboStrategies[combo.name]?.fallbackStrategy || "fallback"}
               onSetStrategy={(strategy) => handleSetStrategy(combo.id, combo.name, strategy)}
+              onSetStrategyPatch={(patch) => handleSetStrategyPatch(combo.name, patch)}
+              comboStrategies={comboStrategies}
               smartRouting={comboStrategies[combo.name]}
               smartRoutingError={smartRoutingErrors[combo.id]}
               smartRoutingRefreshing={!!smartRoutingRefreshing[combo.id]}
@@ -311,6 +342,7 @@ const STRATEGY_OPTIONS = [
   { value: "fallback", label: "Fallback", icon: "arrow_downward" },
   { value: "round-robin", label: "Round Robin", icon: "sync" },
   { value: "smart-routing", label: "Smart", icon: "auto_awesome" },
+  { value: "fusion", label: "Fusion", icon: "join_inner" },
 ];
 
 function StrategySelector({ strategy, onChange }) {
@@ -328,6 +360,8 @@ function StrategySelector({ strategy, onChange }) {
               active
                 ? opt.value === "smart-routing"
                   ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                  : opt.value === "fusion"
+                  ? "bg-violet-500/15 text-violet-600 dark:text-violet-400"
                   : "bg-primary/10 text-primary"
                 : "text-text-muted hover:text-text-main"
             }`}
@@ -341,13 +375,15 @@ function StrategySelector({ strategy, onChange }) {
   );
 }
 
-function ComboCard({ combo, modelCaps = {}, copied, onCopy, onEdit, onDelete, strategy, onSetStrategy, smartRouting, smartRoutingError, smartRoutingRefreshing, onSmartRoutingRefresh }) {
+function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy, onSetStrategy, smartRouting, smartRoutingError, smartRoutingRefreshing, onSmartRoutingRefresh, comboStrategies, onSetStrategyPatch }) {
   const isSmartRouting = strategy === "smart-routing";
   const updatedAt = smartRouting?.smartPriorityUpdatedAt;
   const srError = smartRouting?.smartPriorityError;
   const displayedModels = isSmartRouting && smartRouting?.smartPriority?.length > 0
     ? smartRouting.smartPriority
     : combo.models;
+  const isFusion = strategy === "fusion";
+  const [showJudgeSelect, setShowJudgeSelect] = useState(false);
 
   return (
     <Card padding="sm" className="group">
@@ -408,6 +444,30 @@ function ComboCard({ combo, modelCaps = {}, copied, onCopy, onEdit, onDelete, st
                 {smartRoutingError}
               </p>
             )}
+
+            {/* Fusion: judge picker (Auto = first model) */}
+            {isFusion && (
+              <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-medium text-text-muted">Judge</span>
+                <button
+                  onClick={() => setShowJudgeSelect(true)}
+                  className="inline-flex max-w-full items-center gap-1 rounded border border-dashed border-primary/40 px-1.5 py-0.5 font-mono text-[11px] text-primary hover:border-primary hover:bg-primary/5 transition-colors"
+                  title="Pick the model that fuses panel answers"
+                >
+                  <span className="material-symbols-outlined text-[13px]">gavel</span>
+                  <span className="truncate">{comboStrategies[combo.name]?.judgeModel || `Auto — ${combo.models[0] || "first model"}`}</span>
+                </button>
+                {comboStrategies[combo.name]?.judgeModel && (
+                  <button
+                    onClick={() => onSetStrategyPatch({ judgeModel: "" })}
+                    className="p-0.5 rounded text-text-muted hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                    title="Reset judge to Auto"
+                  >
+                    <span className="material-symbols-outlined text-[13px]">close</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -446,6 +506,17 @@ function ComboCard({ combo, modelCaps = {}, copied, onCopy, onEdit, onDelete, st
           </div>
         </div>
       </div>
+
+      {/* Judge model picker (single-select; combo members make natural judges too) */}
+      <ModelSelectModal
+        isOpen={showJudgeSelect}
+        onClose={() => setShowJudgeSelect(false)}
+        onSelect={(m) => { onSetStrategyPatch({ judgeModel: m?.value || "" }); setShowJudgeSelect(false); }}
+        activeProviders={activeProviders}
+        title="Select Judge Model"
+        addedModelValues={comboStrategies[combo.name]?.judgeModel ? [comboStrategies[combo.name].judgeModel] : []}
+        closeOnSelect={true}
+      />
     </Card>
   );
 }

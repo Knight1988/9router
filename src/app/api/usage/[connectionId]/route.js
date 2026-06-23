@@ -143,12 +143,16 @@ export async function GET(request, { params }) {
       return Response.json({ message: `Usage API not implemented for ${connection.provider}` });
     }
 
-    // Allow OAuth connections, plus whitelisted apikey providers (glm/minimax/...)
+    // Allow OAuth connections, plus whitelisted apikey providers (glm/minimax/kiro/...)
     // API-key providers can still expose usage dashboards. An optional monitor token
     // lets Open Claude use a dedicated bearer without changing the saved connection.
     // For open-claude, saved monitorCreds (username+password) also satisfy this check.
     // Some providers (e.g. troll-llm, devgo) use API key as bearer for usage endpoints.
+    // Kiro's headless api-key flow persists authType "api_key" (underscore) while
+    // generic apikey providers persist "apikey" — accept both spellings below.
     const isOAuth = connection.authType === "oauth";
+    const isApikeyAuth =
+      connection.authType === "apikey" || connection.authType === "api_key";
     const isApikeyEligible =
       connection.authType === "apikey" &&
       USAGE_APIKEY_PROVIDERS.includes(connection.provider);

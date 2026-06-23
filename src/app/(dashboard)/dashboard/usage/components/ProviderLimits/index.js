@@ -72,6 +72,7 @@ export default function ProviderLimits() {
   const [expiringFirst, setExpiringFirst] = useState(false);
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
   const [bulkToggling, setBulkToggling] = useState(false);
+  const [autoPingMap, setAutoPingMap] = useState({});
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(CONNECTIONS_PAGE_SIZE);
   const [customPageSizeInput, setCustomPageSizeInput] = useState(
@@ -163,6 +164,33 @@ export default function ProviderLimits() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [accountFilter, expiringFirst, pageSize, providerFilter],
   );
+
+  // Load Claude auto-ping per-connection map
+  useEffect(() => {
+    fetch("/api/settings", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((s) => setAutoPingMap(s?.claudeAutoPing?.connections || {}))
+      .catch(() => {});
+  }, []);
+
+  const toggleAutoPing = useCallback(async (connectionId, on) => {
+    const next = { ...autoPingMap, [connectionId]: on };
+    const prev = autoPingMap;
+    setAutoPingMap(next);
+    try {
+      const r = await fetch("/api/settings", { cache: "no-store" });
+      const s = r.ok ? await r.json() : {};
+      const cfg = { ...(s.claudeAutoPing || {}), connections: next };
+      const resp = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ claudeAutoPing: cfg }),
+      });
+      if (!resp.ok) setAutoPingMap(prev);
+    } catch {
+      setAutoPingMap(prev);
+    }
+  }, [autoPingMap]);
 
   // Fetch quota for a specific connection
   const fetchQuota = useCallback(async (connectionId, provider, monitorToken) => {

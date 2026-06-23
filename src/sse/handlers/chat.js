@@ -11,8 +11,9 @@ import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
+import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
-import { handleComboChat } from "open-sse/services/combo.js";
+import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
@@ -121,7 +122,27 @@ export async function handleChat(request, clientRawRequest = null) {
     const comboStrategies = settings.comboStrategies || {};
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
     const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
-    
+
+    if (comboStrategy === "fusion") {
+      log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
+      return handleFusionChat({
+        body,
+        models: comboModels,
+        handleSingleModel: (b, m, isPanel) => {
+          let cleanRawReq = clientRawRequest;
+          if (isPanel && clientRawRequest) {
+            const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
+            cleanRawReq = { ...clientRawRequest, body: cleanBody };
+          }
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+        },
+        log,
+        comboName: modelStr,
+        judgeModel: comboStrategies[modelStr]?.judgeModel,
+        tuning: comboStrategies[modelStr]?.fusionTuning,
+      });
+    }
+
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
     const smartPriority = getEffectiveSmartPriority(comboStrategies, modelStr, { intervalMinutes: settings.smartRoutingIntervalMinutes });
     log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
@@ -154,6 +175,46 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   // calls handleSingleModelChat, so reaching here with provider=null means the entry
   // is genuinely malformed (not a combo, not a valid alias).
   if (!modelInfo.provider) {
+    const comboModels = await getComboModels(modelStr);
+    if (comboModels) {
+      const chatSettings = await getSettings();
+      // Check for combo-specific strategy first, fallback to global
+      const comboStrategies = chatSettings.comboStrategies || {};
+      const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
+      const comboStrategy = comboSpecificStrategy || chatSettings.comboStrategy || "fallback";
+
+      if (comboStrategy === "fusion") {
+        log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
+        return handleFusionChat({
+          body,
+          models: comboModels,
+          handleSingleModel: (b, m, isPanel) => {
+            let cleanRawReq = clientRawRequest;
+            if (isPanel && clientRawRequest) {
+              const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
+              cleanRawReq = { ...clientRawRequest, body: cleanBody };
+            }
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+          },
+          log,
+          comboName: modelStr,
+          judgeModel: comboStrategies[modelStr]?.judgeModel,
+          tuning: comboStrategies[modelStr]?.fusionTuning,
+        });
+      }
+
+      const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
+      log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+      return handleComboChat({
+        body,
+        models: comboModels,
+        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        log,
+        comboName: modelStr,
+        comboStrategy,
+        comboStickyLimit
+      });
+    }
     log.warn("CHAT", "Invalid model format", { model: modelStr });
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
   }
@@ -223,8 +284,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       apiKey,
       ccFilterNaming: !!chatSettings.ccFilterNaming,
       rtkEnabled: !!chatSettings.rtkEnabled,
+      headroomEnabled: !!chatSettings.headroomEnabled,
+      headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
+      headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
       cavemanEnabled: !!chatSettings.cavemanEnabled,
       cavemanLevel: chatSettings.cavemanLevel || "full",
+      ponytailEnabled: !!chatSettings.ponytailEnabled,
+      ponytailLevel: chatSettings.ponytailLevel || "full",
       providerThinking,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
