@@ -171,7 +171,8 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }
 
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
-  if (onRequestSuccess) await onRequestSuccess();
+  // onRequestSuccess is deferred to after the empty-completion check below so that empty responses
+  // do NOT clear account cooldown — matching the behaviour of the streaming handler.
 
   // Decloak tool_use names once on raw Claude body, before any translation (INPUT side)
   responseBody = decloakToolNames(responseBody, toolNameMap);
@@ -313,6 +314,8 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   if (outTokens > 0 || hasContent || hasToolCalls) {
     recordRequestResult(`${provider}/${model}`, "success", true);
+    // Confirm success — clear account error state (only if we have real content)
+    if (onRequestSuccess) await onRequestSuccess();
   }
 
   return {

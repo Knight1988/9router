@@ -245,6 +245,20 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     const hasContent = safeContent && safeContent !== "[Empty streaming response]" && safeContent.trim().length > 0;
     const hasToolCalls = contentObj?.toolCalls?.length > 0 || contentObj?.tool_calls?.length > 0;
     if (outTokens === 0 && !hasContent && !hasToolCalls) {
+      // Summarise exactly what the client received so we can diagnose why it may have stalled.
+      // The stream was HTTP 200 + structurally-valid SSE + terminal event — client has no idea this is a failure.
+      const promptTokens = usage?.prompt_tokens ?? usage?.input_tokens ?? 0;
+      const totalTokens = usage?.total_tokens ?? (promptTokens + outTokens);
+      const emptyStreamFlag = contentObj?.emptyStream ? " emptyStreamFlag=true" : "";
+      const thinkingLen = safeThinking ? safeThinking.length : 0;
+      console.warn(
+        `[EMPTY_COMPLETION] ${provider}/${model} conn=${connectionId} | ` +
+        `Client received: HTTP 200 text/event-stream | ` +
+        `tokens: in=${promptTokens} out=${outTokens} total=${totalTokens} | ` +
+        `content=${JSON.stringify(safeContent.slice(0, 120))} thinkingLen=${thinkingLen} | ` +
+        `finish=${finishReason ?? "(none)"}${emptyStreamFlag} | ` +
+        `Stream closed normally — client unaware of failure`
+      );
       logAbnormal({
         signal: ABNORMAL_SIGNALS.EMPTY_COMPLETION,
         provider,
@@ -252,7 +266,19 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
         connectionId,
         endpoint: clientRawRequest?.endpoint || null,
         latencyMs: latency.total,
-        details: { outTokens, hasContent: false, hasToolCalls: false, finishReason },
+        details: {
+          outTokens, hasContent: false, hasToolCalls: false, finishReason,
+          promptTokens, totalTokens, thinkingLen,
+          emptyStreamFlag: !!contentObj?.emptyStream,
+          // What the client actually received
+          clientSaw: {
+            httpStatus: 200,
+            format: "text/event-stream",
+            streamClosedNormally: true,
+            clientUnawareOfFailure: true,
+            contentPreview: safeContent.slice(0, 200) || "(empty)"
+          }
+        },
         clientRequest: clientRawRequest,
         translatedRequest: translatedBody,
         targetRequest: finalBody ? { url: null, headers: null, body: finalBody } : null,
