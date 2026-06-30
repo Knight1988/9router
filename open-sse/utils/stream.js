@@ -50,7 +50,8 @@ export function createSSEStream(options = {}) {
     body = null,
     onStreamComplete = null,
     apiKey = null,
-    onFirstContent = null
+    onFirstContent = null,
+    onProviderError = null
   } = options;
 
   let buffer = "";
@@ -75,6 +76,10 @@ export function createSSEStream(options = {}) {
   // Diagnostic counters — always tracked (cheap integer ops), consumed only on empty-completion path
   const counters = { parseFailCount: 0, filterRejectCount: 0 };
 
+  // Track last SSE event type to detect error events from upstream
+  let lastSseEventType = null;
+  let providerErrorFired = false; // fire once per stream — first error wins
+
   // Track Responses API event framing for same-format passthrough (codex)
   let currentOpenAIResponsesEvent = null;
   let openAIResponsesTerminalSeen = false;
@@ -98,6 +103,21 @@ export function createSSEStream(options = {}) {
           if (trimmed.startsWith("event:")) {
             const evt = trimmed.slice(6).trim();
             eventTypeCounts[evt] = (eventTypeCounts[evt] || 0) + 1;
+            lastSseEventType = evt;
+          } else if (trimmed.startsWith("data:")) {
+            // Detect upstream error events: fire onProviderError before any content is committed
+            if (lastSseEventType === "error" && onProviderError && !providerErrorFired) {
+              const data = trimmed.slice(5).trim();
+              if (data && data !== "[DONE]") {
+                providerErrorFired = true;
+                try {
+                  onProviderError(JSON.parse(data));
+                } catch {
+                  onProviderError({ raw: data });
+                }
+              }
+            }
+            lastSseEventType = null; // reset after data line
           }
         }
         if (isDebugEnabled && trimmed) {
@@ -584,7 +604,7 @@ export function createSSEStream(options = {}) {
   });
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, onFirstContent = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, onFirstContent = null, onProviderError = null) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -597,11 +617,12 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     body,
     onStreamComplete,
     apiKey,
-    onFirstContent
+    onFirstContent,
+    onProviderError
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, onFirstContent = null, sourceFormat = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, onFirstContent = null, sourceFormat = null, onProviderError = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
@@ -612,6 +633,7 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     onStreamComplete,
     apiKey,
     onFirstContent,
-    sourceFormat
+    sourceFormat,
+    onProviderError
   });
 }

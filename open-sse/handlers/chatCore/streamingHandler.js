@@ -92,7 +92,7 @@ function classifyEmptyCompletion(streamDiagnostics, diag, providerContentType) {
 /**
  * Determine which SSE transform stream to use based on provider/format.
  */
-function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, onFirstContent }) {
+function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, onFirstContent, onProviderError }) {
   const isDroidCLI = userAgent?.toLowerCase().includes("droid") || userAgent?.toLowerCase().includes("codex-cli");
   // Responses-API providers (e.g. codex) emit Responses SSE → translate into client format
   const isResponsesProvider = PROVIDERS[provider]?.format === FORMATS.OPENAI_RESPONSES;
@@ -100,14 +100,14 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 
   if (needsCodexTranslation) {
     const codexTarget = CODEX_SOURCE_TO_TARGET[sourceFormat] || FORMATS.OPENAI;
-    return createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, onFirstContent);
+    return createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, onFirstContent, onProviderError);
   }
 
   if (needsTranslation(targetFormat, sourceFormat)) {
-    return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, onFirstContent);
+    return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, onFirstContent, onProviderError);
   }
 
-  return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey, onFirstContent, sourceFormat);
+  return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey, onFirstContent, sourceFormat, onProviderError);
 }
 
 /**
@@ -120,7 +120,7 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
  *
  * Buffers all chunks so they can be replayed to the client.
  */
-async function detectContent(transformedBody, timeoutMs, onFirstContentSignal) {
+async function detectContent(transformedBody, timeoutMs, onFirstContentSignal, onProviderErrorSignal) {
   const reader = transformedBody.getReader();
   const buffered = [];
   let settled = false;
@@ -144,6 +144,17 @@ async function detectContent(transformedBody, timeoutMs, onFirstContentSignal) {
         resolve({ kind: "content" });
       }
     };
+
+    // Resolve as error immediately when upstream sends event: error — before committing HTTP 200
+    if (onProviderErrorSignal) {
+      onProviderErrorSignal.callback = (errorPayload) => {
+        clearTimeout(timer);
+        if (!settled) {
+          settled = true;
+          resolve({ kind: "error", errorPayload });
+        }
+      };
+    }
 
     (async () => {
       try {
@@ -227,6 +238,12 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   const providerContentType = providerResponse.headers?.get?.("content-type") || null;
   const providerStatus = providerResponse.status ?? null;
 
+  // Signal fired by the SSE transform when upstream sends event: error + data payload
+  const onProviderErrorSignal = { callback: null };
+  const onProviderError = (errorPayload) => {
+    if (onProviderErrorSignal.callback) onProviderErrorSignal.callback(errorPayload);
+  };
+
   // Wrap onStreamComplete to inject pipeline diagnostics before the handler sees contentObj
   const wrappedOnStreamComplete = (contentObj, usage, ttftAt) => {
     if (contentObj) {
@@ -238,7 +255,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 
   const transformStream = buildTransformStream({
     provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, model, connectionId, body,
-    onStreamComplete: wrappedOnStreamComplete, apiKey, onFirstContent
+    onStreamComplete: wrappedOnStreamComplete, apiKey, onFirstContent, onProviderError
   });
 
   // Responses passthrough: synthesize response.failed + [DONE] if the stream aborts/stalls before a terminal event
@@ -247,7 +264,42 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
   const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs, streamDiagnostics);
   const timeoutMs = NO_TIMEOUT_PROVIDERS.has(provider) ? null : EMPTY_STREAM_TIMEOUT_MS;
-  const { result: guardResult, reader, buffered } = await detectContent(transformedBody, timeoutMs, onFirstContentSignal);
+  const { result: guardResult, reader, buffered } = await detectContent(transformedBody, timeoutMs, onFirstContentSignal, onProviderErrorSignal);
+
+  // Upstream sent event: error — surface as a proper error so account fallback / combo cycling retries
+  if (guardResult.kind === "error") {
+    try { reader.releaseLock(); } catch {}
+    const err = guardResult.errorPayload;
+    const errType = err?.error?.type || "provider_error";
+    const errMsg = err?.error?.message || "Provider returned an SSE error event";
+    // 429 for rate-limit/quota errors, 502 for everything else
+    const httpStatus = (errType === "rate_limit_error" || errType === "overloaded_error") ? 429 : 502;
+
+    const rawBody = drainRawCapture(streamDiagnostics.rawCapture);
+    logAbnormal({
+      signal: ABNORMAL_SIGNALS.PROVIDER_ERROR,
+      provider,
+      model,
+      connectionId,
+      endpoint: clientRawRequest?.endpoint || null,
+      latencyMs: Date.now() - requestStartTime,
+      details: {
+        errorType: errType,
+        errorMessage: errMsg,
+        httpStatus,
+        sseError: err,
+        upstream: { ...streamDiagnostics.upstream },
+        streamConfig: { sourceFormat, targetFormat, providerStatus, providerContentType },
+      },
+      clientRequest: clientRawRequest,
+      translatedRequest: translatedBody,
+      targetRequest: finalBody ? { url: null, headers: null, body: finalBody } : null,
+      providerResponseBody: rawBody,
+    });
+    recordRequestResult(`${provider}/${model}`, ABNORMAL_SIGNALS.PROVIDER_ERROR, false);
+    // Do NOT call onRequestSuccess — account stays in cooldown, combo cycling skips it
+    return createErrorResult(httpStatus, `${provider}/${model}: ${errMsg}`);
+  }
 
   if (guardResult.kind === "empty") {
     const reason = guardResult.reason === "timeout" ? "timeout waiting for first content" : "stream ended with no content";
