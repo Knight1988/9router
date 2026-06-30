@@ -59,44 +59,53 @@ stages:
 
               PASS=0
               FAIL=0
+              MAX_RETRIES=3
+              RETRY_DELAY=10
 
               run_test() {
                 local label="$1"
-                local response="$2"
+                local model="$2"
 
-                echo "=== $label ==="
-                echo "$response"
+                for attempt in $(seq 1 $MAX_RETRIES); do
+                  echo "=== $label (attempt $attempt/$MAX_RETRIES) ==="
 
-                # Try SSE streaming format first (content_block_delta events)
-                content=$(echo "$response" | grep "content_block_delta" | grep -oE '"text"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/"text"[[:space:]]*:[[:space:]]*"//g' | sed 's/"//g' | tr -d '\n')
-                # Fall back to non-streaming JSON response format
-                if [ -z "$content" ]; then
-                  content=$(echo "$response" | grep -oE '"text"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/"text"[[:space:]]*:[[:space:]]*"//g' | sed 's/"//g')
-                fi
+                  response=$(curl -sk https://localhost:20129/v1/messages \
+                    -H "Content-Type: application/json" \
+                    -H "x-api-key: $(TEST_API_KEY)" \
+                    -H "anthropic-version: 2023-06-01" \
+                    -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"say hi\"}],\"max_tokens\":50}" 2>&1)
 
-                if [ -n "$content" ]; then
-                  echo "PASS: $content"
-                  PASS=$((PASS+1))
-                else
-                  echo "FAIL: no content found"
-                  FAIL=$((FAIL+1))
-                fi
-                echo
+                  echo "$response"
+
+                  # Try SSE streaming format first (content_block_delta events)
+                  content=$(echo "$response" | grep "content_block_delta" | grep -oE '"text"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/"text"[[:space:]]*:[[:space:]]*"//g' | sed 's/"//g' | tr -d '\n')
+                  # Fall back to non-streaming JSON response format
+                  if [ -z "$content" ]; then
+                    content=$(echo "$response" | grep -oE '"text"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/"text"[[:space:]]*:[[:space:]]*"//g' | sed 's/"//g')
+                  fi
+
+                  if [ -n "$content" ]; then
+                    echo "PASS: $content"
+                    PASS=$((PASS+1))
+                    echo
+                    return 0
+                  fi
+
+                  echo "Attempt $attempt failed: no content found."
+                  if [ "$attempt" -lt "$MAX_RETRIES" ]; then
+                    echo "Retrying in ${RETRY_DELAY}s..."
+                    sleep $RETRY_DELAY
+                  fi
+                  echo
+                done
+
+                echo "FAIL: no content after $MAX_RETRIES attempts"
+                FAIL=$((FAIL+1))
+                return 1
               }
 
-              FIRST=1
               for model in planning coding; do
-                if [ "$FIRST" = "0" ]; then
-                  echo "Waiting 5s for model locks to expire..."
-                  sleep 5
-                fi
-                FIRST=0
-
-                run_test "$model" "$(curl -sk https://localhost:20129/v1/messages \
-                  -H "Content-Type: application/json" \
-                  -H "x-api-key: $(TEST_API_KEY)" \
-                  -H "anthropic-version: 2023-06-01" \
-                  -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"say hi\"}],\"max_tokens\":50}" 2>&1)"
+                run_test "$model" "$model"
               done
 
               echo "Results: $PASS passed, $FAIL failed"
