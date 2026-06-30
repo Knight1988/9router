@@ -1,7 +1,7 @@
 import { FORMATS } from "../translator/formats.js";
 
 // Parse SSE data line
-export function parseSSELine(line, format = null) {
+export function parseSSELine(line, format = null, counters = null) {
   if (!line) return null;
 
   // NDJSON format (Ollama): raw JSON lines without "data:" prefix
@@ -11,6 +11,7 @@ export function parseSSELine(line, format = null) {
       try {
         return JSON.parse(trimmed);
       } catch (error) {
+        if (counters) counters.parseFailCount++;
         return null;
       }
     }
@@ -26,6 +27,7 @@ export function parseSSELine(line, format = null) {
   try {
     return JSON.parse(data);
   } catch (error) {
+    if (counters && data.length > 0) counters.parseFailCount++;
     if (data.length > 0 && data.length < 1000) {
       console.log(`[WARN] Failed to parse SSE line (${data.length} chars): ${data.substring(0, 100)}...`);
     }
@@ -34,7 +36,13 @@ export function parseSSELine(line, format = null) {
 }
 
 // Check if chunk has valuable content (not empty)
-export function hasValuableContent(chunk, format) {
+export function hasValuableContent(chunk, format, counters = null) {
+  const result = _hasValuableContent(chunk, format);
+  if (!result && counters) counters.filterRejectCount++;
+  return result;
+}
+
+function _hasValuableContent(chunk, format) {
   // AGGRESSIVE FIX: Reject any chunk with an empty delta object and finish_reason
   // This catches the devgo empty response bug regardless of format detection
   if (chunk.choices?.[0]) {

@@ -72,6 +72,8 @@ export function createSSEStream(options = {}) {
   let sseLineCount = 0;
   let sseEmittedCount = 0;
   const eventTypeCounts = {};
+  // Diagnostic counters — always tracked (cheap integer ops), consumed only on empty-completion path
+  const counters = { parseFailCount: 0, filterRejectCount: 0 };
 
   // Track Responses API event framing for same-format passthrough (codex)
   let currentOpenAIResponsesEvent = null;
@@ -90,12 +92,16 @@ export function createSSEStream(options = {}) {
 
       for (const line of lines) {
         const trimmed = line.trim();
-        if (isDebugEnabled && trimmed) {
+        // Always track SSE line counts for diagnostics (cheap integer ops)
+        if (trimmed) {
           sseLineCount++;
           if (trimmed.startsWith("event:")) {
             const evt = trimmed.slice(6).trim();
             eventTypeCounts[evt] = (eventTypeCounts[evt] || 0) + 1;
           }
+        }
+        if (isDebugEnabled && trimmed) {
+          // Additional per-line debug logging (dev only)
         }
 
         // Capture Responses API event name to preserve framing in same-format passthrough
@@ -135,7 +141,7 @@ export function createSSEStream(options = {}) {
                 }
               }
 
-              const hasValuable = hasValuableContent(parsed, FORMATS.OPENAI);
+              const hasValuable = hasValuableContent(parsed, FORMATS.OPENAI, counters);
               if (process.env.DEBUG === "1") {
                 console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] 🔍 [DEBUG-passthrough] hasValuable=${hasValuable} chunk=${JSON.stringify(parsed).slice(0, 200)}`);
               }
@@ -206,7 +212,7 @@ export function createSSEStream(options = {}) {
         // Translate mode
         if (!trimmed) continue;
 
-        const parsed = parseSSELine(trimmed, targetFormat);
+        const parsed = parseSSELine(trimmed, targetFormat, counters);
         if (!parsed) continue;
 
         // Responses API same-format passthrough: preserve event framing + track terminal state
@@ -329,7 +335,7 @@ export function createSSEStream(options = {}) {
           for (const item of translated) {
             if (item === null || item === undefined) continue;
             // Filter empty chunks
-            if (!hasValuableContent(item, sourceFormat)) {
+            if (!hasValuableContent(item, sourceFormat, counters)) {
               continue; // Skip this empty chunk
             }
 
@@ -465,14 +471,23 @@ export function createSSEStream(options = {}) {
               content: accumulatedContent,
               thinking: accumulatedThinking,
               emptyStream: totalContentLength === 0 && !accumulatedThinking,
-              finishReason: lastFinishReason
+              finishReason: lastFinishReason,
+              _diagnostics: {
+                sseLineCount,
+                sseEmittedCount,
+                eventTypeCounts,
+                firstContentFired,
+                hasEmittedContent,
+                parseFailCount: counters.parseFailCount,
+                filterRejectCount: counters.filterRejectCount,
+              }
             }, usage, ttftAt);
           }
           return;
         }
 
         if (buffer.trim()) {
-          const parsed = parseSSELine(buffer.trim());
+          const parsed = parseSSELine(buffer.trim(), null, counters);
           if (parsed && !parsed.done) {
             const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
 
@@ -550,7 +565,16 @@ export function createSSEStream(options = {}) {
             content: accumulatedContent,
             thinking: accumulatedThinking,
             emptyStream,
-            finishReason: lastFinishReason || state?.finishReason || null
+            finishReason: lastFinishReason || state?.finishReason || null,
+            _diagnostics: {
+              sseLineCount,
+              sseEmittedCount,
+              eventTypeCounts,
+              firstContentFired,
+              hasEmittedContent,
+              parseFailCount: counters.parseFailCount,
+              filterRejectCount: counters.filterRejectCount,
+            }
           }, state?.usage, ttftAt);
         }
       } catch (error) {

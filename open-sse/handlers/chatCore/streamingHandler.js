@@ -25,6 +25,70 @@ const CODEX_SOURCE_TO_TARGET = {
 const EMPTY_STREAM_TIMEOUT_MS = 60_000;
 const NO_TIMEOUT_PROVIDERS = new Set(["techopenclaw"]);
 
+// Max raw bytes to buffer for empty-completion diagnosis (64KB)
+const RAW_CAPTURE_MAX = 64 * 1024;
+
+/**
+ * Create a fresh stream diagnostics context to thread through the pipeline.
+ * Upstream tap writes counters + raw bytes; SSE transform writes _diagnostics via contentObj.
+ */
+function createStreamDiagnostics() {
+  return {
+    upstream: { chunkCount: 0, totalBytes: 0, firstChunkAt: null, lastChunkAt: null },
+    rawCapture: { chunks: [], totalSize: 0, maxSize: RAW_CAPTURE_MAX, truncated: false },
+  };
+}
+
+/**
+ * Consume the raw capture buffer as a UTF-8 string (only call on the empty-completion path).
+ * Clears the buffer after reading to free memory.
+ */
+function drainRawCapture(rawCapture) {
+  if (rawCapture.chunks.length === 0) return "[no upstream data received]";
+  try {
+    const combined = Buffer.concat(rawCapture.chunks.map(c => Buffer.isBuffer(c) ? c : Buffer.from(c)));
+    const text = combined.toString("utf-8");
+    return rawCapture.truncated ? text + `\n[TRUNCATED — buffer capped at ${RAW_CAPTURE_MAX} bytes]` : text;
+  } catch {
+    return "[raw capture decode error]";
+  } finally {
+    rawCapture.chunks = [];
+    rawCapture.totalSize = 0;
+  }
+}
+
+/**
+ * Classify why an empty completion occurred based on pipeline diagnostic counters.
+ * Returns a short tag used in the console warning and logAbnormal details.
+ *
+ * Modes:
+ *  PROVIDER_EMPTY_BODY   — 0 raw bytes from upstream
+ *  PROVIDER_NON_SSE      — bytes received but Content-Type isn't text/event-stream
+ *  SSE_PARSE_FAILURE     — bytes received, but 0 SSE lines were successfully parsed
+ *  SSE_MARKERS_ONLY      — SSE lines parsed, but no content/tool event ever fired
+ *  CONTENT_FILTERED      — content chunks seen but all rejected by hasValuableContent
+ *  TRANSLATION_EMPTY     — chunks survived filtering but translation emitted nothing
+ *  UNKNOWN               — fallback
+ */
+function classifyEmptyCompletion(streamDiagnostics, diag, providerContentType) {
+  const { upstream } = streamDiagnostics;
+
+  if (upstream.totalBytes === 0) return "PROVIDER_EMPTY_BODY";
+
+  const ct = (providerContentType || "").toLowerCase();
+  if (!ct.includes("text/event-stream")) return "PROVIDER_NON_SSE";
+
+  if ((diag?.sseLineCount ?? 0) === 0) return "SSE_PARSE_FAILURE";
+
+  if (!diag?.firstContentFired) return "SSE_MARKERS_ONLY";
+
+  if (diag?.firstContentFired && !diag?.hasEmittedContent) return "CONTENT_FILTERED";
+
+  if (diag?.hasEmittedContent && (diag?.sseEmittedCount ?? 0) === 0) return "TRANSLATION_EMPTY";
+
+  return "UNKNOWN";
+}
+
 /**
  * Determine which SSE transform stream to use based on provider/format.
  */
@@ -158,16 +222,30 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     if (onFirstContentSignal.callback) onFirstContentSignal.callback();
   };
 
+  // Create shared diagnostics context — threaded through the pipeline to the completion handler
+  const streamDiagnostics = createStreamDiagnostics();
+  const providerContentType = providerResponse.headers?.get?.("content-type") || null;
+  const providerStatus = providerResponse.status ?? null;
+
+  // Wrap onStreamComplete to inject pipeline diagnostics before the handler sees contentObj
+  const wrappedOnStreamComplete = (contentObj, usage, ttftAt) => {
+    if (contentObj) {
+      contentObj._streamDiagnostics = streamDiagnostics;
+      contentObj._streamMeta = { sourceFormat, targetFormat, providerStatus, providerContentType };
+    }
+    onStreamComplete(contentObj, usage, ttftAt);
+  };
+
   const transformStream = buildTransformStream({
     provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, model, connectionId, body,
-    onStreamComplete, apiKey, onFirstContent
+    onStreamComplete: wrappedOnStreamComplete, apiKey, onFirstContent
   });
 
   // Responses passthrough: synthesize response.failed + [DONE] if the stream aborts/stalls before a terminal event
   const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
   const onAbortTerminal = isResponsesPassthrough ? buildAbortedResponsesTerminalBytes : null;
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
-  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
+  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs, streamDiagnostics);
   const timeoutMs = NO_TIMEOUT_PROVIDERS.has(provider) ? null : EMPTY_STREAM_TIMEOUT_MS;
   const { result: guardResult, reader, buffered } = await detectContent(transformedBody, timeoutMs, onFirstContentSignal);
 
@@ -175,6 +253,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     const reason = guardResult.reason === "timeout" ? "timeout waiting for first content" : "stream ended with no content";
     try { reader.releaseLock(); } catch {}
 
+    const rawBody = drainRawCapture(streamDiagnostics.rawCapture);
     logAbnormal({
       signal: ABNORMAL_SIGNALS.EMPTY_STREAM,
       provider,
@@ -182,10 +261,15 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
       connectionId,
       endpoint: clientRawRequest?.endpoint || null,
       latencyMs: Date.now() - requestStartTime,
-      details: { reason: guardResult.reason },
+      details: {
+        reason: guardResult.reason,
+        upstream: { ...streamDiagnostics.upstream },
+        streamConfig: { sourceFormat, targetFormat, providerStatus, providerContentType },
+      },
       clientRequest: clientRawRequest,
       translatedRequest: translatedBody,
-      targetRequest: finalBody ? { url: null, headers: null, body: finalBody } : null
+      targetRequest: finalBody ? { url: null, headers: null, body: finalBody } : null,
+      providerResponseBody: rawBody,
     });
     recordRequestResult(`${provider}/${model}`, ABNORMAL_SIGNALS.EMPTY_STREAM, false);
 
@@ -245,20 +329,38 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     const hasContent = safeContent && safeContent !== "[Empty streaming response]" && safeContent.trim().length > 0;
     const hasToolCalls = contentObj?.toolCalls?.length > 0 || contentObj?.tool_calls?.length > 0;
     if (outTokens === 0 && !hasContent && !hasToolCalls) {
-      // Summarise exactly what the client received so we can diagnose why it may have stalled.
-      // The stream was HTTP 200 + structurally-valid SSE + terminal event — client has no idea this is a failure.
       const promptTokens = usage?.prompt_tokens ?? usage?.input_tokens ?? 0;
       const totalTokens = usage?.total_tokens ?? (promptTokens + outTokens);
-      const emptyStreamFlag = contentObj?.emptyStream ? " emptyStreamFlag=true" : "";
       const thinkingLen = safeThinking ? safeThinking.length : 0;
+
+      // Pull pipeline diagnostics injected by handleStreamingResponse's wrapper
+      const streamDiagnostics = contentObj?._streamDiagnostics;
+      const streamMeta = contentObj?._streamMeta;
+      const diag = contentObj?._diagnostics;
+      const upstream = streamDiagnostics?.upstream || {};
+      const providerContentType = streamMeta?.providerContentType || null;
+      const failureMode = classifyEmptyCompletion(streamDiagnostics || { upstream: {} }, diag, providerContentType);
+
+      // Drain raw capture (clears buffer after reading)
+      const rawBody = streamDiagnostics ? drainRawCapture(streamDiagnostics.rawCapture) : null;
+
+      // Enhanced console warning — immediately actionable for live monitoring
+      const evtSummary = diag?.eventTypeCounts
+        ? Object.entries(diag.eventTypeCounts).map(([k, v]) => `${k}:${v}`).join(",") || "none"
+        : "n/a";
+      const emptyStreamFlag = contentObj?.emptyStream ? " emptyStreamFlag=true" : "";
       console.warn(
         `[EMPTY_COMPLETION] ${provider}/${model} conn=${connectionId} | ` +
-        `Client received: HTTP 200 text/event-stream | ` +
+        `mode=${failureMode} | ` +
+        `upstream: ${upstream.chunkCount ?? "?"}chunks ${upstream.totalBytes ?? "?"}B ct=${providerContentType ?? "?"} | ` +
+        `sse: ${diag?.sseLineCount ?? "?"}lines→${diag?.sseEmittedCount ?? "?"}emitted events={${evtSummary}} | ` +
+        `filter: ${diag?.parseFailCount ?? "?"}parse-fail ${diag?.filterRejectCount ?? "?"}rejected | ` +
+        `format: ${streamMeta?.sourceFormat ?? "?"}→${streamMeta?.targetFormat ?? "?"} | ` +
         `tokens: in=${promptTokens} out=${outTokens} total=${totalTokens} | ` +
-        `content=${JSON.stringify(safeContent.slice(0, 120))} thinkingLen=${thinkingLen} | ` +
-        `finish=${finishReason ?? "(none)"}${emptyStreamFlag} | ` +
+        `thinkingLen=${thinkingLen} finish=${finishReason ?? "(none)"}${emptyStreamFlag} | ` +
         `Stream closed normally — client unaware of failure`
       );
+
       logAbnormal({
         signal: ABNORMAL_SIGNALS.EMPTY_COMPLETION,
         provider,
@@ -267,9 +369,32 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
         endpoint: clientRawRequest?.endpoint || null,
         latencyMs: latency.total,
         details: {
+          failureMode,
           outTokens, hasContent: false, hasToolCalls: false, finishReason,
           promptTokens, totalTokens, thinkingLen,
           emptyStreamFlag: !!contentObj?.emptyStream,
+          // Pipeline diagnostics
+          upstream: {
+            chunkCount: upstream.chunkCount ?? 0,
+            totalBytes: upstream.totalBytes ?? 0,
+            firstChunkAt: upstream.firstChunkAt ?? null,
+            lastChunkAt: upstream.lastChunkAt ?? null,
+          },
+          sse: {
+            lineCount: diag?.sseLineCount ?? null,
+            emittedCount: diag?.sseEmittedCount ?? null,
+            eventTypeCounts: diag?.eventTypeCounts ?? null,
+            firstContentFired: diag?.firstContentFired ?? null,
+            hasEmittedContent: diag?.hasEmittedContent ?? null,
+            parseFailCount: diag?.parseFailCount ?? null,
+            filterRejectCount: diag?.filterRejectCount ?? null,
+          },
+          streamConfig: {
+            sourceFormat: streamMeta?.sourceFormat ?? null,
+            targetFormat: streamMeta?.targetFormat ?? null,
+            providerStatus: streamMeta?.providerStatus ?? null,
+            providerContentType,
+          },
           // What the client actually received
           clientSaw: {
             httpStatus: 200,
@@ -282,6 +407,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
         clientRequest: clientRawRequest,
         translatedRequest: translatedBody,
         targetRequest: finalBody ? { url: null, headers: null, body: finalBody } : null,
+        providerResponseBody: rawBody,
         clientResponseBody: safeContent
       });
       recordRequestResult(`${provider}/${model}`, ABNORMAL_SIGNALS.EMPTY_COMPLETION, false);

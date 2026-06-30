@@ -191,7 +191,7 @@ export function createDisconnectAwareStream(transformStream, streamController, o
  * @param {TransformStream} transformStream - Transform stream for SSE
  * @param {object} streamController - Stream controller from createStreamController
  */
-export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS) {
+export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS, diagnostics = null) {
   let stallTimer = null;
   let chunkCount = 0;
   let totalBytes = 0;
@@ -237,6 +237,22 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
       lastChunkAt = now;
       if (isDebugEnabled && (chunkCount <= 5 || chunkCount % 20 === 0 || gap > 5000)) {
         dbg(tag, `chunk #${chunkCount} | size=${sz}B | gap=${gap}ms | total=${totalBytes}B`);
+      }
+      // Update shared diagnostics (for empty-completion diagnosis)
+      if (diagnostics) {
+        diagnostics.upstream.chunkCount = chunkCount;
+        diagnostics.upstream.totalBytes = totalBytes;
+        if (!diagnostics.upstream.firstChunkAt) diagnostics.upstream.firstChunkAt = now;
+        diagnostics.upstream.lastChunkAt = now;
+        // Buffer raw bytes capped at maxSize; used only on the empty-completion path
+        const rc = diagnostics.rawCapture;
+        if (!rc.truncated && rc.totalSize < rc.maxSize) {
+          const remaining = rc.maxSize - rc.totalSize;
+          const slice = sz <= remaining ? chunk : chunk.slice(0, remaining);
+          rc.chunks.push(slice instanceof Uint8Array ? slice : new Uint8Array(slice));
+          rc.totalSize += Math.min(sz, remaining);
+          if (sz > remaining) rc.truncated = true;
+        }
       }
       armStall();
       controller.enqueue(chunk);
