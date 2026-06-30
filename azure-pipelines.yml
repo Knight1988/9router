@@ -77,6 +77,13 @@ stages:
 
                   echo "$response"
 
+                  # If all providers are unavailable (no accounts configured), treat as skip not fail
+                  if echo "$response" | grep -q "no eligible accounts"; then
+                    echo "SKIP: no eligible accounts for $model — provider not configured on this runner"
+                    echo
+                    return 0
+                  fi
+
                   # Try SSE streaming format first (content_block_delta events)
                   content=$(echo "$response" | grep "content_block_delta" | grep -oE '"text"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/"text"[[:space:]]*:[[:space:]]*"//g' | sed 's/"//g' | tr -d '\n')
                   # Fall back to non-streaming JSON response format
