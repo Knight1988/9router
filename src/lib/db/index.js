@@ -67,6 +67,7 @@ export {
   saveRequestDetail, getRequestDetails, getRequestDetailById,
   getProviderHealthStats, getTotalRecordCount,
   invalidateHealthCache, invalidateCountCache,
+  getDistinctProviders,
 } from "./repos/requestDetailsRepo.js";
 
 // Provider health aggregation

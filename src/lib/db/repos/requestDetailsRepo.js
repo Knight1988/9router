@@ -384,6 +384,14 @@ export async function getProviderHealthStats({ startDate, provider } = {}) {
   return data;
 }
 
+export async function getDistinctProviders() {
+  const db = await getAdapter();
+  const rows = db.all(
+    `SELECT DISTINCT provider FROM requestDetails WHERE provider IS NOT NULL ORDER BY provider`
+  );
+  return rows.map((r) => r.provider);
+}
+
 export async function getTotalRecordCount() {
   if (countCache !== null && (Date.now() - countCacheTs) < COUNT_CACHE_TTL_MS) {
     return countCache;
