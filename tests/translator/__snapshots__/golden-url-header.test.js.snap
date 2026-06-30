@@ -337,7 +337,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "X-CORE-VERSION": "0.5.8",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "linux",
-    "X-PLATFORM-VERSION": "v22.23.0",
+    "X-PLATFORM-VERSION": "v22.23.1",
     "X-Title": "Cline",
   },
   "nonStream": {
@@ -351,7 +351,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "X-CORE-VERSION": "0.5.8",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "linux",
-    "X-PLATFORM-VERSION": "v22.23.0",
+    "X-PLATFORM-VERSION": "v22.23.1",
     "X-Title": "Cline",
   },
   "oauth": {
@@ -366,7 +366,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "X-CORE-VERSION": "0.5.8",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "linux",
-    "X-PLATFORM-VERSION": "v22.23.0",
+    "X-PLATFORM-VERSION": "v22.23.1",
     "X-Title": "Cline",
   },
 }
@@ -1215,19 +1215,34 @@ exports[`GOLDEN buildHeaders (default executor providers) > troll-llm → header
   "apiKey": {
     "Accept": "text/event-stream",
     "Accept-Encoding": "gzip, deflate, br",
-    "Authorization": "Bearer <TOK>",
+    "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
+    "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
+    "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
+    "X-App": "cli",
+    "anthropic-version": "2023-06-01",
+    "x-api-key": "<CRED>",
   },
   "nonStream": {
     "Accept-Encoding": "gzip, deflate, br",
-    "Authorization": "Bearer <TOK>",
+    "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
+    "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
+    "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
+    "X-App": "cli",
+    "anthropic-version": "2023-06-01",
+    "x-api-key": "<CRED>",
   },
   "oauth": {
     "Accept": "text/event-stream",
     "Accept-Encoding": "gzip, deflate, br",
-    "Authorization": "Bearer <TOK>",
+    "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
+    "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
+    "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
+    "X-App": "cli",
+    "anthropic-version": "2023-06-01",
+    "x-api-key": "<CRED>",
   },
 }
 `;
@@ -1681,8 +1696,8 @@ exports[`GOLDEN buildUrl (default executor providers) > together → url (stream
 
 exports[`GOLDEN buildUrl (default executor providers) > troll-llm → url (stream + non-stream) 1`] = `
 {
-  "nonStream": "https://chat.trollllm.xyz/v1/chat/completions",
-  "stream": "https://chat.trollllm.xyz/v1/chat/completions",
+  "nonStream": "https://chat.trollllm.xyz/v1/messages",
+  "stream": "https://chat.trollllm.xyz/v1/messages",
 }
 `;
 

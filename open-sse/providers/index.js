@@ -70,7 +70,7 @@ Object.assign(PROVIDERS, {
   "claude-claudible":  { format: "claude",           baseUrl: "https://claude.claudible.io/v1/messages",              headers: { ...CLAUDIBLE_HEADERS },  stallTimeoutMs: 300_000 },
   "codex-claudible":   { format: "openai-responses", baseUrl: "https://codex.claudible.io/v1/responses",                                                  stallTimeoutMs: 300_000 },
   "open-claude":       { format: "openai",           baseUrl: "https://open-claude.com/v1/chat/completions",          retry: { 503: 3 },                  stallTimeoutMs: 300_000 },
-  "troll-llm":         { format: "openai",           baseUrl: "https://chat.trollllm.xyz/v1/chat/completions",                                            stallTimeoutMs: 300_000 },
+  "troll-llm":         { format: "claude",           baseUrl: "https://chat.trollllm.xyz/v1/messages",                headers: { ...CLAUDIBLE_HEADERS },  stallTimeoutMs: 300_000 },
   devgo:               { format: "openai",           baseUrl: "https://9router.tools.devgovietnam.io.vn/v2/chat/completions", retry: { 503: 3, 429: 2 },  stallTimeoutMs: 300_000 },
 });
 
@@ -135,5 +135,10 @@ Object.assign(PROVIDER_MODELS, {
   devgo: [
     { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
     { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
+  ],
+  "troll-llm": [
+    { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
+    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
+    { id: "claude-opus-4-7", name: "Claude Opus 4.7" },
   ],
 });
