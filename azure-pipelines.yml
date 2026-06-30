@@ -50,7 +50,7 @@ stages:
 
               echo "Waiting for server to be ready..."
               for i in $(seq 1 30); do
-                if curl -sk https://localhost:20129/v1/models > /dev/null 2>&1; then
+                if curl -sk --max-time 10 https://localhost:20129/v1/models > /dev/null 2>&1; then
                   echo "Server ready."
                   break
                 fi
@@ -69,7 +69,7 @@ stages:
                 for attempt in $(seq 1 $MAX_RETRIES); do
                   echo "=== $label (attempt $attempt/$MAX_RETRIES) ==="
 
-                  response=$(curl -sk https://localhost:20129/v1/messages \
+                  response=$(curl -sk --max-time 300 https://localhost:20129/v1/messages \
                     -H "Content-Type: application/json" \
                     -H "x-api-key: $(TEST_API_KEY)" \
                     -H "anthropic-version: 2023-06-01" \
