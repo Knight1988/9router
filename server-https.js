@@ -120,6 +120,11 @@ if (httpsEnabled) {
         }
 
         httpsServer.listen(httpsPort, hostname, () => {
+          // Disable Node.js per-request timeouts for long-running SSE connections
+          // (e.g. thinking-model streams that take 60-120s before first token).
+          // keepAliveTimeout is still honoured when set via KEEP_ALIVE_TIMEOUT env.
+          httpsServer.headersTimeout = 0;
+          httpsServer.requestTimeout = 0;
           console.log(`[https] Server ready on https://${hostname}:${httpsPort}`);
 
           // Start HTTP server on PORT if different from HTTPS port
@@ -188,6 +193,9 @@ if (httpsEnabled) {
         httpsServer.on("request", handler);
         if (keepAliveTimeout) httpsServer.keepAliveTimeout = keepAliveTimeout;
         httpsServer.listen(httpsPort, hostname, () => {
+          // Disable Node.js per-request timeouts for long-running SSE connections
+          httpsServer.headersTimeout = 0;
+          httpsServer.requestTimeout = 0;
           console.log(`[https] Server ready on https://${hostname}:${httpsPort} (self-signed cert)`);
           if (httpsPort !== currentPort) {
             if (autoRedirect) {

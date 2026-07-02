@@ -43,6 +43,12 @@ function envMs(name, def) {
 // slow reasoning models aren't aborted mid-stream. Env: STREAM_STALL_TIMEOUT_MS.
 export const STREAM_STALL_TIMEOUT_MS = envMs("STREAM_STALL_TIMEOUT_MS", 360 * 1000);
 
+// Heartbeat interval for SSE keepalive comments (": heartbeat\n\n") sent to the
+// client while detectContent() is still waiting for first meaningful content.
+// Prevents client/proxy connection timeouts on long-running thinking models.
+// Env: HEARTBEAT_INTERVAL_MS.
+export const HEARTBEAT_INTERVAL_MS = envMs("HEARTBEAT_INTERVAL_MS", 15_000);
+
 // Time-to-first-token timeout (prompt prefill). Env: STREAM_FIRST_CHUNK_TIMEOUT_MS.
 export const STREAM_FIRST_CHUNK_TIMEOUT_MS = envMs("STREAM_FIRST_CHUNK_TIMEOUT_MS", 200 * 1000);
 

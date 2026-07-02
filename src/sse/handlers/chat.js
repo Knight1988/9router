@@ -15,7 +15,8 @@ import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
-import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
+import { HTTP_STATUS, HEARTBEAT_INTERVAL_MS } from "open-sse/config/runtimeConfig.js";
+import { SSE_HEARTBEAT_COMMENT, SSE_HEADERS_CORS } from "open-sse/utils/sseConstants.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
@@ -125,6 +126,7 @@ export async function handleChat(request, clientRawRequest = null) {
 
     if (comboStrategy === "fusion") {
       log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
+      // Fusion panels do non-streaming synthesis internally — no heartbeat needed.
       return handleFusionChat({
         body,
         models: comboModels,
@@ -134,7 +136,7 @@ export async function handleChat(request, clientRawRequest = null) {
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
             cleanRawReq = { ...clientRawRequest, body: cleanBody };
           }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, { skipHeartbeat: true });
         },
         log,
         comboName: modelStr,
@@ -146,10 +148,15 @@ export async function handleChat(request, clientRawRequest = null) {
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
     const smartPriority = getEffectiveSmartPriority(comboStrategies, modelStr, { intervalMinutes: settings.smartRoutingIntervalMinutes });
     log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
-    return handleComboChat({
+    // For streaming combo requests, wrap handleComboChat in a heartbeat stream so
+    // the client sees activity immediately while model cycling + detectContent() runs.
+    // handleSingleModelChat uses skipHeartbeat:true so handleComboChat can still
+    // observe real error statuses and cycle to the next model.
+    const isStreaming = body.stream !== false;
+    const comboResult = handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, { skipHeartbeat: true }),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -158,6 +165,7 @@ export async function handleChat(request, clientRawRequest = null) {
       keepCycling: true,
       signal: request?.signal,
     });
+    return isStreaming ? wrapComboWithHeartbeat(comboResult) : comboResult;
   }
 
   // Single model request
@@ -165,9 +173,58 @@ export async function handleChat(request, clientRawRequest = null) {
 }
 
 /**
+ * Wrap a combo Response promise (from handleComboChat) in a heartbeat ReadableStream.
+ * The heartbeat stream sends ": heartbeat\n\n" comments immediately and every
+ * HEARTBEAT_INTERVAL_MS, keeping the client connection alive while model cycling
+ * and detectContent() run. Once handleComboChat resolves, the real SSE body is
+ * piped through. On failure, an SSE error event is sent before closing.
+ *
+ * @param {Promise<Response>} comboPromise
+ * @returns {Response}
+ */
+function wrapComboWithHeartbeat(comboPromise) {
+  const encoder = new TextEncoder();
+  const heartbeatStream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(SSE_HEARTBEAT_COMMENT));
+      const timer = setInterval(() => {
+        try { controller.enqueue(encoder.encode(SSE_HEARTBEAT_COMMENT)); } catch { clearInterval(timer); }
+      }, HEARTBEAT_INTERVAL_MS);
+
+      Promise.resolve(comboPromise)
+        .then(async (finalResponse) => {
+          clearInterval(timer);
+          if (finalResponse.ok) {
+            try {
+              const reader = finalResponse.body.getReader();
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                controller.enqueue(value);
+              }
+            } catch { /* client disconnected */ }
+          } else {
+            try {
+              const errBody = await finalResponse.clone().json().catch(() => null);
+              const errMsg = errBody?.error?.message || errBody?.error || finalResponse.statusText || "All models unavailable";
+              const sseError = `data: ${JSON.stringify({ error: { message: errMsg, type: "service_unavailable" } })}\n\n`;
+              controller.enqueue(encoder.encode(sseError));
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            } catch { /* ignore */ }
+          }
+          controller.close();
+        })
+        .catch(() => { clearInterval(timer); try { controller.close(); } catch { } });
+    },
+    cancel() { /* cleanup handled by catch branches above */ }
+  });
+  return new Response(heartbeatStream, { headers: SSE_HEADERS_CORS });
+}
+
+/**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, { skipHeartbeat = false } = {}) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, the model string is not a provider/model pair.
@@ -194,7 +251,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, { skipHeartbeat: true });
           },
           log,
           comboName: modelStr,
@@ -205,15 +262,17 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
       const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
       log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
-      return handleComboChat({
+      const isStreaming2 = body.stream !== false;
+      const comboResult2 = handleComboChat({
         body,
         models: comboModels,
-        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, { skipHeartbeat: true }),
         log,
         comboName: modelStr,
         comboStrategy,
         comboStickyLimit
       });
+      return isStreaming2 ? wrapComboWithHeartbeat(comboResult2) : comboResult2;
     }
     log.warn("CHAT", "Invalid model format", { model: modelStr });
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
@@ -231,7 +290,76 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   // Extract userAgent from request
   const userAgent = request?.headers?.get("user-agent") || "";
 
-  // Try with available accounts (fallback on errors)
+  // Determine if this is a streaming request. Non-streaming responses return JSON
+  // immediately, so no heartbeat is needed. Streaming requests may block for 60-120s
+  // on detectContent() while a thinking model generates its first token — heartbeats
+  // keep the connection alive during that wait.
+  const isStreaming = body.stream !== false;
+
+  if (!isStreaming || skipHeartbeat) {
+    // Non-streaming path: unchanged — account fallback returns JSON synchronously.
+    // skipHeartbeat=true is used by combo cycling so handleComboChat can observe
+    // the real error status and cycle to the next model.
+    return _runAccountFallback({ provider, model, body, userAgent, request, clientRawRequest, apiKey });
+  }
+
+  // Streaming path: wrap the account fallback loop in a ReadableStream that emits
+  // SSE heartbeat comments (": heartbeat\n\n") every HEARTBEAT_INTERVAL_MS while
+  // waiting for detectContent() to resolve. When content is found, the heartbeat
+  // stream is replaced by the real SSE content. When all accounts are exhausted,
+  // an SSE error event is sent before closing.
+  const encoder = new TextEncoder();
+  const heartbeatStream = new ReadableStream({
+    start(controller) {
+      // Send the first heartbeat immediately so the client sees bytes right away.
+      controller.enqueue(encoder.encode(SSE_HEARTBEAT_COMMENT));
+      const timer = setInterval(() => {
+        try { controller.enqueue(encoder.encode(SSE_HEARTBEAT_COMMENT)); } catch { clearInterval(timer); }
+      }, HEARTBEAT_INTERVAL_MS);
+
+      // Run the account fallback loop in the background. We don't await this so
+      // the Response can be returned immediately with the heartbeat stream.
+      _runAccountFallback({ provider, model, body, userAgent, request, clientRawRequest, apiKey })
+        .then(async (finalResponse) => {
+          clearInterval(timer);
+          if (finalResponse.ok) {
+            // Pipe successful SSE response body into the heartbeat stream.
+            try {
+              const reader = finalResponse.body.getReader();
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                controller.enqueue(value);
+              }
+            } catch { /* client disconnected */ }
+          } else {
+            // All accounts exhausted — surface error as SSE event so clients can surface it.
+            try {
+              const errBody = await finalResponse.clone().json().catch(() => null);
+              const errMsg = errBody?.error?.message || errBody?.error || finalResponse.statusText || "All accounts unavailable";
+              const sseError = `data: ${JSON.stringify({ error: { message: errMsg, type: "service_unavailable" } })}\n\n`;
+              controller.enqueue(encoder.encode(sseError));
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            } catch { /* ignore encoding errors */ }
+          }
+          controller.close();
+        })
+        .catch(() => { clearInterval(timer); try { controller.close(); } catch { } });
+    },
+    cancel() {
+      // Client disconnected — cleanup is handled by the catch branches above.
+    }
+  });
+
+  return new Response(heartbeatStream, { headers: SSE_HEADERS_CORS });
+}
+
+/**
+ * Core account fallback loop — tries provider accounts in sequence, returning the
+ * first successful Response or the last error Response when all accounts are exhausted.
+ * Used by both the streaming heartbeat wrapper and the non-streaming path.
+ */
+async function _runAccountFallback({ provider, model, body, userAgent, request, clientRawRequest, apiKey }) {
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
