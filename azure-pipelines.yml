@@ -78,8 +78,8 @@ stages:
                   echo "$response"
 
                   # If all providers are unavailable (no accounts configured), treat as skip not fail
-                  if echo "$response" | grep -q "no eligible accounts"; then
-                    echo "SKIP: no eligible accounts for $model — provider not configured on this runner"
+                  if echo "$response" | grep -qE "no eligible accounts|No active credentials"; then
+                    echo "SKIP: no credentials for $model — provider not configured on this runner"
                     echo
                     return 0
                   fi
