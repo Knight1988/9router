@@ -57,6 +57,11 @@ export async function getDashboardAuthSession(token) {
   }
 }
 
+// Alias used by dashboardGuard for role checks
+export async function getDashboardAuthPayload(token) {
+  return getDashboardAuthSession(token);
+}
+
 export async function setDashboardAuthCookie(cookieStore, request, claims = {}) {
   const token = await createDashboardAuthToken(claims);
   cookieStore.set("auth_token", token, {

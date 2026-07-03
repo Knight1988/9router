@@ -13,7 +13,9 @@ export async function GET() {
     const authMode = settings.authMode || "password";
     const oidcName = String(session?.oidcName || "").trim();
     const oidcEmail = String(session?.oidcEmail || "").trim();
-    const displayName = oidcName || oidcEmail || (session?.oidc ? "OIDC user" : "Password user");
+    const username = session?.username || null;
+    const role = session?.role || null;
+    const displayName = username || oidcName || oidcEmail || (session?.oidc ? "OIDC user" : "Password user");
     const loginMethod = session?.oidc ? "OIDC" : "Password";
 
     return NextResponse.json({
@@ -27,6 +29,10 @@ export async function GET() {
       oidcName: oidcName || null,
       oidcEmail: oidcEmail || null,
       oidcLogin: !!session?.oidc,
+      userId: session?.userId || null,
+      username,
+      role,
+      canWrite: role === "admin",
     });
   } catch {
     return NextResponse.json({
@@ -40,6 +46,10 @@ export async function GET() {
       oidcName: null,
       oidcEmail: null,
       oidcLogin: false,
+      userId: null,
+      username: null,
+      role: null,
+      canWrite: false,
     });
   }
 }

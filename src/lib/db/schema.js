@@ -1,5 +1,5 @@
 // Latest schema version — bumped when a migration is added in ./migrations/
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -79,8 +79,12 @@ export const TABLES = {
       machineId: "TEXT",
       isActive: "INTEGER DEFAULT 1",
       createdAt: "TEXT NOT NULL",
+      createdBy: "TEXT",
     },
-    indexes: ["CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)"],
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)",
+      "CREATE INDEX IF NOT EXISTS idx_ak_created_by ON apiKeys(createdBy)",
+    ],
   },
   combos: {
     columns: {
@@ -168,6 +172,23 @@ export const TABLES = {
     indexes: [
       "CREATE INDEX IF NOT EXISTS idx_phd_date ON providerHealthDaily(dateKey)",
       "CREATE INDEX IF NOT EXISTS idx_phd_provider ON providerHealthDaily(provider)",
+    ],
+  },
+  users: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      username: "TEXT UNIQUE NOT NULL",
+      passwordHash: "TEXT",
+      role: "TEXT NOT NULL DEFAULT 'user'",
+      displayName: "TEXT",
+      oidcSub: "TEXT",
+      isActive: "INTEGER DEFAULT 1",
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)",
+      "CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)",
     ],
   },
 };

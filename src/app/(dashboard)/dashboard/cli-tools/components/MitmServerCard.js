@@ -9,7 +9,7 @@ const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
  * Shared MITM infrastructure card — manages SSL cert + server start/stop.
  * DNS per-tool is handled separately in MitmToolCard.
  */
-export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }) {
+export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange, canWrite = true }) {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -214,7 +214,8 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
             {status?.certExists && !status?.certTrusted && (
               <button
                 onClick={() => handleAction("trust-cert")}
-                disabled={loading}
+                disabled={loading || !canWrite}
+                title={!canWrite ? "Admin only" : undefined}
                 className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-2 text-xs font-medium text-yellow-600 transition-colors hover:bg-yellow-500/20 disabled:opacity-50 sm:w-auto sm:py-1.5"
               >
                 <span className="material-symbols-outlined text-[16px]">verified_user</span>
@@ -224,7 +225,8 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
             {isRunning ? (
               <button
                 onClick={() => handleAction("stop")}
-                disabled={loading}
+                disabled={loading || !canWrite}
+                title={!canWrite ? "Admin only" : undefined}
                 className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/20 disabled:opacity-50 sm:w-auto sm:py-1.5"
               >
                 <span className="material-symbols-outlined text-[16px]">stop_circle</span>
@@ -233,8 +235,8 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
             ) : (
               <button
                 onClick={() => handleAction("start")}
-                disabled={loading || !status || (serverIsWindows && !isAdmin)}
-                title={serverIsWindows && !isAdmin ? "Administrator required" : undefined}
+                disabled={loading || !status || (serverIsWindows && !isAdmin) || !canWrite}
+                title={!canWrite ? "Admin only" : serverIsWindows && !isAdmin ? "Administrator required" : undefined}
                 className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-4 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20 disabled:opacity-50 sm:w-auto sm:py-1.5"
               >
                 <span className="material-symbols-outlined text-[16px]">play_circle</span>
@@ -290,7 +292,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
               <Button variant="ghost" size="sm" onClick={() => { setShowPasswordModal(false); setSudoPassword(""); setModalError(null); }} disabled={loading}>
                 Cancel
               </Button>
-              <Button variant="primary" size="sm" onClick={handleConfirmPassword} loading={loading}>
+              <Button variant="primary" size="sm" onClick={handleConfirmPassword} loading={loading} disabled={!canWrite} title={!canWrite ? "Admin only" : undefined}>
                 Confirm
               </Button>
             </div>
@@ -317,7 +319,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
               <Button variant="ghost" size="sm" onClick={() => { setPort443Conflict(null); setLoading(false); }} disabled={loading}>
                 Cancel
               </Button>
-              <Button variant="primary" size="sm" onClick={handleKillAndStart} loading={loading}>
+              <Button variant="primary" size="sm" onClick={handleKillAndStart} loading={loading} disabled={!canWrite} title={!canWrite ? "Admin only" : undefined}>
                 Kill & Start
               </Button>
             </div>

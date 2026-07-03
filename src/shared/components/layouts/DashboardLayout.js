@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useNotificationStore } from "@/store/notificationStore";
+import { useAuthStore } from "@/store/authStore";
 import Sidebar from "../Sidebar";
 import Header from "../Header";
 
@@ -36,6 +37,8 @@ export default function DashboardLayout({ children }) {
   const pathname = usePathname();
   const notifications = useNotificationStore((state) => state.notifications);
   const removeNotification = useNotificationStore((state) => state.removeNotification);
+  const refreshAuth = useAuthStore((state) => state.refresh);
+  useEffect(() => { refreshAuth(); }, [refreshAuth]);
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-bg">

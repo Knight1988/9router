@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
+import { getSessionUser } from "@/lib/auth/requireRole";
 
 // GET /api/keys/[id] - Get single key
 export async function GET(request, { params }) {
   try {
     const { id } = await params;
-    const key = await getApiKeyById(id);
+    const session = await getSessionUser();
+    const filter = session?.role === "admin" ? null : session?.userId ? { userId: session.userId } : null;
+    const key = await getApiKeyById(id, filter);
     if (!key) {
       return NextResponse.json({ error: "Key not found" }, { status: 404 });
     }
@@ -23,7 +26,10 @@ export async function PUT(request, { params }) {
     const body = await request.json();
     const { isActive, name } = body;
 
-    const existing = await getApiKeyById(id);
+    const session = await getSessionUser();
+    const filter = session?.role === "admin" ? null : session?.userId ? { userId: session.userId } : null;
+
+    const existing = await getApiKeyById(id, filter);
     if (!existing) {
       return NextResponse.json({ error: "Key not found" }, { status: 404 });
     }
@@ -38,7 +44,7 @@ export async function PUT(request, { params }) {
       updateData.name = trimmedName;
     }
 
-    const updated = await updateApiKey(id, updateData);
+    const updated = await updateApiKey(id, updateData, filter);
 
     return NextResponse.json({ key: updated });
   } catch (error) {
@@ -52,7 +58,10 @@ export async function DELETE(request, { params }) {
   try {
     const { id } = await params;
 
-    const deleted = await deleteApiKey(id);
+    const session = await getSessionUser();
+    const filter = session?.role === "admin" ? null : session?.userId ? { userId: session.userId } : null;
+
+    const deleted = await deleteApiKey(id, filter);
     if (!deleted) {
       return NextResponse.json({ error: "Key not found" }, { status: 404 });
     }

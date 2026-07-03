@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { useAuthStore } from "@/store/authStore";
 import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
 import {
   WENYAN_LOCALES,
@@ -22,13 +23,12 @@ import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
 export default function APIPageClient({ machineId }) {
+  const { canWrite } = useAuthStore();
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
-  const [editingKeyId, setEditingKeyId] = useState(null);
-  const [editingKeyName, setEditingKeyName] = useState("");
   const [confirmState, setConfirmState] = useState(null);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
@@ -815,36 +815,6 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
-  const startEditingKey = (key) => {
-    setEditingKeyId(key.id);
-    setEditingKeyName(key.name);
-  };
-
-  const cancelEditingKey = () => {
-    setEditingKeyId(null);
-    setEditingKeyName("");
-  };
-
-  const handleRenameKey = async (id) => {
-    const name = editingKeyName.trim();
-    if (!name) return;
-
-    try {
-      const res = await fetch(`/api/keys/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setKeys(prev => prev.map(k => k.id === id ? data.key : k));
-        cancelEditingKey();
-      }
-    } catch (error) {
-      console.log("Error renaming key:", error);
-    }
-  };
-
   const maskKey = (fullKey) => {
     if (!fullKey || fullKey.length <= 10) return fullKey || "";
     return fullKey.slice(0, 6) + "•".repeat(fullKey.length - 10) + fullKey.slice(-4);
@@ -1129,7 +1099,9 @@ export default function APIPageClient({ machineId }) {
           <div className="mt-4 pt-4 border-t border-border flex items-center gap-3">
             <Toggle
               checked={tunnelDashboardAccess}
-              onChange={() => handleTunnelDashboardAccess(!tunnelDashboardAccess)}
+              onChange={canWrite ? () => handleTunnelDashboardAccess(!tunnelDashboardAccess) : undefined}
+              disabled={!canWrite}
+              title={!canWrite ? "Read-only access" : undefined}
             />
             <div className="flex items-center gap-1.5">
               <p className="font-medium text-sm">Allow dashboard access via tunnel</p>
@@ -1160,7 +1132,9 @@ export default function APIPageClient({ machineId }) {
           </div>
           <Toggle
             checked={requireApiKey}
-            onChange={() => handleRequireApiKey(!requireApiKey)}
+            onChange={canWrite ? () => handleRequireApiKey(!requireApiKey) : undefined}
+            disabled={!canWrite}
+            title={!canWrite ? "Read-only access" : undefined}
           />
         </div>
 
@@ -1189,44 +1163,7 @@ export default function APIPageClient({ machineId }) {
                 className={`group flex items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
               >
                 <div className="flex-1 min-w-0">
-                  {editingKeyId === key.id ? (
-                    <div className="flex items-center gap-1 mb-1">
-                      <input
-                        value={editingKeyName}
-                        onChange={(e) => setEditingKeyName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleRenameKey(key.id);
-                          if (e.key === "Escape") cancelEditingKey();
-                        }}
-                        className="w-full max-w-xs px-2 py-1 text-sm rounded border border-border bg-background text-text-main"
-                        autoFocus
-                      />
-                      <button
-                        onClick={() => handleRenameKey(key.id)}
-                        disabled={!editingKeyName.trim()}
-                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary disabled:opacity-50"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">check</span>
-                      </button>
-                      <button
-                        onClick={cancelEditingKey}
-                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">close</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      <p className="text-sm font-medium truncate">{key.name}</p>
-                      <button
-                        onClick={() => startEditingKey(key)}
-                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-0 group-hover:opacity-100 transition-all"
-                        title="Rename key"
-                      >
-                        <span className="material-symbols-outlined text-[14px]">edit</span>
-                      </button>
-                    </div>
-                  )}
+                  <p className="text-sm font-medium">{key.name}</p>
                   <div className="flex items-center gap-2 mt-1">
                     <code className="text-xs text-text-muted font-mono">
                       {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
@@ -1316,7 +1253,9 @@ export default function APIPageClient({ machineId }) {
           </div>
           <Toggle
             checked={rtkEnabled}
-            onChange={() => handleRtkEnabled(!rtkEnabled)}
+            onChange={canWrite ? () => handleRtkEnabled(!rtkEnabled) : undefined}
+            disabled={!canWrite}
+            title={!canWrite ? "Read-only access" : undefined}
           />
         </div>
         <div className="flex items-center justify-between py-4 border-b border-border gap-4 flex-wrap">
@@ -1350,8 +1289,9 @@ export default function APIPageClient({ machineId }) {
           </div>
           <Toggle
             checked={headroomEnabled && headroomRunning}
-            disabled={!headroomRunning}
-            onChange={() => handleHeadroomEnabled(!headroomEnabled)}
+            disabled={!headroomRunning || !canWrite}
+            onChange={canWrite ? () => handleHeadroomEnabled(!headroomEnabled) : undefined}
+            title={!canWrite ? "Read-only access" : undefined}
           />
         </div>
         <div className="flex items-center justify-between pt-4 gap-4 flex-wrap">
@@ -1378,13 +1318,14 @@ export default function APIPageClient({ machineId }) {
                   {visibleCavemanLevels.map((lvl) => (
                     <button
                       key={lvl.id}
-                      onClick={() => handleCavemanLevel(lvl.id)}
+                      onClick={canWrite ? () => handleCavemanLevel(lvl.id) : undefined}
+                      disabled={!canWrite}
                       className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
                         cavemanLevel === lvl.id
                           ? "bg-primary text-white border-primary"
                           : "bg-transparent border-border text-text-muted hover:bg-surface-2"
-                      }`}
-                      title={lvl.desc}
+                      }${!canWrite ? " opacity-50 cursor-not-allowed" : ""}`}
+                      title={!canWrite ? "Read-only access" : lvl.desc}
                     >
                       {lvl.label}
                     </button>
@@ -1397,7 +1338,9 @@ export default function APIPageClient({ machineId }) {
             )}
             <Toggle
               checked={cavemanEnabled}
-              onChange={() => handleCavemanEnabled(!cavemanEnabled)}
+              onChange={canWrite ? () => handleCavemanEnabled(!cavemanEnabled) : undefined}
+              disabled={!canWrite}
+              title={!canWrite ? "Read-only access" : undefined}
             />
           </div>
         </div>
@@ -1425,13 +1368,14 @@ export default function APIPageClient({ machineId }) {
                   {PONYTAIL_LEVELS.map((lvl) => (
                     <button
                       key={lvl.id}
-                      onClick={() => handlePonytailLevel(lvl.id)}
+                      onClick={canWrite ? () => handlePonytailLevel(lvl.id) : undefined}
+                      disabled={!canWrite}
                       className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
                         ponytailLevel === lvl.id
                           ? "bg-primary text-white border-primary"
                           : "bg-transparent border-border text-text-muted hover:bg-surface-2"
-                      }`}
-                      title={lvl.desc}
+                      }${!canWrite ? " opacity-50 cursor-not-allowed" : ""}`}
+                      title={!canWrite ? "Read-only access" : lvl.desc}
                     >
                       {lvl.label}
                     </button>
@@ -1444,7 +1388,9 @@ export default function APIPageClient({ machineId }) {
             )}
             <Toggle
               checked={ponytailEnabled}
-              onChange={() => handlePonytailEnabled(!ponytailEnabled)}
+              onChange={canWrite ? () => handlePonytailEnabled(!ponytailEnabled) : undefined}
+              disabled={!canWrite}
+              title={!canWrite ? "Read-only access" : undefined}
             />
           </div>
         </div>

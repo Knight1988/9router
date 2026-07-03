@@ -26,6 +26,7 @@ export default function MitmToolCard({
   modelAliases = {},
   cloudEnabled,
   onDnsChange,
+  canWrite = true,
 }) {
   const [loading, setLoading] = useState(false);
   const [warning, setWarning] = useState(null);
@@ -203,8 +204,8 @@ export default function MitmToolCard({
                         onChange={(e) => handleModelMappingChange(model.alias, e.target.value)}
                         onBlur={(e) => handleMappingBlur(model.alias, e.target.value)}
                         placeholder="provider/model-id"
-                        disabled={!dnsActive}
-                        className={`w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5 ${!dnsActive ? "opacity-50 cursor-not-allowed" : ""}`}
+                        disabled={!dnsActive || !canWrite}
+                        className={`w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5 ${!dnsActive || !canWrite ? "opacity-50 cursor-not-allowed" : ""}`}
                       />
                       {modelMappings[model.alias] && (
                         <button
@@ -212,8 +213,9 @@ export default function MitmToolCard({
                             handleModelMappingChange(model.alias, "");
                             saveMappings({ ...modelMappings, [model.alias]: "" });
                           }}
-                          className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors"
-                          title="Clear"
+                          disabled={!canWrite}
+                          className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors disabled:opacity-50"
+                          title={!canWrite ? "Admin only" : "Clear"}
                         >
                           <span className="material-symbols-outlined text-[14px]">close</span>
                         </button>
@@ -221,8 +223,9 @@ export default function MitmToolCard({
                     </div>
                     <button
                       onClick={() => openModelSelector(model.alias)}
-                      disabled={!hasActiveProviders || !dnsActive}
-                      className={`rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 ${hasActiveProviders && dnsActive ? "bg-surface border-border hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}
+                      disabled={!hasActiveProviders || !dnsActive || !canWrite}
+                      title={!canWrite ? "Admin only" : undefined}
+                      className={`rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 ${hasActiveProviders && dnsActive && canWrite ? "bg-surface border-border hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}
                     >
                       Select
                     </button>
@@ -240,7 +243,8 @@ export default function MitmToolCard({
               {dnsActive ? (
                 <button
                   onClick={handleDnsToggle}
-                  disabled={!serverRunning || loading}
+                  disabled={!serverRunning || loading || !canWrite}
+                  title={!canWrite ? "Admin only" : undefined}
                   className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:py-1.5"
                 >
                   <span className="material-symbols-outlined text-[16px]">stop_circle</span>
@@ -249,7 +253,8 @@ export default function MitmToolCard({
               ) : (
                 <button
                   onClick={handleDnsToggle}
-                  disabled={!serverRunning || loading}
+                  disabled={!serverRunning || loading || !canWrite}
+                  title={!canWrite ? "Admin only" : undefined}
                   className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-4 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:py-1.5"
                 >
                   <span className="material-symbols-outlined text-[16px]">play_circle</span>
@@ -295,7 +300,7 @@ export default function MitmToolCard({
               <Button variant="ghost" size="sm" onClick={() => { setShowPasswordModal(false); setSudoPassword(""); setModalError(null); }} disabled={loading}>
                 Cancel
               </Button>
-              <Button variant="primary" size="sm" onClick={handleConfirmPassword} loading={loading}>
+              <Button variant="primary" size="sm" onClick={handleConfirmPassword} loading={loading} disabled={!canWrite} title={!canWrite ? "Admin only" : undefined}>
                 Confirm
               </Button>
             </div>

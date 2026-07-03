@@ -10,11 +10,24 @@ import {
   verifyOidcIdToken,
 } from "@/lib/auth/oidc";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
+import { getUserByOidcSub, createUser, setLastLogin } from "@/lib/localDb";
 
 function clearOidcCookies(cookieStore) {
   cookieStore.delete("oidc_state");
   cookieStore.delete("oidc_nonce");
   cookieStore.delete("oidc_code_verifier");
+}
+
+// Derive a unique username from OIDC claims
+function deriveUsername(email, sub) {
+  if (email) {
+    // Use email prefix, sanitized
+    const prefix = email.split("@")[0].replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 28);
+    if (prefix.length >= 3) return prefix;
+  }
+  // Fallback to sub, sanitized
+  const sanitized = (sub || "oidc-user").replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 28);
+  return sanitized.length >= 3 ? sanitized : `oidc-${sanitized}`;
 }
 
 export async function GET(request) {
@@ -72,11 +85,49 @@ export async function GET(request) {
     });
 
     clearOidcCookies(cookieStore);
+
+    const oidcSub = payload.sub || null;
+    const oidcEmail = pickOidcEmail(payload) || null;
+    const oidcName = pickOidcDisplayName(payload);
+
+    // Find or create user for this OIDC identity
+    let user = oidcSub ? await getUserByOidcSub(oidcSub) : null;
+
+    if (!user) {
+      // Auto-create user with 'user' role (default for OIDC)
+      const username = deriveUsername(oidcEmail, oidcSub);
+      try {
+        user = await createUser({
+          username,
+          role: "user",
+          displayName: oidcName || null,
+          oidcSub,
+        });
+      } catch (e) {
+        // Username collision — append random suffix
+        const fallback = `${username}-${Math.random().toString(36).slice(2, 6)}`;
+        user = await createUser({
+          username: fallback,
+          role: "user",
+          displayName: oidcName || null,
+          oidcSub,
+        });
+      }
+    }
+
+    if (!user.isActive) {
+      return NextResponse.redirect(new URL("/login?error=account_disabled", getPublicOrigin(request)));
+    }
+
+    await setLastLogin(user.id);
     await setDashboardAuthCookie(cookieStore, request, {
+      userId: user.id,
+      username: user.username,
+      role: user.role,
       oidc: true,
-      oidcSub: payload.sub || null,
-      oidcEmail: pickOidcEmail(payload) || null,
-      oidcName: pickOidcDisplayName(payload),
+      oidcSub,
+      oidcEmail,
+      oidcName,
     });
 
     return NextResponse.redirect(new URL("/dashboard", getPublicOrigin(request)));

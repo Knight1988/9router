@@ -5,24 +5,16 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
-import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, Toggle, ConfirmModal, CapacityBadges } from "@/shared/components";
+import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { useAuthStore } from "@/store/authStore";
 
-const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\\-]+$/;
-
-function formatRelativeTime(isoString) {
-  if (!isoString) return null;
-  const diff = Date.now() - new Date(isoString).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
+// Validate combo name: only a-z, A-Z, 0-9, -, _
+const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
 export default function CombosPage() {
+  const { canWrite } = useAuthStore();
   const [combos, setCombos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -31,8 +23,6 @@ export default function CombosPage() {
   const [comboStrategies, setComboStrategies] = useState({});
   const [modelCaps, setModelCaps] = useState({});
   const [confirmState, setConfirmState] = useState(null);
-  const [smartRoutingErrors, setSmartRoutingErrors] = useState({});
-  const [smartRoutingRefreshing, setSmartRoutingRefreshing] = useState({});
   const { copied, copy } = useCopyToClipboard();
 
   useEffect(() => {
@@ -50,7 +40,7 @@ export default function CombosPage() {
       const combosData = await combosRes.json();
       const providersData = await providersRes.json();
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
-
+      
       // Only LLM combos here - webSearch/webFetch combos belong to media-providers/web
       if (combosRes.ok) setCombos((combosData.combos || []).filter(c => !c.kind || c.kind === "llm"));
       if (providersRes.ok) {
@@ -127,120 +117,28 @@ export default function CombosPage() {
     });
   };
 
-  const handleSetStrategy = async (comboId, comboName, strategy) => {
-    // If switching to smart-routing, validate first
-    if (strategy === "smart-routing") {
-      setSmartRoutingErrors(prev => ({ ...prev, [comboId]: null }));
-      try {
-        const res = await fetch(`/api/combos/${comboId}/smart-routing/validate`, { method: "POST" });
-        const data = await res.json();
-        if (!data.ok) {
-          setSmartRoutingErrors(prev => ({
-            ...prev,
-            [comboId]: `Cannot enable Smart Routing. These providers don\u2019t support quota checks: ${data.unsupported.join(", ")}`,
-          }));
-          return;
-        }
-      } catch (err) {
-        setSmartRoutingErrors(prev => ({ ...prev, [comboId]: `Validation failed: ${err.message}` }));
-        return;
-      }
-    } else {
-      setSmartRoutingErrors(prev => ({ ...prev, [comboId]: null }));
-    }
-
-    const updated = { ...comboStrategies };
-    if (strategy === "fallback") {
-      delete updated[comboName];
-    } else {
-      updated[comboName] = { ...(updated[comboName] || {}), fallbackStrategy: strategy };
-    }
-
-    try {
-      await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ comboStrategies: updated }),
-      });
-      setComboStrategies(updated);
-
-      // Immediately trigger a refresh when smart routing is enabled
-      if (strategy === "smart-routing") {
-        setSmartRoutingRefreshing(prev => ({ ...prev, [comboId]: true }));
-        try {
-          const res = await fetch(`/api/combos/${comboId}/smart-routing/refresh`, { method: "POST" });
-          const data = await res.json();
-          if (data.ok) {
-            setComboStrategies(prev => ({
-              ...prev,
-              [comboName]: {
-                ...(prev[comboName] || {}),
-                smartPriority: data.smartPriority,
-                smartPriorityUpdatedAt: data.smartPriorityUpdatedAt,
-                smartPriorityError: data.smartPriorityError,
-              },
-            }));
-          }
-        } catch {
-          // non-fatal
-        } finally {
-          setSmartRoutingRefreshing(prev => ({ ...prev, [comboId]: false }));
-        }
-      }
-    } catch (error) {
-      console.log("Error updating combo strategy:", error);
-    }
-  };
-
-  // Apply a partial patch to a combo's strategy entry (e.g. { judgeModel: "..." } for fusion).
-  // Unlike handleSetStrategy this doesn't trigger the smart-routing validation/refresh dance —
-  // it's a thin persistence helper for non-strategy sub-fields.
-  const handleSetStrategyPatch = async (comboName, patch) => {
+  // Merge a per-combo strategy patch into settings.comboStrategies. Passing an empty
+  // patch (strategy back to default "fallback") drops the entry entirely.
+  const handleSetComboStrategy = async (comboName, patch) => {
     try {
       const updated = { ...comboStrategies };
       const next = { ...(updated[comboName] || {}), ...patch };
+      // Prune to keep settings clean: default fallback with no extras = no entry.
       if (!next.fallbackStrategy || next.fallbackStrategy === "fallback") {
-        // Don't keep the entry if the only field left is the default.
-        if (Object.keys(next).filter((k) => k !== "fallbackStrategy").length === 0) {
-          delete updated[comboName];
-        } else {
-          delete next.fallbackStrategy;
-          updated[comboName] = next;
-        }
+        delete updated[comboName];
       } else {
         updated[comboName] = next;
       }
+
       await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ comboStrategies: updated }),
       });
+
       setComboStrategies(updated);
     } catch (error) {
-      console.log("Error updating combo patch:", error);
-    }
-  };
-
-  const handleSmartRoutingRefresh = async (comboId, comboName) => {
-    setSmartRoutingRefreshing(prev => ({ ...prev, [comboId]: true }));
-    try {
-      const res = await fetch(`/api/combos/${comboId}/smart-routing/refresh`, { method: "POST" });
-      const data = await res.json();
-      if (data.ok) {
-        setComboStrategies(prev => ({
-          ...prev,
-          [comboName]: {
-            ...(prev[comboName] || {}),
-            smartPriority: data.smartPriority,
-            smartPriorityUpdatedAt: data.smartPriorityUpdatedAt,
-            smartPriorityError: data.smartPriorityError,
-          },
-        }));
-      }
-    } catch (err) {
-      console.log("Error refreshing smart routing:", err);
-    } finally {
-      setSmartRoutingRefreshing(prev => ({ ...prev, [comboId]: false }));
+      console.log("Error updating combo strategy:", error);
     }
   };
 
@@ -258,12 +156,17 @@ export default function CombosPage() {
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold">Combos</h1>
           <p className="text-sm text-text-muted mt-1">
-            Create model combos with fallback support — auto-adapts per request: routes images to vision models and web search to search-capable models.
+            Group models under one name, then pick a strategy per combo:
           </p>
+          <ul className="text-sm text-text-muted mt-2 flex flex-col gap-1">
+            <li><span className="font-medium text-text-main">Fallback</span> — tries models in order (next on failure)</li>
+            <li><span className="font-medium text-text-main">Round Robin</span> — rotates models across requests to spread load</li>
+            <li><span className="font-medium text-text-main">Fusion</span> — queries all models in parallel, then a judge synthesizes one answer. Best quality, but costs the most: every request bills all panel models + the judge (N+1 calls)</li>
+            <li><span className="font-medium text-text-main">Capacity auto-switch</span> — sends image/PDF/audio requests to a model that supports them first</li>
+          </ul>
         </div>
-        <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto">
+        <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto whitespace-nowrap" disabled={!canWrite} title={!canWrite ? "Admin only" : undefined}>
           Create Combo
         </Button>
       </div>
@@ -277,7 +180,7 @@ export default function CombosPage() {
             </div>
             <p className="text-text-main font-medium mb-1">No combos yet</p>
             <p className="text-sm text-text-muted mb-4">Create model combos with fallback support</p>
-            <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto">
+            <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto" disabled={!canWrite} title={!canWrite ? "Admin only" : undefined}>
               Create Combo
             </Button>
           </div>
@@ -289,24 +192,20 @@ export default function CombosPage() {
               key={combo.id}
               combo={combo}
               modelCaps={modelCaps}
+              activeProviders={activeProviders}
               copied={copied}
               onCopy={copy}
               onEdit={() => setEditingCombo(combo)}
               onDelete={() => handleDelete(combo.id)}
-              strategy={comboStrategies[combo.name]?.fallbackStrategy || "fallback"}
-              onSetStrategy={(strategy) => handleSetStrategy(combo.id, combo.name, strategy)}
-              onSetStrategyPatch={(patch) => handleSetStrategyPatch(combo.name, patch)}
-              comboStrategies={comboStrategies}
-              smartRouting={comboStrategies[combo.name]}
-              smartRoutingError={smartRoutingErrors[combo.id]}
-              smartRoutingRefreshing={!!smartRoutingRefreshing[combo.id]}
-              onSmartRoutingRefresh={() => handleSmartRoutingRefresh(combo.id, combo.name)}
+              strategy={comboStrategies[combo.name] || {}}
+              onSetStrategy={(patch) => handleSetComboStrategy(combo.name, patch)}
+              canWrite={canWrite}
             />
           ))}
         </div>
       )}
 
-      {/* Create Modal */}
+      {/* Create Modal - Use key to force remount and reset state */}
       <ComboFormModal
         key="create"
         isOpen={showCreateModal}
@@ -315,7 +214,7 @@ export default function CombosPage() {
         activeProviders={activeProviders}
       />
 
-      {/* Edit Modal */}
+      {/* Edit Modal - Use key to force remount and reset state */}
       <ComboFormModal
         key={editingCombo?.id || "new"}
         isOpen={!!editingCombo}
@@ -339,129 +238,60 @@ export default function CombosPage() {
 }
 
 const STRATEGY_OPTIONS = [
-  { value: "fallback", label: "Fallback", icon: "arrow_downward" },
-  { value: "round-robin", label: "Round Robin", icon: "sync" },
-  { value: "smart-routing", label: "Smart", icon: "auto_awesome" },
-  { value: "fusion", label: "Fusion", icon: "join_inner" },
+  { value: "fallback", label: "Fallback — try in order" },
+  { value: "round-robin", label: "Round Robin — rotate" },
+  { value: "fusion", label: "Fusion — panel + judge" },
 ];
 
-function StrategySelector({ strategy, onChange }) {
-  return (
-    <div className="flex items-center gap-0.5 rounded-lg bg-black/[0.04] p-0.5 dark:bg-white/[0.04]">
-      {STRATEGY_OPTIONS.map((opt) => {
-        const active = strategy === opt.value;
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => onChange(opt.value)}
-            title={opt.label}
-            className={`flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
-              active
-                ? opt.value === "smart-routing"
-                  ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                  : opt.value === "fusion"
-                  ? "bg-violet-500/15 text-violet-600 dark:text-violet-400"
-                  : "bg-primary/10 text-primary"
-                : "text-text-muted hover:text-text-main"
-            }`}
-          >
-            <span className="material-symbols-outlined text-[13px]">{opt.icon}</span>
-            <span className="hidden sm:inline">{opt.label}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy, onSetStrategy, smartRouting, smartRoutingError, smartRoutingRefreshing, onSmartRoutingRefresh, comboStrategies, onSetStrategyPatch }) {
-  const isSmartRouting = strategy === "smart-routing";
-  const updatedAt = smartRouting?.smartPriorityUpdatedAt;
-  const srError = smartRouting?.smartPriorityError;
-  const displayedModels = isSmartRouting && smartRouting?.smartPriority?.length > 0
-    ? smartRouting.smartPriority
-    : combo.models;
-  const isFusion = strategy === "fusion";
+function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy, canWrite }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
+  const current = strategy.fallbackStrategy || "fallback";
+  const judge = strategy.judgeModel || "";
+  const isFusion = current === "fusion";
 
   return (
     <Card padding="sm" className="group">
-      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex min-w-0 flex-1 items-start gap-3">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
           <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
             <span className="material-symbols-outlined text-primary text-[18px]">layers</span>
           </div>
           <div className="min-w-0 flex-1">
             <code className="block truncate font-mono text-sm font-medium">{combo.name}</code>
             <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
-              {displayedModels.length === 0 ? (
+              {combo.models.length === 0 ? (
                 <span className="text-xs text-text-muted italic">No models</span>
               ) : (
-                displayedModels.slice(0, 3).map((model, index) => (
-                  <code key={index} className="inline-flex items-center gap-1 max-w-full truncate rounded bg-black/5 px-1.5 py-0.5 font-mono text-[10px] text-text-muted dark:bg-white/5 sm:max-w-[220px]">
-                    {isSmartRouting && index === 0 && displayedModels.length > 1 ? (
-                      <span className="text-emerald-600 dark:text-emerald-400">{model}</span>
-                    ) : model}
+                combo.models.slice(0, 3).map((model, index) => (
+                  <code key={index} className="inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-text-muted dark:bg-white/5">
+                    <span>{model}</span>
                     <CapacityBadges caps={modelCaps[model]} />
                   </code>
                 ))
               )}
-              {displayedModels.length > 3 && (
-                <span className="text-[10px] text-text-muted">+{displayedModels.length - 3} more</span>
+              {combo.models.length > 3 && (
+                <span className="text-[10px] text-text-muted">+{combo.models.length - 3} more</span>
               )}
             </div>
-
-            {/* Smart routing status */}
-            {isSmartRouting && (
-              <div className="mt-1.5 flex items-center gap-1.5">
-                {srError ? (
-                  <span className="text-[10px] text-amber-500 leading-tight">
-                    <span className="material-symbols-outlined text-[11px] align-middle mr-0.5">warning</span>
-                    {srError}
-                  </span>
-                ) : updatedAt ? (
-                  <span className="text-[10px] text-text-muted leading-tight">
-                    Priority updated {formatRelativeTime(updatedAt)}
-                  </span>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={onSmartRoutingRefresh}
-                  disabled={smartRoutingRefreshing}
-                  className="p-0.5 rounded text-text-muted hover:text-primary transition-colors disabled:opacity-40"
-                  title="Refresh quota priority now"
-                >
-                  <span className={`material-symbols-outlined text-[12px] ${smartRoutingRefreshing ? "animate-spin" : ""}`}>refresh</span>
-                </button>
-              </div>
-            )}
-
-            {/* Validation error when enabling */}
-            {smartRoutingError && (
-              <p className="mt-1.5 text-[10px] text-red-500 leading-tight">
-                <span className="material-symbols-outlined text-[11px] align-middle mr-0.5">error</span>
-                {smartRoutingError}
-              </p>
-            )}
-
             {/* Fusion: judge picker (Auto = first model) */}
             {isFusion && (
               <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
                 <span className="text-[11px] font-medium text-text-muted">Judge</span>
                 <button
                   onClick={() => setShowJudgeSelect(true)}
-                  className="inline-flex max-w-full items-center gap-1 rounded border border-dashed border-primary/40 px-1.5 py-0.5 font-mono text-[11px] text-primary hover:border-primary hover:bg-primary/5 transition-colors"
-                  title="Pick the model that fuses panel answers"
+                  disabled={!canWrite}
+                  className="inline-flex max-w-full items-center gap-1 rounded border border-dashed border-primary/40 px-1.5 py-0.5 font-mono text-[11px] text-primary hover:border-primary hover:bg-primary/5 transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                  title={!canWrite ? "Admin only" : "Pick the model that fuses panel answers"}
                 >
                   <span className="material-symbols-outlined text-[13px]">gavel</span>
-                  <span className="truncate">{comboStrategies[combo.name]?.judgeModel || `Auto — ${combo.models[0] || "first model"}`}</span>
+                  <span className="truncate">{judge || `Auto — ${combo.models[0] || "first model"}`}</span>
                 </button>
-                {comboStrategies[combo.name]?.judgeModel && (
+                {judge && (
                   <button
-                    onClick={() => onSetStrategyPatch({ judgeModel: "" })}
-                    className="p-0.5 rounded text-text-muted hover:text-red-500 hover:bg-red-500/10 transition-colors"
-                    title="Reset judge to Auto"
+                    onClick={() => onSetStrategy({ judgeModel: "" })}
+                    disabled={!canWrite}
+                    className="p-0.5 rounded text-text-muted hover:text-red-500 hover:bg-red-500/10 transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                    title={!canWrite ? "Admin only" : "Reset judge to Auto"}
                   >
                     <span className="material-symbols-outlined text-[13px]">close</span>
                   </button>
@@ -473,8 +303,16 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
 
         {/* Actions */}
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3 sm:shrink-0">
-          {/* Strategy selector */}
-          <StrategySelector strategy={strategy} onChange={onSetStrategy} />
+          {/* Strategy selector — always visible */}
+          <div className="w-full sm:w-[200px]">
+            <Select
+              options={STRATEGY_OPTIONS}
+              value={current}
+              onChange={canWrite ? (e) => onSetStrategy({ fallbackStrategy: e.target.value }) : undefined}
+              disabled={!canWrite}
+              selectClassName="py-1.5 text-xs"
+            />
+          </div>
 
           <div className="grid grid-cols-3 gap-1 sm:flex">
             <button
@@ -489,16 +327,18 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
             </button>
             <button
               onClick={onEdit}
-              className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
-              title="Edit"
+              disabled={!canWrite}
+              className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5 disabled:opacity-40 disabled:pointer-events-none"
+              title={!canWrite ? "Admin only" : "Edit"}
             >
               <span className="material-symbols-outlined text-[18px]">edit</span>
               <span className="text-[10px] leading-tight">Edit</span>
             </button>
             <button
               onClick={onDelete}
-              className="flex flex-col items-center rounded px-2 py-1 text-red-500 transition-colors hover:bg-red-500/10"
-              title="Delete"
+              disabled={!canWrite}
+              className="flex flex-col items-center rounded px-2 py-1 text-red-500 transition-colors hover:bg-red-500/10 disabled:opacity-40 disabled:pointer-events-none"
+              title={!canWrite ? "Admin only" : "Delete"}
             >
               <span className="material-symbols-outlined text-[18px]">delete</span>
               <span className="text-[10px] leading-tight">Delete</span>
@@ -511,10 +351,10 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
       <ModelSelectModal
         isOpen={showJudgeSelect}
         onClose={() => setShowJudgeSelect(false)}
-        onSelect={(m) => { onSetStrategyPatch({ judgeModel: m?.value || "" }); setShowJudgeSelect(false); }}
+        onSelect={(m) => { onSetStrategy({ judgeModel: m?.value || "" }); setShowJudgeSelect(false); }}
         activeProviders={activeProviders}
         title="Select Judge Model"
-        addedModelValues={comboStrategies[combo.name]?.judgeModel ? [comboStrategies[combo.name].judgeModel] : []}
+        addedModelValues={judge ? [judge] : []}
         closeOnSelect={true}
       />
     </Card>
@@ -525,6 +365,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id });
   const style = {
     transform: CSS.Transform.toString(transform),
+    // no transition — prevents the CSS settle animation fighting React's re-render on drop
     opacity: isDragging ? 0.4 : 1,
     zIndex: isDragging ? 999 : undefined,
   };
@@ -619,6 +460,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
 }
 
 function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null }) {
+  // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
   const [showModelSelect, setShowModelSelect] = useState(false);
@@ -631,6 +473,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
+  // Use stable index-based IDs so duplicates and similar names are handled correctly
   const modelItems = models.map((model, i) => ({ uid: `item-${i}`, model }));
 
   const handleDragEnd = (event) => {

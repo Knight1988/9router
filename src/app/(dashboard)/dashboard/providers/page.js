@@ -22,6 +22,7 @@ import Link from "next/link";
 import { getErrorCode, getRelativeTime } from "@/shared/utils";
 import { useNotificationStore } from "@/store/notificationStore";
 import { useHeaderSearchStore } from "@/store/headerSearchStore";
+import { useAuthStore } from "@/store/authStore";
 import ModelAvailabilityBadge from "./components/ModelAvailabilityBadge";
 import AddCompatibleModal from "./components/AddCompatibleModal";
 
@@ -105,6 +106,7 @@ export default function ProvidersPage() {
   const [testingMode, setTestingMode] = useState(null);
   const [testResults, setTestResults] = useState(null);
   const notify = useNotificationStore();
+  const { canWrite } = useAuthStore();
   const searchQuery = useHeaderSearchStore((s) => s.query);
   const registerSearch = useHeaderSearchStore((s) => s.register);
   const unregisterSearch = useHeaderSearchStore((s) => s.unregister);
@@ -353,6 +355,8 @@ export default function ProvidersPage() {
               icon="add"
               onClick={() => setShowAddAnthropicCompatibleModal(true)}
               className="w-full sm:w-auto"
+              disabled={!canWrite}
+              title={!canWrite ? "Admin only" : undefined}
             >
               Add Anthropic Compatible
             </Button>
@@ -362,6 +366,8 @@ export default function ProvidersPage() {
               icon="add"
               onClick={() => setShowAddCompatibleModal(true)}
               className="w-full !bg-white !text-black hover:!bg-gray-100 sm:w-auto"
+              disabled={!canWrite}
+              title={!canWrite ? "Admin only" : undefined}
             >
               Add OpenAI Compatible
             </Button>
@@ -622,6 +628,7 @@ export default function ProvidersPage() {
 function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
   const { connected, error, errorCode, errorTime, allDisabled } = stats;
   const isNoAuth = !!provider.noAuth;
+  const { canWrite } = useAuthStore();
 
   const dotColors = {
     free: "bg-green-500",
@@ -652,7 +659,6 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
             >
               <ProviderIcon
                 src={`/providers/${provider.id}.png`}
-                svgIcon={provider.svgIcon}
                 alt={provider.name}
                 size={30}
                 className="object-contain rounded-lg max-w-[32px] max-h-[32px]"
@@ -694,14 +700,15 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  onToggle(!allDisabled ? false : true);
+                  if (canWrite) onToggle(!allDisabled ? false : true);
                 }}
               >
                 <Toggle
                   size="sm"
                   checked={!allDisabled}
                   onChange={() => {}}
-                  title={allDisabled ? "Enable provider" : "Disable provider"}
+                  title={!canWrite ? "Admin only" : allDisabled ? "Enable provider" : "Disable provider"}
+                  disabled={!canWrite}
                 />
               </div>
             )}
@@ -742,6 +749,7 @@ function ApiKeyProviderCard({
   const isAnthropicCompatible = providerId.startsWith(
     ANTHROPIC_COMPATIBLE_PREFIX,
   );
+  const { canWrite } = useAuthStore();
 
   const dotColors = {
     free: "bg-green-500",
@@ -832,14 +840,15 @@ function ApiKeyProviderCard({
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  onToggle(!allDisabled ? false : true);
+                  if (canWrite) onToggle(!allDisabled ? false : true);
                 }}
               >
                 <Toggle
                   size="sm"
                   checked={!allDisabled}
                   onChange={() => {}}
-                  title={allDisabled ? "Enable provider" : "Disable provider"}
+                  title={!canWrite ? "Admin only" : allDisabled ? "Enable provider" : "Disable provider"}
+                  disabled={!canWrite}
                 />
               </div>
             )}

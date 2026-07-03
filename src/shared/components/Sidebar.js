@@ -8,6 +8,7 @@ import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG, UPDATER_CONFIG } from "@/shared/constants/config";
 import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { useAuthStore } from "@/store/authStore";
 import Button from "./Button";
 import { ConfirmModal } from "./Modal";
 import NineRemotePromoModal from "./NineRemotePromoModal";
@@ -30,7 +31,6 @@ const navItems = [
 
 const debugItems = [
   { href: "/dashboard/console-log", label: "Console Log", icon: "terminal" },
-  { href: "/dashboard/error-log", label: "Error Log", icon: "error" },
   { href: "/dashboard/translator", label: "Translator", icon: "translate" },
 ];
 
@@ -41,6 +41,7 @@ const systemItems = [
 
 export default function Sidebar({ onClose }) {
   const pathname = usePathname();
+  const { role } = useAuthStore();
   const [mediaOpen, setMediaOpen] = useState(false);
   const [showRemoteModal, setShowRemoteModal] = useState(false);
   const [isDisconnected, setIsDisconnected] = useState(false);
@@ -304,6 +305,30 @@ export default function Sidebar({ onClose }) {
               </span>
               <span className="text-[13px] font-medium">Remote</span>
             </button>
+
+            {/* Users (admin only) */}
+            {role === "admin" && (
+              <Link
+                href="/dashboard/users"
+                onClick={onClose}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                  isActive("/dashboard/users")
+                    ? "bg-primary/10 text-primary"
+                    : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                )}
+              >
+                <span
+                  className={cn(
+                    "material-symbols-outlined text-[18px]",
+                    isActive("/dashboard/users") ? "fill-1" : "group-hover:text-primary transition-colors"
+                  )}
+                >
+                  group
+                </span>
+                <span className="text-[13px] font-medium">Users</span>
+              </Link>
+            )}
 
             {/* Settings */}
             <Link

@@ -32,6 +32,13 @@ export {
   getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey, validateApiKey,
 } from "./repos/apiKeysRepo.js";
 
+// Users
+export {
+  getUsers, getUserById, getUserByUsername, getUserByOidcSub,
+  createUser, updateUser, updateUserPassword, deleteUser,
+  countAdmins, setLastLogin,
+} from "./repos/usersRepo.js";
+
 // Combos
 export {
   getCombos, getComboById, getComboByName,

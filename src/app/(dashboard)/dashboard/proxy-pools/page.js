@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { Badge, Button, Card, CardSkeleton, Input, Modal, Toggle, ConfirmModal } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
+import { useAuthStore } from "@/store/authStore";
 
 function getStatusVariant(status) {
   if (status === "active") return "success";
@@ -53,6 +54,7 @@ export default function ProxyPoolsPage() {
   const [confirmState, setConfirmState] = useState(null);
   const relayMenuRef = useRef(null);
   const notify = useNotificationStore();
+  const { canWrite } = useAuthStore();
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -586,6 +588,8 @@ export default function ProxyPoolsPage() {
               variant="secondary"
               icon="rocket_launch"
               onClick={() => setShowRelayMenu(!showRelayMenu)}
+              disabled={!canWrite}
+              title={!canWrite ? "Admin only" : undefined}
             >
               Deploy Relay
               <span className="material-symbols-outlined ml-1 text-[18px]">
@@ -629,10 +633,10 @@ export default function ProxyPoolsPage() {
             )}
           </div>
 
-          <Button size="sm" variant="secondary" icon="upload" onClick={openBatchImportModal}>
+          <Button size="sm" variant="secondary" icon="upload" onClick={openBatchImportModal} disabled={!canWrite} title={!canWrite ? "Admin only" : undefined}>
             Batch Import
           </Button>
-          <Button size="sm" icon="add" onClick={openCreateModal}>Add Proxy Pool</Button>
+          <Button size="sm" icon="add" onClick={openCreateModal} disabled={!canWrite} title={!canWrite ? "Admin only" : undefined}>Add Proxy Pool</Button>
         </div>
       </div>
 
@@ -664,19 +668,20 @@ export default function ProxyPoolsPage() {
                 size="sm"
                 icon={healthChecking ? "progress_activity" : "health_and_safety"}
                 onClick={handleHealthCheck}
-                disabled={healthChecking || bulkBusy || proxyPools.length === 0}
+                disabled={healthChecking || bulkBusy || proxyPools.length === 0 || !canWrite}
+                title={!canWrite ? "Admin only" : undefined}
               >
                 {healthChecking ? `Checking ${healthProgress.current}/${healthProgress.total}` : "Health Check"}
               </Button>
               {selectedIds.length > 0 && (
                 <>
-                  <Button size="sm" variant="secondary" icon="toggle_on" onClick={() => bulkSetActive(true)} disabled={bulkBusy || healthChecking}>
+                  <Button size="sm" variant="secondary" icon="toggle_on" onClick={() => bulkSetActive(true)} disabled={bulkBusy || healthChecking || !canWrite} title={!canWrite ? "Admin only" : undefined}>
                     Activate
                   </Button>
-                  <Button size="sm" variant="secondary" icon="toggle_off" onClick={() => bulkSetActive(false)} disabled={bulkBusy || healthChecking}>
+                  <Button size="sm" variant="secondary" icon="toggle_off" onClick={() => bulkSetActive(false)} disabled={bulkBusy || healthChecking || !canWrite} title={!canWrite ? "Admin only" : undefined}>
                     Deactivate
                   </Button>
-                  <Button size="sm" variant="secondary" icon="delete" onClick={bulkDelete} disabled={bulkBusy || healthChecking}>
+                  <Button size="sm" variant="secondary" icon="delete" onClick={bulkDelete} disabled={bulkBusy || healthChecking || !canWrite} title={!canWrite ? "Admin only" : undefined}>
                     Delete
                   </Button>
                   <Button size="sm" variant="ghost" onClick={clearSelection} disabled={bulkBusy || healthChecking}>
@@ -694,7 +699,7 @@ export default function ProxyPoolsPage() {
             <p className="text-sm text-text-muted mb-4">
               Create a proxy pool entry, then assign it to connections.
             </p>
-            <Button icon="add" onClick={openCreateModal}>Add Proxy Pool</Button>
+            <Button icon="add" onClick={openCreateModal} disabled={!canWrite} title={!canWrite ? "Admin only" : undefined}>Add Proxy Pool</Button>
           </div>
         ) : (
           <div className="flex flex-col divide-y divide-black/[0.04] dark:divide-white/[0.05]">
@@ -742,13 +747,14 @@ export default function ProxyPoolsPage() {
                     size="sm"
                     checked={pool.isActive === true}
                     onChange={() => handleToggleActive(pool)}
-                    title={pool.isActive ? "Disable" : "Enable"}
+                    disabled={!canWrite}
+                    title={!canWrite ? "Admin only" : pool.isActive ? "Disable" : "Enable"}
                   />
                   <button
                     onClick={() => handleTest(pool.id)}
                     className="p-2 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary"
-                    title="Test proxy"
-                    disabled={testingId === pool.id}
+                    title={!canWrite ? "Admin only" : "Test proxy"}
+                    disabled={testingId === pool.id || !canWrite}
                   >
                     <span
                       className="material-symbols-outlined text-[18px]"
@@ -760,14 +766,16 @@ export default function ProxyPoolsPage() {
                   <button
                     onClick={() => openEditModal(pool)}
                     className="p-2 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary"
-                    title="Edit"
+                    title={!canWrite ? "Admin only" : "Edit"}
+                    disabled={!canWrite}
                   >
                     <span className="material-symbols-outlined text-[18px]">edit</span>
                   </button>
                   <button
                     onClick={() => handleDelete(pool)}
                     className="p-2 rounded hover:bg-red-500/10 text-red-500"
-                    title="Delete"
+                    title={!canWrite ? "Admin only" : "Delete"}
+                    disabled={!canWrite}
                   >
                     <span className="material-symbols-outlined text-[18px]">delete</span>
                   </button>
@@ -798,7 +806,7 @@ export default function ProxyPoolsPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <Button fullWidth onClick={handleBatchImport} disabled={!batchImportText.trim() || importing}>
+            <Button fullWidth onClick={handleBatchImport} disabled={!batchImportText.trim() || importing || !canWrite} title={!canWrite ? "Admin only" : undefined}>
               {importing ? "Importing..." : "Import"}
             </Button>
             <Button fullWidth variant="ghost" onClick={closeBatchImportModal} disabled={importing}>
@@ -845,7 +853,8 @@ export default function ProxyPoolsPage() {
             <Button
               fullWidth
               onClick={handleVercelDeploy}
-              disabled={!vercelForm.vercelToken.trim() || deploying}
+              disabled={!vercelForm.vercelToken.trim() || deploying || !canWrite}
+              title={!canWrite ? "Admin only" : undefined}
             >
               {deploying ? "Deploying... (may take ~1 min)" : "Deploy"}
             </Button>
@@ -909,7 +918,8 @@ export default function ProxyPoolsPage() {
             <Button
               fullWidth
               onClick={handleCloudflareDeploy}
-              disabled={!cloudflareForm.accountId.trim() || !cloudflareForm.apiToken.trim() || deploying}
+              disabled={!cloudflareForm.accountId.trim() || !cloudflareForm.apiToken.trim() || deploying || !canWrite}
+              title={!canWrite ? "Admin only" : undefined}
             >
               {deploying ? "Deploying..." : "Deploy Worker"}
             </Button>
@@ -973,7 +983,8 @@ export default function ProxyPoolsPage() {
             <Button
               fullWidth
               onClick={handleDenoDeploy}
-              disabled={!denoForm.denoToken.trim() || !denoForm.orgDomain.trim() || deploying}
+              disabled={!denoForm.denoToken.trim() || !denoForm.orgDomain.trim() || deploying || !canWrite}
+              title={!canWrite ? "Admin only" : undefined}
             >
               {deploying ? "Deploying..." : "Deploy Relay"}
             </Button>
@@ -1038,7 +1049,8 @@ export default function ProxyPoolsPage() {
             <Button
               fullWidth
               onClick={handleSave}
-              disabled={!formData.name.trim() || !formData.proxyUrl.trim() || saving}
+              disabled={!formData.name.trim() || !formData.proxyUrl.trim() || saving || !canWrite}
+              title={!canWrite ? "Admin only" : undefined}
             >
               {saving ? "Saving..." : "Save"}
             </Button>

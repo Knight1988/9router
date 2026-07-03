@@ -5,8 +5,10 @@ import { MITM_TOOLS } from "@/shared/constants/cliTools";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { MitmServerCard, MitmToolCard } from "@/app/(dashboard)/dashboard/cli-tools/components";
+import { useAuthStore } from "@/store/authStore";
 
 export default function MitmPageClient() {
+  const { canWrite } = useAuthStore();
   const [connections, setConnections] = useState([]);
   const [apiKeys, setApiKeys] = useState([]);
   const [modelAliases, setModelAliases] = useState({});
@@ -88,6 +90,7 @@ export default function MitmPageClient() {
         apiKeys={apiKeys}
         cloudEnabled={cloudEnabled}
         onStatusChange={setMitmStatus}
+        canWrite={canWrite}
       />
 
       {/* Tool Cards */}
@@ -109,6 +112,7 @@ export default function MitmPageClient() {
             modelAliases={modelAliases}
             cloudEnabled={cloudEnabled}
             onDnsChange={(data) => setMitmStatus(prev => ({ ...prev, dnsStatus: data.dnsStatus ?? prev.dnsStatus }))}
+            canWrite={canWrite}
           />
         ))}
       </div>

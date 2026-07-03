@@ -10,6 +10,7 @@ import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
 import { LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
 import { LOCALE_FLAGS } from "@/shared/constants/locales";
+import { useAuthStore } from "@/store/authStore";
 
 function getLocaleFromCookie() {
   if (typeof document === "undefined") return "en";
@@ -22,6 +23,7 @@ function getLocaleFromCookie() {
 
 export default function ProfilePage() {
   const router = useRouter();
+  const { canWrite } = useAuthStore();
   const { theme, setTheme, isDark } = useTheme();
   const [locale, setLocale] = useState("en");
   const [langOpen, setLangOpen] = useState(false);
@@ -634,7 +636,8 @@ export default function ProfilePage() {
                 variant="outline"
                 icon="upload"
                 onClick={() => importFileRef.current?.click()}
-                disabled={dbLoading}
+                disabled={dbLoading || !canWrite}
+                title={!canWrite ? "Admin only" : undefined}
                 className="w-full sm:w-auto"
               >
                 Import Backup
@@ -692,7 +695,8 @@ export default function ProfilePage() {
               <Toggle
                 checked={settings.requireLogin === true}
                 onChange={() => updateRequireLogin(!settings.requireLogin)}
-                disabled={loading}
+                disabled={loading || !canWrite}
+                title={!canWrite ? "Admin only" : undefined}
               />
             </div>
             {settings.requireLogin === true && (
@@ -746,7 +750,7 @@ export default function ProfilePage() {
                 )}
 
                 <div className="pt-2">
-                  <Button type="submit" variant="primary" loading={passLoading} className="w-full sm:w-auto">
+                  <Button type="submit" variant="primary" loading={passLoading} disabled={!canWrite} title={!canWrite ? "Admin only" : undefined} className="w-full sm:w-auto">
                     {settings.hasPassword ? "Update Password" : "Set Password"}
                   </Button>
                 </div>
@@ -813,7 +817,8 @@ export default function ProfilePage() {
                           ? "border-primary bg-primary/5"
                           : "border-border bg-bg hover:bg-black/5 dark:hover:bg-white/5"
                       )}
-                      disabled={loading || oidcLoading}
+                      disabled={loading || oidcLoading || !canWrite}
+                      title={!canWrite ? "Admin only" : undefined}
                     >
                       <p className="font-medium text-sm sm:text-base">{option.title}</p>
                       <p className="text-xs sm:text-sm text-text-muted mt-1">{option.desc}</p>
@@ -883,10 +888,10 @@ export default function ProfilePage() {
             </div>
 
             <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-border/50">
-              <Button type="button" variant="primary" loading={oidcLoading} onClick={() => saveOidcSettings()} className="w-full sm:w-auto">
+              <Button type="button" variant="primary" loading={oidcLoading} disabled={!canWrite} title={!canWrite ? "Admin only" : undefined} onClick={() => saveOidcSettings()} className="w-full sm:w-auto">
                 Save auth mode
               </Button>
-              <Button type="button" variant="outline" loading={oidcTestLoading} onClick={testOidcConnection} className="w-full sm:w-auto">
+              <Button type="button" variant="outline" loading={oidcTestLoading} disabled={!canWrite} title={!canWrite ? "Admin only" : undefined} onClick={testOidcConnection} className="w-full sm:w-auto">
                 Test connection
               </Button>
             </div>
@@ -937,7 +942,8 @@ export default function ProfilePage() {
               <Toggle
                 checked={settings.fallbackStrategy === "round-robin"}
                 onChange={() => updateFallbackStrategy(settings.fallbackStrategy === "round-robin" ? "fill-first" : "round-robin")}
-                disabled={loading}
+                disabled={loading || !canWrite}
+                title={!canWrite ? "Admin only" : undefined}
               />
             </div>
 
@@ -956,7 +962,8 @@ export default function ProfilePage() {
                   max="10"
                   value={settings.stickyRoundRobinLimit || 3}
                   onChange={(e) => updateStickyLimit(e.target.value)}
-                  disabled={loading}
+                  disabled={loading || !canWrite}
+                  title={!canWrite ? "Admin only" : undefined}
                   className="w-16 sm:w-20 text-center shrink-0"
                 />
               </div>
@@ -973,7 +980,8 @@ export default function ProfilePage() {
               <Toggle
                 checked={settings.comboStrategy === "round-robin"}
                 onChange={() => updateComboStrategy(settings.comboStrategy === "round-robin" ? "fallback" : "round-robin")}
-                disabled={loading}
+                disabled={loading || !canWrite}
+                title={!canWrite ? "Admin only" : undefined}
               />
             </div>
 
@@ -992,62 +1000,12 @@ export default function ProfilePage() {
                   max="100"
                   value={settings.comboStickyRoundRobinLimit || 1}
                   onChange={(e) => updateComboStickyLimit(e.target.value)}
-                  disabled={loading}
+                  disabled={loading || !canWrite}
+                  title={!canWrite ? "Admin only" : undefined}
                   className="w-20 text-center"
                 />
               </div>
             )}
-
-            {/* Smart Routing Interval */}
-            <div className="flex items-start sm:items-center justify-between gap-4 pt-4 border-t border-border/50">
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm sm:text-base">Smart Routing Interval</p>
-                <p className="text-xs sm:text-sm text-text-muted">
-                  How often (minutes) to refresh quota-based model priority for Smart Routing combos
-                </p>
-              </div>
-              <Input
-                type="number"
-                min="1"
-                max="1440"
-                value={settings.smartRoutingIntervalMinutes ?? 15}
-                onChange={(e) => {
-                  const val = Math.max(1, Math.min(1440, parseInt(e.target.value, 10) || 15));
-                  fetch("/api/settings", {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ smartRoutingIntervalMinutes: val }),
-                  }).then(() => setSettings(prev => ({ ...prev, smartRoutingIntervalMinutes: val }))).catch(() => {});
-                }}
-                disabled={loading}
-                className="w-20 text-center shrink-0"
-              />
-            </div>
-
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <label className="text-sm font-medium">Quota refresh interval (min)</label>
-                <p className="text-xs sm:text-sm text-text-muted">
-                  How often (minutes) to refresh provider quota in the background cache — keeps the Quota dashboard and Smart Routing in sync
-                </p>
-              </div>
-              <Input
-                type="number"
-                min="1"
-                max="1440"
-                value={settings.quotaRefreshIntervalMinutes ?? 5}
-                onChange={(e) => {
-                  const val = Math.max(1, Math.min(1440, parseInt(e.target.value, 10) || 5));
-                  fetch("/api/settings", {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ quotaRefreshIntervalMinutes: val }),
-                  }).then(() => setSettings(prev => ({ ...prev, quotaRefreshIntervalMinutes: val }))).catch(() => {});
-                }}
-                disabled={loading}
-                className="w-20 text-center shrink-0"
-              />
-            </div>
 
             <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
               {settings.fallbackStrategy === "round-robin"
@@ -1078,7 +1036,8 @@ export default function ProfilePage() {
               <Toggle
                 checked={settings.outboundProxyEnabled === true}
                 onChange={() => updateOutboundProxyEnabled(!(settings.outboundProxyEnabled === true))}
-                disabled={loading || proxyLoading}
+                disabled={loading || proxyLoading || !canWrite}
+                title={!canWrite ? "Admin only" : undefined}
               />
             </div>
 
@@ -1111,13 +1070,14 @@ export default function ProfilePage() {
                     type="button"
                     variant="secondary"
                     loading={proxyTestLoading}
-                    disabled={loading || proxyLoading}
+                    disabled={loading || proxyLoading || !canWrite}
+                    title={!canWrite ? "Admin only" : undefined}
                     onClick={testOutboundProxy}
                     className="w-full sm:w-auto"
                   >
                     Test proxy URL
                   </Button>
-                  <Button type="submit" variant="primary" loading={proxyLoading} className="w-full sm:w-auto">
+                  <Button type="submit" variant="primary" loading={proxyLoading} disabled={!canWrite} title={!canWrite ? "Admin only" : undefined} className="w-full sm:w-auto">
                     Apply
                   </Button>
                 </div>
@@ -1150,7 +1110,8 @@ export default function ProfilePage() {
             <Toggle
               checked={observabilityEnabled}
               onChange={updateObservabilityEnabled}
-              disabled={loading}
+              disabled={loading || !canWrite}
+              title={!canWrite ? "Admin only" : undefined}
             />
           </div>
         </Card>
@@ -1162,6 +1123,8 @@ export default function ProfilePage() {
             fullWidth
             icon="power_settings_new"
             onClick={() => setShutdownOpen(true)}
+            disabled={!canWrite}
+            title={!canWrite ? "Admin only" : undefined}
             className="text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300"
           >
             Shutdown

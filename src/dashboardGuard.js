@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSettings, validateApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { verifyDashboardAuthToken, getDashboardAuthPayload } from "@/lib/auth/dashboardSession";
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
@@ -63,6 +63,17 @@ const PROTECTED_API_PATHS = [
   "/api/mcp",
   "/api/translator",
   "/api/tunnel",
+];
+
+// Admin-only (any method)
+const ADMIN_ONLY_PREFIXES = ["/api/users"];
+
+// User role can GET but not POST/PUT/PATCH/DELETE
+const USER_READONLY_PREFIXES = [
+  "/api/settings", "/api/providers", "/api/provider-nodes", "/api/proxy-pools",
+  "/api/combos", "/api/models", "/api/oauth", "/api/cloud",
+  "/api/media-providers", "/api/pricing", "/api/tags",
+  "/api/cli-tools", "/api/mcp", "/api/translator", "/api/tunnel",
 ];
 
 // Routes that spawn child processes or read host secrets — restrict to localhost.
@@ -200,9 +211,26 @@ export async function proxy(request) {
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
   if (pathname.startsWith("/api/")) {
     if (isPublicApi(pathname)) return NextResponse.next();
-    if (await hasValidCliToken(request) || await isAuthenticated(request))
-      return NextResponse.next();
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // CLI token always has implicit admin access
+    if (await hasValidCliToken(request)) return NextResponse.next();
+    if (!(await isAuthenticated(request)))
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    // Role-based access control for authenticated users
+    const token = request.cookies.get("auth_token")?.value;
+    const payload = token ? await getDashboardAuthPayload(token) : null;
+    const role = payload?.role || "admin"; // legacy tokens without role default to admin
+    const method = request.method?.toUpperCase() || "GET";
+    const isWrite = method !== "GET" && method !== "HEAD";
+
+    if (ADMIN_ONLY_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+      if (role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    if (role === "user" && isWrite && USER_READONLY_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+      return NextResponse.json({ error: "Read-only for user role" }, { status: 403 });
+    }
+
+    return NextResponse.next();
   }
 
   // Protect all dashboard routes
