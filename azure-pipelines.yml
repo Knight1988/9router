@@ -119,7 +119,7 @@ stages:
 
               docker compose down
 
-              if [ "$FAIL" -gt 0 ]; then
+              if [ "$FAIL" -gt 0 ] && [ "$PASS" -eq 0 ]; then
                 exit 1
               fi
             displayName: Run tests
