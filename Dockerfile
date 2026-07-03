@@ -43,6 +43,18 @@ COPY --from=builder /app/node_modules/react-dom ./node_modules/react-dom
 COPY --from=builder /app/node_modules/styled-jsx ./node_modules/styled-jsx
 COPY --from=builder /app/node_modules/scheduler ./node_modules/scheduler
 COPY --from=builder /app/node_modules/material-symbols ./node_modules/material-symbols
+# Self-signed cert generation (selfsigned + transitive deps)
+COPY --from=builder /app/node_modules/selfsigned ./node_modules/selfsigned
+COPY --from=builder /app/node_modules/@peculiar ./node_modules/@peculiar
+COPY --from=builder /app/node_modules/@noble ./node_modules/@noble
+COPY --from=builder /app/node_modules/pkijs ./node_modules/pkijs
+COPY --from=builder /app/node_modules/asn1js ./node_modules/asn1js
+COPY --from=builder /app/node_modules/bytestreamjs ./node_modules/bytestreamjs
+COPY --from=builder /app/node_modules/pvtsutils ./node_modules/pvtsutils
+COPY --from=builder /app/node_modules/pvutils ./node_modules/pvutils
+COPY --from=builder /app/node_modules/tslib ./node_modules/tslib
+COPY --from=builder /app/node_modules/tsyringe ./node_modules/tsyringe
+COPY --from=builder /app/node_modules/reflect-metadata ./node_modules/reflect-metadata
 
 RUN mkdir -p /app/data && chown -R node:node /app && \
   mkdir -p /app/data-home && chown node:node /app/data-home && \
