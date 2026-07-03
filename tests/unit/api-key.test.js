@@ -30,6 +30,12 @@ vi.mock("@/shared/utils/machineId", () => ({
   getConsistentMachineId: vi.fn().mockResolvedValue("machine-id-test"),
 }));
 
+vi.mock("@/lib/auth/requireRole", () => ({
+  getSessionUser: vi.fn().mockResolvedValue({ userId: "admin-id", username: "admin", role: "admin" }),
+  requireAuth: vi.fn().mockResolvedValue({ userId: "admin-id", username: "admin", role: "admin" }),
+  requireAdmin: vi.fn().mockResolvedValue({ userId: "admin-id", username: "admin", role: "admin" }),
+}));
+
 // Mock only generateApiKeyWithMachine (used inside createApiKey repo method)
 // and spread the real exports so the rest of the module is unaffected.
 vi.mock("@/shared/utils/apiKey", async (importOriginal) => {
@@ -261,7 +267,7 @@ describe("/api/keys route handlers", () => {
       const res = await keysPOST(req);
       expect(res.status).toBe(201);
       expect(getConsistentMachineId).toHaveBeenCalledOnce();
-      expect(localDb.createApiKey).toHaveBeenCalledWith("mykey", "machine-id-test");
+      expect(localDb.createApiKey).toHaveBeenCalledWith("mykey", "machine-id-test", "admin-id");
       const body = await res.json();
       expect(body.key).toBe(created.key);
       expect(body.name).toBe(created.name);
@@ -329,7 +335,7 @@ describe("/api/keys route handlers", () => {
       localDb.updateApiKey.mockResolvedValue({ ...existing, name: "trimmed" });
       const res = await keyByIdPUT(putReq("id", { name: "  trimmed  " }), { params: Promise.resolve({ id: "id" }) });
       expect(res.status).toBe(200);
-      expect(localDb.updateApiKey).toHaveBeenCalledWith("id", { name: "trimmed" });
+      expect(localDb.updateApiKey).toHaveBeenCalledWith("id", { name: "trimmed" }, null);
     });
 
     it("updates isActive without requiring name", async () => {
@@ -338,7 +344,7 @@ describe("/api/keys route handlers", () => {
       localDb.updateApiKey.mockResolvedValue({ ...existing, isActive: false });
       const res = await keyByIdPUT(putReq("id2", { isActive: false }), { params: Promise.resolve({ id: "id2" }) });
       expect(res.status).toBe(200);
-      expect(localDb.updateApiKey).toHaveBeenCalledWith("id2", { isActive: false });
+      expect(localDb.updateApiKey).toHaveBeenCalledWith("id2", { isActive: false }, null);
     });
   });
 
