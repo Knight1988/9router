@@ -46,7 +46,7 @@ const CLAUDIBLE_CONFIG = {
 };
 
 const TECHOPENCLAW_CONFIG = {
-  infoUrl: "https://api.techopenclaw.com/v1/user/info",
+  infoUrl: "https://user.top1data.com/v1/user/info",
 };
 
 /**
