@@ -19,6 +19,15 @@ function colorLine(line) {
   return <span className={color}>{line}</span>;
 }
 
+// Format a log entry for display. New entries are {ts, text} objects from the server;
+// the ts is rendered in the browser's own timezone. Plain strings are passed through
+// unchanged for hot-reload safety.
+function formatEntry(entry) {
+  if (typeof entry === "string") return entry;
+  const t = new Date(entry.ts).toLocaleTimeString("en-US", { hour12: false });
+  return `[${t}] ${entry.text}`;
+}
+
 export default function ConsoleLogClient({ endpoint = "/api/translator/console-logs" }) {
   const [logs, setLogs] = useState([]);
   const [connected, setConnected] = useState(false);
@@ -80,7 +89,7 @@ export default function ConsoleLogClient({ endpoint = "/api/translator/console-l
           ) : (
             <div className="space-y-0.5">
               {logs.map((line, i) => (
-                <div key={i}>{colorLine(line)}</div>
+                <div key={i}>{colorLine(formatEntry(line))}</div>
               ))}
             </div>
           )}

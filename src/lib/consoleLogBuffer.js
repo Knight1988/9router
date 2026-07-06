@@ -31,22 +31,14 @@ if (!state.errorLogs) {
   state.errorLogs = [];
 }
 
-function getTimestamp() {
-  const now = new Date();
-  const h = String(now.getHours()).padStart(2, "0");
-  const m = String(now.getMinutes()).padStart(2, "0");
-  const s = String(now.getSeconds()).padStart(2, "0");
-  return `[${h}:${m}:${s}]`;
-}
+// Strip a leading [HH:MM:SS] or [H:MM:SS] timestamp added by callers (e.g. logger.js)
+// so the client can re-stamp it in the browser's local timezone.
+const LEADING_TS_RE = /^\[\d{1,2}:\d{2}:\d{2}\]\s*/;
 
-// Detect a leading [HH:MM:SS] or [H:MM:SS] timestamp already added by the caller
-const LEADING_TS_RE = /^\[\d{1,2}:\d{2}:\d{2}\]/;
-
-function toLogLine(level, args) {
-  const text = args.map(formatArg).join(" ");
-  // Avoid double-stamping: if the caller already prepended [HH:MM:SS], don't add another
-  if (LEADING_TS_RE.test(text)) return text;
-  return `${getTimestamp()} ${text}`;
+function toEntry(args) {
+  const raw = args.map(formatArg).join(" ");
+  const text = raw.replace(LEADING_TS_RE, "");
+  return { ts: Date.now(), text };
 }
 
 // Strip ANSI escape codes so terminal colors don't bleed into UI
@@ -90,9 +82,9 @@ export function initConsoleLogCapture() {
   for (const level of consoleLevels) {
     state.originals[level] = console[level];
     console[level] = (...args) => {
-      const line = toLogLine(level, args);
-      appendLine(line);
-      if (level === "error") appendErrorLine(line);
+      const entry = toEntry(args);
+      appendLine(entry);
+      if (level === "error") appendErrorLine(entry);
       state.originals[level](...args);
     };
   }
