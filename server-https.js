@@ -165,19 +165,21 @@ if (httpsEnabled) {
   } else {
     // Auto-generate a self-signed cert so HTTPS port is always reachable
     console.warn("[https] HTTPS_ENABLED=true but no certificate found — generating self-signed cert");
-    let autoKey, autoCert;
-    try {
-      const selfsigned = require("selfsigned");
-      const attrs = [{ name: "commonName", value: hostname === "0.0.0.0" ? "localhost" : hostname }];
-      const pems = selfsigned.generate(attrs, { days: 365, keySize: 2048 });
-      autoKey = pems.private;
-      autoCert = pems.cert;
-    } catch (err) {
-      console.error("[https] Failed to generate self-signed cert:", err);
-      process.exit(1);
-    }
 
     (async () => {
+      let autoKey, autoCert;
+      try {
+        const selfsigned = require("selfsigned");
+        const attrs = [{ name: "commonName", value: hostname === "0.0.0.0" ? "localhost" : hostname }];
+        // selfsigned v5+ is async; v4 and below is sync — await handles both
+        const pems = await selfsigned.generate(attrs, { days: 365, keySize: 2048 });
+        autoKey = pems.private;
+        autoCert = pems.cert;
+      } catch (err) {
+        console.error("[https] Failed to generate self-signed cert:", err);
+        process.exit(1);
+      }
+
       try {
         const httpsServer = https.createServer({ key: autoKey, cert: autoCert });
         const app = next({
