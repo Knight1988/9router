@@ -13,7 +13,10 @@ export async function GET(request) {
     }
 
     const data = await getChartData(period);
-    return NextResponse.json(data);
+    const ttl = ["today", "5h", "12h", "24h"].includes(period) ? 30 : 60;
+    return NextResponse.json(data, {
+      headers: { "Cache-Control": `private, max-age=${ttl}` },
+    });
   } catch (error) {
     console.error("[API] Failed to get chart data:", error);
     return NextResponse.json({ error: "Failed to fetch chart data" }, { status: 500 });

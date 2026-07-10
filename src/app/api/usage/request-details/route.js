@@ -45,8 +45,10 @@ export async function GET(request) {
     if (endDate) filter.endDate = endDate;
     
     const result = await getRequestDetails(filter);
-    
-    return NextResponse.json(result);
+
+    return NextResponse.json(result, {
+      headers: { "Cache-Control": "private, max-age=10" },
+    });
   } catch (error) {
     console.error("[API] Failed to get request details:", error);
     return NextResponse.json(

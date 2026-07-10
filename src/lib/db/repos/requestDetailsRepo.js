@@ -384,12 +384,21 @@ export async function getProviderHealthStats({ startDate, provider } = {}) {
   return data;
 }
 
+const PROVIDERS_CACHE_TTL_MS = 120_000; // 2 minutes — provider list rarely changes
+let providersCache = null;
+let providersCacheTs = 0;
+
 export async function getDistinctProviders() {
+  if (providersCache !== null && (Date.now() - providersCacheTs) < PROVIDERS_CACHE_TTL_MS) {
+    return providersCache;
+  }
   const db = await getAdapter();
   const rows = db.all(
     `SELECT DISTINCT provider FROM requestDetails WHERE provider IS NOT NULL ORDER BY provider`
   );
-  return rows.map((r) => r.provider);
+  providersCache = rows.map((r) => r.provider);
+  providersCacheTs = Date.now();
+  return providersCache;
 }
 
 export async function getTotalRecordCount() {

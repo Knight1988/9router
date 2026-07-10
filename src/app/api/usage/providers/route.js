@@ -28,7 +28,9 @@ export async function GET() {
       return { id: providerId, name };
     });
 
-    return NextResponse.json({ providers });
+    return NextResponse.json({ providers }, {
+      headers: { "Cache-Control": "private, max-age=120" },
+    });
   } catch (error) {
     console.error("[API] Failed to get providers:", error);
     return NextResponse.json(

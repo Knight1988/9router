@@ -18,6 +18,14 @@ if (!global._statsEmitter) {
 if (!global._pendingTimers) global._pendingTimers = {};
 if (!global._recentRing) global._recentRing = { items: [], initialized: false };
 if (!global._connectionMapCache) global._connectionMapCache = { map: {}, ts: 0 };
+if (!global._usageStatsCache) global._usageStatsCache = new Map();
+if (!global._chartDataCache) global._chartDataCache = new Map();
+
+// Invalidate stats/chart caches when new data is written
+global._statsEmitter.on("update", () => {
+  global._usageStatsCache.clear();
+  global._chartDataCache.clear();
+});
 
 const pendingRequests = global._pendingRequests;
 const lastErrorProvider = global._lastErrorProvider;
@@ -316,7 +324,27 @@ function loadDaysInRange(adapter, maxDays) {
   return adapter.all(`SELECT dateKey, data FROM usageDaily WHERE dateKey >= ?`, [cutoffKey]);
 }
 
+const STATS_CACHE_TTL_SHORT_MS = 30_000; // 30s for volatile short periods
+const STATS_CACHE_TTL_LONG_MS = 60_000;  // 60s for longer historical periods
+const SHORT_PERIODS = new Set(["today", "5h", "12h", "24h"]);
+
+function getStatsCacheTtl(period) {
+  return SHORT_PERIODS.has(period) ? STATS_CACHE_TTL_SHORT_MS : STATS_CACHE_TTL_LONG_MS;
+}
+
 export async function getUsageStats(period = "all") {
+  const statsCache = global._usageStatsCache;
+  const cached = statsCache.get(period);
+  if (cached && (Date.now() - cached.ts) < getStatsCacheTtl(period)) {
+    return cached.data;
+  }
+
+  const data = await _computeUsageStats(period);
+  statsCache.set(period, { data, ts: Date.now() });
+  return data;
+}
+
+async function _computeUsageStats(period = "all") {
   const db = await getAdapter();
 
   const [{ getProviderConnections }, { getApiKeys }, { getProviderNodes }] = await Promise.all([
@@ -617,7 +645,22 @@ export async function getUsageStats(period = "all") {
   return stats;
 }
 
+const CHART_CACHE_TTL_SHORT_MS = 30_000;
+const CHART_CACHE_TTL_LONG_MS = 60_000;
+
 export async function getChartData(period = "7d") {
+  const chartCache = global._chartDataCache;
+  const cached = chartCache.get(period);
+  if (cached && (Date.now() - cached.ts) < (SHORT_PERIODS.has(period) ? CHART_CACHE_TTL_SHORT_MS : CHART_CACHE_TTL_LONG_MS)) {
+    return cached.data;
+  }
+
+  const data = await _computeChartData(period);
+  chartCache.set(period, { data, ts: Date.now() });
+  return data;
+}
+
+async function _computeChartData(period = "7d") {
   const db = await getAdapter();
   const now = Date.now();
 
