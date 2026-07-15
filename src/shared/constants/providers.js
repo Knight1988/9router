@@ -107,7 +107,6 @@ const BETA_PROVIDERS = {
   "claude-claudible": { id: "claude-claudible", alias: "claude-claudible", name: "Claude Claudible", icon: "smart_toy", color: "#D97757", textIcon: "CL", website: "https://claude.claudible.io", notice: { text: "Claude Subscription + GPT gateway. Models: gpt-5.4, gpt-5.4-mini, gpt-5.5.", apiKeyUrl: "https://claudible.io/dashboard" }, passthroughModels: true, modelsFetcher: { url: "https://claudible.io/api/model-hub", type: "claudible-endpoint", endpointId: "5046fcac" }, serviceKinds: ["llm"] },
   "codex-claudible": { id: "codex-claudible", alias: "codex-claudible", name: "Codex Claudible", icon: "smart_toy", color: "#10A37F", textIcon: "CX", website: "https://codex.claudible.io", notice: { text: "Codex gateway for GPT and code review models. Models: codex-auto-review, gpt-5.3-codex, gpt-5.4, gpt-5.4-mini, gpt-5.5.", apiKeyUrl: "https://claudible.io/dashboard" }, passthroughModels: true, modelsFetcher: { url: "https://claudible.io/api/model-hub", type: "claudible-endpoint", endpointId: "183b1811" }, serviceKinds: ["llm"] },
   "open-claude": { id: "open-claude", alias: "open-claude", name: "Open Claude", icon: "smart_toy", color: "#D97757", textIcon: "OC", svgIcon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"></path></svg>', website: "https://open-claude.com", notice: { text: "OpenAI-compatible Claude gateway with usage dashboard and budget tracking.", apiKeyUrl: "https://open-claude.com/keys" } },
-  devgo: { id: "devgo", alias: "devgo", name: "DevGoVN", icon: "hub", color: "#0F766E", textIcon: "DG", website: "https://9router.tools.devgovietnam.io.vn", notice: { apiKeyUrl: "https://9router.tools.devgovietnam.io.vn" } },
 };
 
 // Merge beta-only providers into APIKEY_PROVIDERS (they all use API keys)
@@ -175,7 +174,7 @@ export function getProvidersByKind(kind) {
 // Beta-only providers (not in registry) that support usage tracking are appended manually.
 const BETA_USAGE_PROVIDERS = [
   "techopenclaw", "vip-claudible", "cc-claudible", "cn-claudible",
-  "minimax-claudible", "claude-claudible", "codex-claudible", "open-claude", "devgo",
+  "minimax-claudible", "claude-claudible", "codex-claudible", "open-claude",
 ];
 
 export const USAGE_SUPPORTED_PROVIDERS = [

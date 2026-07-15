@@ -65,7 +65,7 @@ export async function fetchUsageForConnection(connection) {
   const isOAuth = connection.authType === "oauth";
   const isApikeyEligible = connection.authType === "apikey" && USAGE_APIKEY_PROVIDERS.includes(provider);
   const hasOpenClaudeMonitorCreds = provider === "open-claude" && !!connection.providerSpecificData?.monitorCreds?.username;
-  const providerUsesApiKeyForUsage = ["troll-llm", "devgo"].includes(provider) && !!connection.apiKey;
+  const providerUsesApiKeyForUsage = ["troll-llm"].includes(provider) && !!connection.apiKey;
 
   if (!isOAuth && !isApikeyEligible && !monitorToken && !connection.accessToken && !hasOpenClaudeMonitorCreds && !providerUsesApiKeyForUsage) {
     return { message: "Usage not available for this connection" };

@@ -65,7 +65,6 @@ const MEDIA_ONLY_ALIASES = {
   "xiaomi-tokenplan": "xiaomi-tokenplan",
   cf: "cloudflare-ai",
   "cloudflare-ai": "cloudflare-ai",
-  devgo: "devgo",
   // Image/video providers
   fal: "fal-ai",
   "fal-ai": "fal-ai",

@@ -71,13 +71,11 @@ Object.assign(PROVIDERS, {
   "codex-claudible":   { format: "openai-responses", baseUrl: "https://codex.claudible.io/v1/responses",                                                  stallTimeoutMs: 300_000 },
   "open-claude":       { format: "openai",           baseUrl: "https://open-claude.com/v1/chat/completions",          retry: { 503: 3 },                  stallTimeoutMs: 300_000 },
   "troll-llm":         { format: "claude",           baseUrl: "https://chat.trollllm.xyz/v1/messages",                headers: { ...CLAUDIBLE_HEADERS },  stallTimeoutMs: 300_000 },
-  devgo:               { format: "openai",           baseUrl: "https://9router.tools.devgovietnam.io.vn/v2/chat/completions", retry: { 503: 3, 429: 2 },  stallTimeoutMs: 300_000 },
 });
 
 // Beta-only providers not yet in the registry — supplement model lists directly
 Object.assign(PROVIDER_MODELS, {
   techopenclaw: [
-    { id: "baka", name: "Baka" },
     { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
     { id: "claude-opus-4-7", name: "Claude Opus 4.7" },
     { id: "claude-opus-4-8", name: "Claude Opus 4.8" },
@@ -92,11 +90,11 @@ Object.assign(PROVIDER_MODELS, {
     { id: "glm-5-turbo", name: "GLM 5 Turbo" },
     { id: "glm-5.1", name: "GLM 5.1" },
     { id: "glm-5.2", name: "GLM 5.2" },
-    { id: "gpt-5.3-codex", name: "GPT-5.3 Codex" },
     { id: "gpt-5.4", name: "GPT-5.4" },
     { id: "gpt-5.5", name: "GPT-5.5" },
-    { id: "kimi-k2.6", name: "Kimi K2.6" },
-    { id: "minimax-m2.7", name: "MiniMax M2.7" },
+    { id: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
+    { id: "gpt-5.6-terra", name: "GPT-5.6 Terra" },
+    { id: "grok-4.5", name: "Grok 4.5" },
   ],
   "vip-claudible": [
     { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
@@ -139,10 +137,6 @@ Object.assign(PROVIDER_MODELS, {
     { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
     { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
     { id: "claude-opus-4-7", name: "Claude Opus 4.7" },
-  ],
-  devgo: [
-    { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
-    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
   ],
   "troll-llm": [
     { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },

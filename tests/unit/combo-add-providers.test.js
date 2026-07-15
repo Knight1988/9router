@@ -1,5 +1,5 @@
 /**
- * Unit tests: Claudible, Open Claude, techopenclaw, and DevGo providers
+ * Unit tests: Claudible, Open Claude, and techopenclaw providers
  *             can add models to a combo.
  *
  * Covers:
@@ -89,7 +89,6 @@ const TARGET_PROVIDERS = [
   "techopenclaw",
   ...CLAUDIBLE_IDS,
   "open-claude",
-  "devgo",
 ];
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -120,7 +119,6 @@ describe("hardcoded model lists", () => {
     "techopenclaw",
     ...CLAUDIBLE_IDS,
     "open-claude",
-    "devgo",
   ];
 
   it.each(PROVIDERS_WITH_HARDCODED_MODELS)("%s has at least one hardcoded model", (id) => {
@@ -276,24 +274,11 @@ describe("POST /api/combos — accepts provider model values", () => {
     expect(res.status).toBe(201);
     expect(body.models).toEqual(models);
   });
-
-  it("creates combo with devgo model value", async () => {
-    const models = getModelsByProviderId("devgo").slice(0, 2).map((m) => `devgo/${m.id}`);
-
-    const req = makeRequest({ name: "devgo-combo", models, kind: null });
-    const res = await POST(req);
-    const body = await res.json();
-
-    expect(res.status).toBe(201);
-    expect(body.models).toEqual(models);
-  });
-
-  it("creates a mixed combo with models from all four provider families", async () => {
+  it("creates a mixed combo with models from multiple provider families", async () => {
     const models = [
       `techopenclaw/${getModelsByProviderId("techopenclaw")[0].id}`,
       `vip-claudible/${getModelsByProviderId("vip-claudible")[0].id}`,
       `open-claude/${getModelsByProviderId("open-claude")[0].id}`,
-      `devgo/${getModelsByProviderId("devgo")[0].id}`,
     ];
 
     const req = makeRequest({ name: "mixed-combo", models, kind: null });
@@ -301,7 +286,7 @@ describe("POST /api/combos — accepts provider model values", () => {
     const body = await res.json();
 
     expect(res.status).toBe(201);
-    expect(body.models).toHaveLength(4);
+    expect(body.models).toHaveLength(3);
     expect(body.models).toEqual(models);
   });
 
@@ -366,23 +351,11 @@ describe("PUT /api/combos/[id] — accepts provider model values", () => {
     expect(res.status).toBe(200);
     expect(updateCombo.mock.calls[0][1].models).toEqual(models);
   });
-
-  it("updates models with devgo entries", async () => {
-    const models = getModelsByProviderId("devgo").slice(0, 2).map((m) => `devgo/${m.id}`);
-
-    const req = makePutRequest({ models });
-    const res = await PUT(req, { params: Promise.resolve({ id: "combo-test-1" }) });
-
-    expect(res.status).toBe(200);
-    expect(updateCombo.mock.calls[0][1].models).toEqual(models);
-  });
-
-  it("updates a combo with models from all four provider families simultaneously", async () => {
+  it("updates a combo with models from multiple provider families simultaneously", async () => {
     const models = [
       `techopenclaw/${getModelsByProviderId("techopenclaw")[0].id}`,
       `cc-claudible/${getModelsByProviderId("cc-claudible")[0].id}`,
       `open-claude/${getModelsByProviderId("open-claude")[0].id}`,
-      `devgo/${getModelsByProviderId("devgo")[0].id}`,
     ];
 
     const req = makePutRequest({ models });
@@ -420,7 +393,6 @@ describe("USAGE_SUPPORTED_PROVIDERS and USAGE_APIKEY_PROVIDERS regression guard"
     "minimax-claudible",
     "claude-claudible",
     "techopenclaw",
-    "devgo",
     "open-claude",
   ];
 

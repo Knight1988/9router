@@ -35,12 +35,6 @@ const TROLL_LLM_CONFIG = {
   usageStatusUrl: "https://www.trollllm.xyz/api/user/usage/status",
 };
 
-const DEVGO_CONFIG = {
-  baseUrl: "https://quota.9router.tools.devgovietnam.io.vn",
-  loginPath: "/api/customer/login",
-  summaryPath: "/api/customer/summary",
-};
-
 const CLAUDIBLE_CONFIG = {
   lookupUrl: "https://claudible.io/dashboard/lookup",
 };
@@ -110,8 +104,6 @@ export async function getUsageForProvider(connection, options = {}) {
       return await getTrollLlmUsage(accessToken);
     case "techopenclaw":
       return await getTechOpenClawUsage(apiKey, proxyOpts);
-    case "devgo":
-      return await getDevGoUsage(accessToken);
     case "ollama":
       return await getOllamaUsage(accessToken);
     case "glm":
@@ -671,83 +663,6 @@ function parseKiroQuotaData(data) {
   };
 }
 
-/**
- * DevGoVN Usage - Logs in with the API key, then fetches quota summary.
- * The quota page uses cookie-based session after POST /api/customer/login.
- */
-async function getDevGoUsage(accessToken) {
-  try {
-    const baseUrl = DEVGO_CONFIG.baseUrl;
-
-    const { result: loginRes } = await fetchWithRetry(`${baseUrl}${DEVGO_CONFIG.loginPath}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ apiKey: accessToken }),
-    }, { maxRetries: 2, baseDelay: 1000 });
-
-    if (!loginRes.ok) {
-      throw new Error(`DevGoVN login failed: ${loginRes.status}`);
-    }
-
-    const cookieHeader = loginRes.headers.get("set-cookie") || "";
-    const cookieValue = cookieHeader.split(";")[0].trim();
-
-    const { result: summaryRes } = await fetchWithRetry(`${baseUrl}${DEVGO_CONFIG.summaryPath}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        ...(cookieValue ? { Cookie: cookieValue } : {}),
-      },
-    }, { maxRetries: 2, baseDelay: 1000 });
-
-    if (!summaryRes.ok) {
-      throw new Error(`DevGoVN summary API error: ${summaryRes.status}`);
-    }
-
-    const body = await summaryRes.json();
-    const data = body.data || body;
-    const quota = data.quota || {};
-    const usage = data.usage || {};
-
-    const quotas = {};
-
-    const budgetUsd = quota.isUnlimited ? null : (quota.budgetUsd || 0);
-    const usedUsd = quota.effectiveUsedUsd ?? quota.usedUsd ?? 0;
-    const remainingUsd = quota.remainingUsd ?? (budgetUsd != null ? Math.max(0, budgetUsd - usedUsd) : 0);
-
-    quotas["budget"] = {
-      used: +usedUsd.toFixed(4),
-      total: budgetUsd != null ? +budgetUsd.toFixed(4) : 0,
-      remaining: +Math.max(0, remainingUsd).toFixed(4),
-      remainingPercentage: budgetUsd > 0 ? Math.round((remainingUsd / budgetUsd) * 100) : 0,
-      resetAt: null,
-      unlimited: !!quota.isUnlimited,
-      unit: "$",
-    };
-
-    if (quota.cycleBudgetUsd > 0) {
-      const cycleUsed = quota.cycleUsedUsd || 0;
-      const cycleBudget = quota.cycleBudgetUsd;
-      const cycleRemaining = Math.max(0, cycleBudget - cycleUsed);
-      quotas[`cycle (${quota.resetIntervalHours || 24}h)`] = {
-        used: +cycleUsed.toFixed(4),
-        total: +cycleBudget.toFixed(4),
-        remaining: +cycleRemaining.toFixed(4),
-        remainingPercentage: cycleBudget > 0 ? Math.round((cycleRemaining / cycleBudget) * 100) : 0,
-        resetAt: quota.nextResetAt ? parseResetTime(quota.nextResetAt) : null,
-        unlimited: false,
-        unit: "$",
-      };
-    }
-
-    return {
-      plan: quota.creditTier || "DevGoVN",
-      quotas,
-    };
-  } catch (error) {
-    return { message: `DevGoVN connected. Unable to fetch usage: ${error.message}` };
-  }
-}
 
 // ── MiniMax helpers ──────────────────────────────────────────────────────
 function getMiniMaxField(model, snakeKey, camelKey) {

@@ -147,7 +147,7 @@ export async function GET(request, { params }) {
     // API-key providers can still expose usage dashboards. An optional monitor token
     // lets Open Claude use a dedicated bearer without changing the saved connection.
     // For open-claude, saved monitorCreds (username+password) also satisfy this check.
-    // Some providers (e.g. troll-llm, devgo) use API key as bearer for usage endpoints.
+    // Some providers (e.g. troll-llm) use API key as bearer for usage endpoints.
     // Kiro's headless api-key flow persists authType "api_key" (underscore) while
     // generic apikey providers persist "apikey" — accept both spellings below.
     const isOAuth = connection.authType === "oauth";
@@ -157,7 +157,7 @@ export async function GET(request, { params }) {
       connection.authType === "apikey" &&
       USAGE_APIKEY_PROVIDERS.includes(connection.provider);
     const hasOpenClaudeMonitorCreds = connection.provider === "open-claude" && !!connection.providerSpecificData?.monitorCreds?.username;
-    const providerUsesApiKeyForUsage = ["troll-llm", "devgo"].includes(connection.provider) && !!connection.apiKey;
+    const providerUsesApiKeyForUsage = ["troll-llm"].includes(connection.provider) && !!connection.apiKey;
     if (!isOAuth && !isApikeyEligible && !monitorToken && !connection.accessToken && !hasOpenClaudeMonitorCreds && !providerUsesApiKeyForUsage) {
       return Response.json({ message: "Usage not available for this connection" });
     }

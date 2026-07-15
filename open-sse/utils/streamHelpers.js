@@ -44,7 +44,7 @@ export function hasValuableContent(chunk, format, counters = null) {
 
 function _hasValuableContent(chunk, format) {
   // AGGRESSIVE FIX: Reject any chunk with an empty delta object and finish_reason
-  // This catches the devgo empty response bug regardless of format detection
+  // This catches empty response bugs regardless of format detection
   if (chunk.choices?.[0]) {
     const choice = chunk.choices[0];
     const delta = choice.delta;
