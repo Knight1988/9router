@@ -150,7 +150,7 @@ describe("withRetry", () => {
     const fn = vi.fn().mockRejectedValue(new Error("fail"));
 
     const promise = withRetry(fn, {
-      baseDelay: 1000,
+      getDelay: () => 1000,
       maxRetries: 2,
       signal: controller.signal,
     });
