@@ -159,7 +159,7 @@ stages:
         steps:
           - script: |
               set -euo pipefail
-              DOCKGE_URL="https://dk-server.linkpc.net/dockge"
+              DOCKGE_URL="https://dark-knight-server.duckdns.org/dockge"
               STACK_NAME=9router
               MAX_RETRIES=3
               RETRY_DELAY=10
