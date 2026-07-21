@@ -144,6 +144,14 @@ describe("hardcoded model lists", () => {
     expect(value).toMatch(/^[^/]+\/[^/]+/);
   });
 
+  it("techopenclaw includes Claude Opus 4.8 Thinking", () => {
+    const models = getModelsByProviderId("techopenclaw");
+    expect(models).toContainEqual({
+      id: "claude-opus-4-8-thinking",
+      name: "Claude Opus 4.8 Thinking",
+    });
+  });
+
 });
 
 // ══════════════════════════════════════════════════════════════════════════
