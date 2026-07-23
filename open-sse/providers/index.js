@@ -76,6 +76,7 @@ Object.assign(PROVIDERS, {
 // Beta-only providers not yet in the registry — supplement model lists directly
 Object.assign(PROVIDER_MODELS, {
   techopenclaw: [
+    { id: "claude-fable-5", name: "Claude Fable 5" },
     { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
     { id: "claude-opus-4-7", name: "Claude Opus 4.7" },
     { id: "claude-opus-4-8", name: "Claude Opus 4.8" },
@@ -87,7 +88,7 @@ Object.assign(PROVIDER_MODELS, {
     { id: "fugu", name: "Fugu" },
     { id: "fugu-ultra", name: "Fugu Ultra" },
     { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro" },
-    { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash" },
+    { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash" },
     { id: "glm-5-turbo", name: "GLM 5 Turbo" },
     { id: "glm-5.1", name: "GLM 5.1" },
     { id: "glm-5.2", name: "GLM 5.2" },
@@ -96,6 +97,7 @@ Object.assign(PROVIDER_MODELS, {
     { id: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
     { id: "gpt-5.6-terra", name: "GPT-5.6 Terra" },
     { id: "grok-4.5", name: "Grok 4.5" },
+    { id: "notion-opus", name: "Notion Opus" },
   ],
   "vip-claudible": [
     { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
