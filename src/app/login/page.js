@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { Card, Button, Input } from "@/shared/components";
-import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -17,7 +16,6 @@ export default function LoginPage() {
   const [oidcLoginLabel, setOidcLoginLabel] = useState("Sign in with OIDC");
   const [mustChange, setMustChange] = useState(false);
   const [newPassword, setNewPassword] = useState("");
-  const router = useRouter();
 
   // Countdown for rate-limit
   useEffect(() => {
@@ -41,8 +39,7 @@ export default function LoginPage() {
         if (res.ok) {
           const data = await res.json();
           if (data.requireLogin === false) {
-            router.push("/dashboard");
-            router.refresh();
+            window.location.assign("/dashboard");
             return;
           }
           setHasPassword(!!data.hasPassword);
@@ -59,7 +56,7 @@ export default function LoginPage() {
       }
     }
     checkAuth();
-  }, [router]);
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -80,8 +77,7 @@ export default function LoginPage() {
           setMustChange(true);
           return;
         }
-        router.push("/dashboard");
-        router.refresh();
+        window.location.assign("/dashboard");
       } else {
         const data = await res.json();
         setError(data.error || "Invalid password");
@@ -107,8 +103,7 @@ export default function LoginPage() {
         body: JSON.stringify({ currentPassword: password, newPassword }),
       });
       if (res.ok) {
-        router.push("/dashboard");
-        router.refresh();
+        window.location.assign("/dashboard");
       } else {
         const data = await res.json();
         setError(data.error || "Failed to set password");

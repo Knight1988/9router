@@ -5,12 +5,13 @@
 import { getGitHubUsage } from "./usage/github.js";
 import { getGeminiUsage, getAntigravityUsage } from "./usage/google.js";
 import { getClaudeUsage } from "./usage/claude.js";
-import { getCodexUsage, consumeCodexRateLimitResetCredit } from "./usage/codex.js";
+import { getCodexUsage, consumeCodexRateLimitResetCredit, getCodexRateLimitResetCredits } from "./usage/codex.js";
 
-export { consumeCodexRateLimitResetCredit };
+export { consumeCodexRateLimitResetCredit, getCodexRateLimitResetCredits };
 import { getKiroUsage } from "./usage/kiro.js";
 import { getMiniMaxUsage } from "./usage/minimax.js";
 import { getCodeBuddyCnUsage } from "./usage/codebuddy-cn.js";
+import { getGrokCliUsage } from "./usage/grok-cli.js";
 import {
   getQwenUsage,
   getIflowUsage,
@@ -50,26 +51,6 @@ const TECHOPENCLAW_CONFIG = {
  * @param {Function} [options.onSessionRefreshed] - Called with { accessToken, expiresAt } when open-claude refreshes its session
  * @returns {Object} Usage data with quotas
  */
-// provider → usage handler (ctx carries every arg each handler needs)
-const USAGE_HANDLERS = {
-  github: (c) => getGitHubUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
-  "gemini-cli": (c) => getGeminiUsage(c.accessToken, c.providerDataWithProjectId, c.proxyOptions),
-  antigravity: (c) => getAntigravityUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
-  claude: (c) => getClaudeUsage(c.accessToken, c.proxyOptions),
-  codex: (c) => getCodexUsage(c.accessToken, c.proxyOptions),
-  kiro: (c) => getKiroUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
-  qoder: (c) => getQoderUsage(c.accessToken, c.proxyOptions),
-  qwen: (c) => getQwenUsage(c.accessToken, c.providerSpecificData),
-  iflow: (c) => getIflowUsage(c.accessToken),
-  ollama: (c) => getOllamaUsage(c.accessToken),
-  glm: (c) => getGlmUsage(c.apiKey, c.provider, c.proxyOptions),
-  "glm-cn": (c) => getGlmUsage(c.apiKey, c.provider, c.proxyOptions),
-  minimax: (c) => getMiniMaxUsage(c.apiKey, c.provider, c.proxyOptions),
-  "minimax-cn": (c) => getMiniMaxUsage(c.apiKey, c.provider, c.proxyOptions),
-  "vercel-ai-gateway": (c) => getVercelAiGatewayUsage(c.apiKey, c.proxyOptions),
-  "codebuddy-cn": (c) => getCodeBuddyCnUsage(c.accessToken, c.apiKey, c.providerSpecificData, c.proxyOptions),
-};
-
 export async function getUsageForProvider(connection, options = {}) {
   const { onSessionRefreshed, ...proxyOptions } = typeof options === "object" && options !== null ? options : {};
   const proxyOpts = Object.keys(proxyOptions).length > 0 ? proxyOptions : null;
@@ -121,6 +102,10 @@ export async function getUsageForProvider(connection, options = {}) {
       return await getClaudibleUsage(apiKey, proxyOptions);
     case "vercel-ai-gateway":
       return await getVercelAiGatewayUsage(apiKey, proxyOptions);
+    case "codebuddy-cn":
+      return await getCodeBuddyCnUsage(accessToken, apiKey, providerSpecificData, proxyOpts);
+    case "grok-cli":
+      return await getGrokCliUsage(accessToken, providerSpecificData, proxyOpts);
     default:
       return { message: `Usage API not implemented for ${provider}` };
   }

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { Card, Button, Toggle, Input } from "@/shared/components";
 import Modal, { ConfirmModal } from "@/shared/components/Modal";
 import LanguageSwitcher from "@/shared/components/LanguageSwitcher";
@@ -22,7 +21,6 @@ function getLocaleFromCookie() {
 }
 
 export default function ProfilePage() {
-  const router = useRouter();
   const { canWrite } = useAuthStore();
   const { theme, setTheme, isDark } = useTheme();
   const [locale, setLocale] = useState("en");
@@ -571,8 +569,7 @@ export default function ProfilePage() {
     try {
       const res = await fetch("/api/auth/logout", { method: "POST" });
       if (res.ok) {
-        router.push("/login");
-        router.refresh();
+        window.location.assign("/login");
       }
     } catch (err) {
       console.error("Failed to logout:", err);

@@ -24,53 +24,53 @@ describe("filterToOpenAIFormat – thinking normalization for open-claude / trol
     describe(`provider=${provider}`, () => {
       it("injects default budget_tokens when type=enabled and budget_tokens is absent", () => {
         const body = makeBody({ type: "enabled" });
-        const result = filterToOpenAIFormat(body, provider);
+        const result = filterToOpenAIFormat(body, { provider });
         expect(result.thinking.type).toBe("enabled");
         expect(result.thinking.budget_tokens).toBe(10000);
       });
 
       it("preserves existing budget_tokens when type=enabled and valid", () => {
         const body = makeBody({ type: "enabled", budget_tokens: 5000 });
-        const result = filterToOpenAIFormat(body, provider);
+        const result = filterToOpenAIFormat(body, { provider });
         expect(result.thinking.type).toBe("enabled");
         expect(result.thinking.budget_tokens).toBe(5000);
       });
 
       it("injects default budget_tokens when type=enabled and budget_tokens is 0", () => {
         const body = makeBody({ type: "enabled", budget_tokens: 0 });
-        const result = filterToOpenAIFormat(body, provider);
+        const result = filterToOpenAIFormat(body, { provider });
         expect(result.thinking.budget_tokens).toBe(10000);
       });
 
       it("injects default budget_tokens when type=enabled and budget_tokens is negative", () => {
         const body = makeBody({ type: "enabled", budget_tokens: -1 });
-        const result = filterToOpenAIFormat(body, provider);
+        const result = filterToOpenAIFormat(body, { provider });
         expect(result.thinking.budget_tokens).toBe(10000);
       });
 
       it("removes budget_tokens when type=disabled", () => {
         const body = makeBody({ type: "disabled", budget_tokens: 5000 });
-        const result = filterToOpenAIFormat(body, provider);
+        const result = filterToOpenAIFormat(body, { provider });
         expect(result.thinking.type).toBe("disabled");
         expect(result.thinking.budget_tokens).toBeUndefined();
       });
 
       it("defaults type to enabled and injects budget_tokens when type is missing", () => {
         const body = makeBody({ budget_tokens: 0 });
-        const result = filterToOpenAIFormat(body, provider);
+        const result = filterToOpenAIFormat(body, { provider });
         expect(result.thinking.type).toBe("enabled");
         expect(result.thinking.budget_tokens).toBe(10000);
       });
 
       it("leaves thinking untouched when no thinking key present", () => {
         const body = makeBody(undefined);
-        const result = filterToOpenAIFormat(body, provider);
+        const result = filterToOpenAIFormat(body, { provider });
         expect(result.thinking).toBeUndefined();
       });
 
       it("coalesces camelCase budgetTokens into budget_tokens", () => {
         const body = makeBody({ type: "enabled", budgetTokens: 5000 });
-        const result = filterToOpenAIFormat(body, provider);
+        const result = filterToOpenAIFormat(body, { provider });
         expect(result.thinking.type).toBe("enabled");
         expect(result.thinking.budget_tokens).toBe(5000);
         expect(result.thinking.budgetTokens).toBeUndefined();
@@ -78,21 +78,21 @@ describe("filterToOpenAIFormat – thinking normalization for open-claude / trol
 
       it("injects default when budgetTokens is 0 (camelCase)", () => {
         const body = makeBody({ type: "enabled", budgetTokens: 0 });
-        const result = filterToOpenAIFormat(body, provider);
+        const result = filterToOpenAIFormat(body, { provider });
         expect(result.thinking.budget_tokens).toBe(10000);
         expect(result.thinking.budgetTokens).toBeUndefined();
       });
 
       it("snake_case wins when both budget_tokens and budgetTokens are present", () => {
         const body = makeBody({ type: "enabled", budget_tokens: 5000, budgetTokens: 8000 });
-        const result = filterToOpenAIFormat(body, provider);
+        const result = filterToOpenAIFormat(body, { provider });
         expect(result.thinking.budget_tokens).toBe(5000);
         expect(result.thinking.budgetTokens).toBeUndefined();
       });
 
       it("strips budgetTokens when type=disabled", () => {
         const body = makeBody({ type: "disabled", budgetTokens: 5000 });
-        const result = filterToOpenAIFormat(body, provider);
+        const result = filterToOpenAIFormat(body, { provider });
         expect(result.thinking.type).toBe("disabled");
         expect(result.thinking.budget_tokens).toBeUndefined();
         expect(result.thinking.budgetTokens).toBeUndefined();
@@ -100,7 +100,7 @@ describe("filterToOpenAIFormat – thinking normalization for open-claude / trol
 
       it("coalesces budgetTokens when type is missing", () => {
         const body = makeBody({ budgetTokens: 7000 });
-        const result = filterToOpenAIFormat(body, provider);
+        const result = filterToOpenAIFormat(body, { provider });
         expect(result.thinking.type).toBe("enabled");
         expect(result.thinking.budget_tokens).toBe(7000);
         expect(result.thinking.budgetTokens).toBeUndefined();
@@ -111,7 +111,7 @@ describe("filterToOpenAIFormat – thinking normalization for open-claude / trol
   describe("provider=openai (no normalization)", () => {
     it("does NOT inject budget_tokens for non-Claude-gateway providers", () => {
       const body = makeBody({ type: "enabled" });
-      const result = filterToOpenAIFormat(body, "openai");
+      const result = filterToOpenAIFormat(body, { provider: "openai" });
       expect(result.thinking.budget_tokens).toBeUndefined();
     });
   });

@@ -41,6 +41,27 @@ function toEntry(args) {
   return { ts: Date.now(), text };
 }
 
+// Line batching — accumulate console lines and flush as a batch on interval/threshold.
+if (!state.pendingLines) state.pendingLines = [];
+if (!state.flushTimer) state.flushTimer = null;
+
+const FLUSH_INTERVAL_MS = 100;
+const MAX_BATCH_LINES = 50;
+
+function flushPendingLines() {
+  state.flushTimer = null;
+  if (!state.pendingLines.length) return;
+
+  const lines = state.pendingLines.splice(0, state.pendingLines.length);
+  state.emitter.emit("lines", lines);
+}
+
+function scheduleFlush() {
+  if (state.flushTimer) return;
+  state.flushTimer = setTimeout(flushPendingLines, FLUSH_INTERVAL_MS);
+  state.flushTimer?.unref?.();
+}
+
 // Strip ANSI escape codes so terminal colors don't bleed into UI
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 
@@ -64,7 +85,16 @@ function appendLine(line) {
   if (state.logs.length > maxLines) {
     state.logs = state.logs.slice(-maxLines);
   }
-  state.emitter.emit("line", line);
+  state.pendingLines.push(line);
+  if (state.pendingLines.length >= MAX_BATCH_LINES) {
+    if (state.flushTimer) {
+      clearTimeout(state.flushTimer);
+      state.flushTimer = null;
+    }
+    flushPendingLines();
+  } else {
+    scheduleFlush();
+  }
 }
 
 function appendErrorLine(line) {

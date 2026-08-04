@@ -9,6 +9,8 @@ import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
  */
 export async function GET() {
   try {
+    // Query DISTINCT provider column directly — avoids parsing every row's
+    // full JSON blob (can be hundreds of MB), which previously caused OOM.
     const providerIds = await getDistinctProviders();
 
     const providerNodes = await getProviderNodes();

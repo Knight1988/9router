@@ -79,3 +79,13 @@ gitbook/README.md
 open-sse.old/
 .claude/worktrees/
 .claude/plans/
+.graphifyignore
+graphify-out/*
+
+# Local-only working dirs (notes, vendored repos, scripts, skills)
+.docs/
+.repo/
+.script/
+.codegraph/
+.PR/
+.next-analyze/*

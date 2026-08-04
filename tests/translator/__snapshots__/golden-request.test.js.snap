@@ -118,6 +118,9 @@ exports[`GOLDEN request: OpenAI → Claude > reasoning_effort → adaptive outpu
       "type": "text",
     },
   ],
+  "thinking": {
+    "type": "adaptive",
+  },
 }
 `;
 
@@ -230,7 +233,10 @@ exports[`GOLDEN request: OpenAI → Gemini > full body (system/image/tool/tool_r
 
 exports[`GOLDEN request: OpenAI → Kiro > full body (image base64 + tool_result) 1`] = `
 {
+  "agentMode": "vibe",
   "conversationState": {
+    "agentContinuationId": "3b500a4a-45ff-46a5-82e2-8daea3e67b2b",
+    "agentTaskType": "vibe",
     "chatTriggerType": "MANUAL",
     "currentMessage": {
       "userInputMessage": {
@@ -278,7 +284,11 @@ continue where you left off",
     "history": [
       {
         "userInputMessage": {
-          "content": "You are helpful.
+          "content": "[Context: Current time is <TS>
+
+<instructions>
+You are helpful.
+</instructions>
 
 What's in this image?",
           "images": [

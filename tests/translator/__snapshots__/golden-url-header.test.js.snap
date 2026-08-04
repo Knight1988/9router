@@ -44,13 +44,34 @@ exports[`GOLDEN buildHeaders (default executor providers) > alicode-intl → hea
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > alims-intl → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > anthropic → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
     "Accept": "text/event-stream",
     "Accept-Encoding": "gzip, deflate, br",
     "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
-    "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
     "anthropic-version": "2023-06-01",
     "x-api-key": "<CRED>",
@@ -58,7 +79,6 @@ exports[`GOLDEN buildHeaders (default executor providers) > anthropic → header
   "nonStream": {
     "Accept-Encoding": "gzip, deflate, br",
     "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
-    "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
     "anthropic-version": "2023-06-01",
     "x-api-key": "<CRED>",
@@ -67,7 +87,6 @@ exports[`GOLDEN buildHeaders (default executor providers) > anthropic → header
     "Accept": "text/event-stream",
     "Accept-Encoding": "gzip, deflate, br",
     "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
-    "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
     "anthropic-version": "2023-06-01",
     "x-api-key": "<CRED>",
@@ -331,10 +350,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.5.8",
+    "User-Agent": "9Router/0.5.40",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.5.8",
-    "X-CORE-VERSION": "0.5.8",
+    "X-CLIENT-VERSION": "0.5.40",
+    "X-CORE-VERSION": "0.5.40",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "linux",
     "X-PLATFORM-VERSION": "v22.23.1",
@@ -345,10 +364,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.5.8",
+    "User-Agent": "9Router/0.5.40",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.5.8",
-    "X-CORE-VERSION": "0.5.8",
+    "X-CLIENT-VERSION": "0.5.40",
+    "X-CORE-VERSION": "0.5.40",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "linux",
     "X-PLATFORM-VERSION": "v22.23.1",
@@ -360,10 +379,59 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.5.8",
+    "User-Agent": "9Router/0.5.40",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.5.8",
-    "X-CORE-VERSION": "0.5.8",
+    "X-CLIENT-VERSION": "0.5.40",
+    "X-CORE-VERSION": "0.5.40",
+    "X-IS-MULTIROOT": "false",
+    "X-PLATFORM": "linux",
+    "X-PLATFORM-VERSION": "v22.23.1",
+    "X-Title": "Cline",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > clinepass → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "HTTP-Referer": "https://cline.bot",
+    "User-Agent": "9Router/0.5.40",
+    "X-CLIENT-TYPE": "9router",
+    "X-CLIENT-VERSION": "0.5.40",
+    "X-CORE-VERSION": "0.5.40",
+    "X-IS-MULTIROOT": "false",
+    "X-PLATFORM": "linux",
+    "X-PLATFORM-VERSION": "v22.23.1",
+    "X-Title": "Cline",
+  },
+  "nonStream": {
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "HTTP-Referer": "https://cline.bot",
+    "User-Agent": "9Router/0.5.40",
+    "X-CLIENT-TYPE": "9router",
+    "X-CLIENT-VERSION": "0.5.40",
+    "X-CORE-VERSION": "0.5.40",
+    "X-IS-MULTIROOT": "false",
+    "X-PLATFORM": "linux",
+    "X-PLATFORM-VERSION": "v22.23.1",
+    "X-Title": "Cline",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "HTTP-Referer": "https://cline.bot",
+    "User-Agent": "9Router/0.5.40",
+    "X-CLIENT-TYPE": "9router",
+    "X-CLIENT-VERSION": "0.5.40",
+    "X-CORE-VERSION": "0.5.40",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "linux",
     "X-PLATFORM-VERSION": "v22.23.1",
@@ -544,6 +612,28 @@ exports[`GOLDEN buildHeaders (default executor providers) > deepseek → headers
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > featherless → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > fireworks → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -660,6 +750,37 @@ exports[`GOLDEN buildHeaders (default executor providers) > glm-cn → headers (
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > grok-cli → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "User-Agent": "grok-shell/0.2.99 (linux; x86_64)",
+    "x-grok-client-identifier": "grok-shell",
+    "x-grok-client-version": "0.2.99",
+  },
+  "nonStream": {
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "User-Agent": "grok-shell/0.2.99 (linux; x86_64)",
+    "x-grok-client-identifier": "grok-shell",
+    "x-grok-client-version": "0.2.99",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "User-Agent": "grok-shell/0.2.99 (linux; x86_64)",
+    "x-grok-client-identifier": "grok-shell",
+    "x-grok-client-version": "0.2.99",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > groq → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -726,6 +847,31 @@ exports[`GOLDEN buildHeaders (default executor providers) > kilocode → headers
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > kimchi → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "User-Agent": "kimchi/0.1.50",
+  },
+  "nonStream": {
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "User-Agent": "kimchi/0.1.50",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "User-Agent": "kimchi/0.1.50",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > kimi → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -734,38 +880,11 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi → headers (ap
     "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
     "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
-    "x-api-key": "<CRED>",
-  },
-  "nonStream": {
-    "Accept-Encoding": "gzip, deflate, br",
-    "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
-    "Anthropic-Version": "2023-06-01",
-    "Content-Type": "application/json",
-    "x-api-key": "<CRED>",
-  },
-  "oauth": {
-    "Accept": "text/event-stream",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
-    "Anthropic-Version": "2023-06-01",
-    "Content-Type": "application/json",
-    "x-api-key": "<CRED>",
-  },
-}
-`;
-
-exports[`GOLDEN buildHeaders (default executor providers) > kimi-coding → headers (apiKey / oauth) 1`] = `
-{
-  "apiKey": {
-    "Accept": "text/event-stream",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
-    "Anthropic-Version": "2023-06-01",
-    "Content-Type": "application/json",
     "X-Msh-Device-Id": "kimi-<TS>",
-    "X-Msh-Device-Model": "linux x64",
+    "X-Msh-Device-Model": "Linux x64",
+    "X-Msh-Device-Name": "DK-PC",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "2.1.2",
+    "X-Msh-Version": "0.5.40",
     "x-api-key": "<CRED>",
   },
   "nonStream": {
@@ -774,9 +893,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi-coding → head
     "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
     "X-Msh-Device-Id": "kimi-<TS>",
-    "X-Msh-Device-Model": "linux x64",
+    "X-Msh-Device-Model": "Linux x64",
+    "X-Msh-Device-Name": "DK-PC",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "2.1.2",
+    "X-Msh-Version": "0.5.40",
     "x-api-key": "<CRED>",
   },
   "oauth": {
@@ -786,9 +906,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi-coding → head
     "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
     "X-Msh-Device-Id": "kimi-<TS>",
-    "X-Msh-Device-Model": "linux x64",
+    "X-Msh-Device-Model": "Linux x64",
+    "X-Msh-Device-Name": "DK-PC",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "2.1.2",
+    "X-Msh-Version": "0.5.40",
     "x-api-key": "<CRED>",
   },
 }
@@ -1113,6 +1234,28 @@ exports[`GOLDEN buildHeaders (default executor providers) > perplexity → heade
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > perplexity-agent → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > siliconflow → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -1221,6 +1364,28 @@ exports[`GOLDEN buildHeaders (default executor providers) > troll-llm → header
     "X-App": "cli",
     "anthropic-version": "2023-06-01",
     "x-api-key": "<CRED>",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > venice → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
   },
 }
 `;
@@ -1364,6 +1529,13 @@ exports[`GOLDEN buildUrl (default executor providers) > alicode-intl → url (st
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > alims-intl → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+  "stream": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > anthropic → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.anthropic.com/v1/messages",
@@ -1380,8 +1552,8 @@ exports[`GOLDEN buildUrl (default executor providers) > assemblyai → url (stre
 
 exports[`GOLDEN buildUrl (default executor providers) > blackbox → url (stream + non-stream) 1`] = `
 {
-  "nonStream": "https://api.blackbox.ai/chat/completions",
-  "stream": "https://api.blackbox.ai/chat/completions",
+  "nonStream": "https://api.blackbox.ai/v1/chat/completions",
+  "stream": "https://api.blackbox.ai/v1/chat/completions",
 }
 `;
 
@@ -1428,6 +1600,13 @@ exports[`GOLDEN buildUrl (default executor providers) > claude-claudible → url
 `;
 
 exports[`GOLDEN buildUrl (default executor providers) > cline → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.cline.bot/api/v1/chat/completions",
+  "stream": "https://api.cline.bot/api/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > clinepass → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.cline.bot/api/v1/chat/completions",
   "stream": "https://api.cline.bot/api/v1/chat/completions",
@@ -1483,6 +1662,13 @@ exports[`GOLDEN buildUrl (default executor providers) > deepseek → url (stream
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > featherless → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.featherless.ai/v1/chat/completions",
+  "stream": "https://api.featherless.ai/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > fireworks → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.fireworks.ai/inference/v1/chat/completions",
@@ -1518,6 +1704,13 @@ exports[`GOLDEN buildUrl (default executor providers) > glm-cn → url (stream +
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > grok-cli → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://cli-chat-proxy.grok.com/v1/responses",
+  "stream": "https://cli-chat-proxy.grok.com/v1/responses",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > groq → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.groq.com/openai/v1/chat/completions",
@@ -1539,14 +1732,14 @@ exports[`GOLDEN buildUrl (default executor providers) > kilocode → url (stream
 }
 `;
 
-exports[`GOLDEN buildUrl (default executor providers) > kimi → url (stream + non-stream) 1`] = `
+exports[`GOLDEN buildUrl (default executor providers) > kimchi → url (stream + non-stream) 1`] = `
 {
-  "nonStream": "https://api.kimi.com/coding/v1/messages?beta=true",
-  "stream": "https://api.kimi.com/coding/v1/messages?beta=true",
+  "nonStream": "https://llm.kimchi.dev/openai/v1/chat/completions",
+  "stream": "https://llm.kimchi.dev/openai/v1/chat/completions",
 }
 `;
 
-exports[`GOLDEN buildUrl (default executor providers) > kimi-coding → url (stream + non-stream) 1`] = `
+exports[`GOLDEN buildUrl (default executor providers) > kimi → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.kimi.com/coding/v1/messages?beta=true",
   "stream": "https://api.kimi.com/coding/v1/messages?beta=true",
@@ -1644,6 +1837,13 @@ exports[`GOLDEN buildUrl (default executor providers) > perplexity → url (stre
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > perplexity-agent → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.perplexity.ai/v1/responses",
+  "stream": "https://api.perplexity.ai/v1/responses",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > siliconflow → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.siliconflow.com/v1/chat/completions",
@@ -1669,6 +1869,13 @@ exports[`GOLDEN buildUrl (default executor providers) > troll-llm → url (strea
 {
   "nonStream": "https://chat.trollllm.xyz/v1/messages",
   "stream": "https://chat.trollllm.xyz/v1/messages",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > venice → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.venice.ai/api/v1/chat/completions",
+  "stream": "https://api.venice.ai/api/v1/chat/completions",
 }
 `;
 

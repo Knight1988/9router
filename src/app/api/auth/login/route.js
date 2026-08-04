@@ -9,6 +9,7 @@ import { isLocalRequest } from "@/dashboardGuard";
 import { getUserByUsername, setLastLogin } from "@/lib/localDb";
 
 const RESET_HINT = "Forgot password? Reset to default via 9Router CLI → Settings → Reset Password to Default.";
+const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
 
 function isTunnelRequest(request, settings) {
   const host = (request.headers.get("host") || "").split(":")[0].toLowerCase();
@@ -86,7 +87,7 @@ export async function POST(request) {
       const mustChangePassword =
         !user.passwordHash && !process.env.INITIAL_PASSWORD && !isLocalRequest(request);
 
-      return NextResponse.json({ success: true, mustChangePassword });
+      return NextResponse.json({ success: true, mustChangePassword }, { headers: NO_STORE_HEADERS });
     }
 
     const { remainingBeforeLock } = recordFail(ip);
