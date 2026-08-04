@@ -167,8 +167,12 @@ async function detectContent(transformedBody, timeoutMs, onFirstContentSignal, o
               // If we buffered chunks but onFirstContent never fired (race condition:
               // transform flush() completed before detectContent started), treat as content.
               // The transform already filtered via hasValuableContent, so buffered chunks ARE valuable.
-              const hasBufferedContent = buffered.length > 0;
-              const r = (contentDetected || hasBufferedContent) ? { kind: "content" } : { kind: "empty", reason: "end-of-stream" };
+              //
+              // Also treat a clean end-of-stream as content — a provider that sends [DONE]
+              // with no tokens is valid (e.g. empty completion). The onStreamComplete handler
+              // downstream checks for 0 tokens and handles that case separately.
+              // Only timeout is a true "empty stream" failure.
+              const r = { kind: "content" };
               resolve(r);
             }
             break;

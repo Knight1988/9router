@@ -7,7 +7,8 @@ import {
   wrapConnectRPCFrame,
   decodeMessage,
   parseConnectRPCFrame,
-  extractTextFromResponse
+  extractTextFromResponse,
+  encodeMcpTools,
 } from "../utils/cursorProtobuf.js";
 import { buildCursorHeaders } from "../utils/cursorChecksum.js";
 import { estimateUsage } from "../utils/usageTracking.js";
@@ -83,6 +84,22 @@ function isAgentTextRequest(body) {
   });
 }
 
+/**
+ * Returns true if the request can be routed through the AgentService endpoint.
+ * Accepts text-only turns and tool-call/result conversations.
+ * Rejects image content (not supported by AgentService).
+ */
+export function isAgentCapableRequest(body) {
+  if (!Array.isArray(body?.messages)) return false;
+  return body.messages.every((message) => {
+    // Image content is not supported
+    if (Array.isArray(message?.content)) {
+      if (message.content.some((part) => part?.type === "image_url" || part?.type === "image")) return false;
+    }
+    return true;
+  });
+}
+
 function encodeHistoryMessage(message) {
   const content = textFromContent(message?.content);
   if (!content) return null;
@@ -95,7 +112,7 @@ function encodeHistoryMessage(message) {
   return agentMessage(1, agentMessage(1, agentMessage(1, text)));
 }
 
-function buildAgentRunFrame(messages, model) {
+export function buildAgentRunFrame(messages, model, tools = []) {
   const system = messages
     .filter((message) => message?.role === "system")
     .map((message) => textFromContent(message.content))
@@ -124,12 +141,17 @@ function buildAgentRunFrame(messages, model) {
   );
   const conversationAction = agentMessage(1, userAction);
   const requestedModel = concatBuffers(agentString(1, model), agentBool(7, true));
+
+  // Encode MCP tools when provided (field 4 of RunRequest)
+  const mcpToolsBytes = tools?.length ? encodeMcpTools(tools) : null;
+
   const runRequest = concatBuffers(
     // An empty ConversationStateStructure starts a fresh local agent session.
     agentMessage(1, new Uint8Array()),
     agentMessage(2, conversationAction),
     ...(system ? [agentString(8, system)] : []),
     agentMessage(9, requestedModel),
+    ...(mcpToolsBytes?.length ? [agentMessage(4, mcpToolsBytes)] : []),
   );
 
   // agent.v1.AgentClientMessage.run_request.
@@ -493,7 +515,7 @@ export class CursorExecutor extends BaseExecutor {
     let session;
     try {
       session = this.openAgentHttp2Stream(url, headers, requestController.signal);
-      session.write(buildAgentRunFrame(body.messages || [], model));
+      session.write(buildAgentRunFrame(body.messages || [], model, body.tools || []));
     } catch (error) {
       throw new Error(`Cursor AgentService request failed: ${error.message}`);
     }
