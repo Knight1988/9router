@@ -18,6 +18,9 @@ import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 
+// Matches provider IDs that are upstream/cross-instance connections (contain a UUID suffix)
+const UPSTREAM_CONNECTION_RE = /[-_][0-9a-f]{8,}$/i;
+
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
 // Adding a provider here makes /v1/models prefer the live catalog for it.

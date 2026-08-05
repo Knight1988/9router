@@ -196,47 +196,6 @@ async function getGeminiSubscriptionInfo(accessToken, proxyOptions = null) {
 }
 
 /**
- * Get Antigravity project ID from subscription info
- */
-async function getAntigravityProjectId(accessToken) {
-  try {
-    const info = await getAntigravitySubscriptionInfo(accessToken);
-    return info?.cloudaicompanionProject || null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Get Antigravity subscription info
- */
-async function getAntigravitySubscriptionInfo(accessToken, proxyOptions = null) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
-  try {
-    const response = await proxyAwareFetch(ANTIGRAVITY_CONFIG.loadProjectApiUrl, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
-        "Content-Type": "application/json",
-        "x-request-source": "local", // MITM bypass
-      },
-      body: JSON.stringify({ metadata: CLIENT_METADATA, mode: 1 }),
-      signal: controller.signal,
-    }, proxyOptions);
-
-    if (!response.ok) return null;
-    return await response.json();
-  } catch (error) {
-    console.error("[Antigravity Subscription] Error:", error.message);
-    return null;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-/**
  * Log in to Open Claude with username + password.
  * Returns { accessToken, expiresAt } or throws on failure.
  */
@@ -484,58 +443,6 @@ async function getTrollLlmUsage(accessToken) {
     };
   } catch (error) {
     return { message: `Troll LLM connected. Unable to fetch usage: ${error.message}` };
-  }
-}
-
-/**
- * Legacy Claude usage for API key / org admin users
- */
-async function getClaudeUsageLegacy(accessToken, proxyOptions = null) {
-  try {
-    const settingsResponse = await proxyAwareFetch(CLAUDE_CONFIG.settingsUrl, {
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "anthropic-version": CLAUDE_CONFIG.apiVersion,
-      },
-    }, proxyOptions);
-
-    if (settingsResponse.ok) {
-      const settings = await settingsResponse.json();
-
-      if (settings.organization_id) {
-        const usageResponse = await proxyAwareFetch(
-          CLAUDE_CONFIG.usageUrl.replace("{org_id}", settings.organization_id),
-          {
-            method: "GET",
-            headers: {
-              "Authorization": `Bearer ${accessToken}`,
-              "anthropic-version": CLAUDE_CONFIG.apiVersion,
-            },
-          },
-          proxyOptions
-        );
-
-        if (usageResponse.ok) {
-          const usage = await usageResponse.json();
-          return {
-            plan: settings.plan || "Unknown",
-            organization: settings.organization_name,
-            quotas: usage,
-          };
-        }
-      }
-
-      return {
-        plan: settings.plan || "Unknown",
-        organization: settings.organization_name,
-        message: "Claude connected. Usage details require admin access.",
-      };
-    }
-
-    return { message: "Claude connected. Usage API requires admin permissions." };
-  } catch (error) {
-    return { message: `Claude connected. Unable to fetch usage: ${error.message}` };
   }
 }
 
