@@ -1,4 +1,5 @@
 import { EventEmitter } from "events";
+import crypto from "crypto";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
@@ -6,7 +7,46 @@ import { getMeta, setMeta } from "../helpers/metaStore.js";
 function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
   if (key.length <= 8) return key.charAt(0) + "***";
-  return key.slice(0, 8) + "***";
+  return `${key.slice(0, 6)}***${key.slice(-4)}`;
+}
+
+/**
+ * Parse API key and extract machineId + keyId.
+ * Supports: new format sk-{machineId}-{keyId}-{crc8} (4 parts)
+ *           old format sk-{random8} (2 parts).
+ * Inlined from src/shared/utils/apiKey.js to avoid @/ alias issues at
+ * standalone-server runtime (the alias is resolved only during Next.js build).
+ */
+function _parseApiKeyLocal(apiKey) {
+  if (!apiKey || !apiKey.startsWith("sk-")) return null;
+  const parts = apiKey.split("-");
+  if (parts.length === 4) {
+    const [, machineId, keyId, crc] = parts;
+    const API_KEY_SECRET = process.env.API_KEY_SECRET || "endpoint-proxy-api-key-secret";
+    const expectedCrc = crypto.createHmac("sha256", API_KEY_SECRET).update(machineId + keyId).digest("hex").slice(0, 8);
+    if (crc !== expectedCrc) return null;
+    return { machineId, keyId, isNewFormat: true };
+  }
+  if (parts.length === 2) {
+    return { machineId: null, keyId: parts[1], isNewFormat: false };
+  }
+  return null;
+}
+
+/**
+ * Returns a stable, non-secret group id for a raw API key value.
+ * Prefers the DB uuid (unique per key), falls back to the parsed keyId,
+ * then to the masked key as a last resort.
+ * This prevents every key minted on the same machine from hashing to the
+ * same short mask and being merged into one row in the usage UI.
+ */
+function apiKeyGroupId(apiKeyVal, apiKeyMap) {
+  if (!apiKeyVal || typeof apiKeyVal !== "string" || apiKeyVal === "local-no-key") return "local-no-key";
+  const info = apiKeyMap[apiKeyVal];
+  if (info?.id) return `id:${info.id}`;
+  const parsed = _parseApiKeyLocal(apiKeyVal); // deleted/unknown key — still get a stable id
+  if (parsed?.keyId) return `key:${parsed.keyId}`;
+  return maskApiKey(apiKeyVal); // last resort, still non-raw
 }
 
 const PENDING_TIMEOUT_MS = 60 * 1000;
@@ -343,12 +383,12 @@ export async function getUsageHistory(filter = {}) {
 
 function loadDaysInRange(adapter, maxDays) {
   if (maxDays == null) {
-    return adapter.all(`SELECT dateKey, data FROM usageDaily`);
+    return adapter.all(`SELECT dateKey, data FROM usageDaily ORDER BY dateKey ASC`);
   }
   const today = new Date();
   const cutoff = new Date(today.getFullYear(), today.getMonth(), today.getDate() - maxDays + 1);
   const cutoffKey = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, "0")}-${String(cutoff.getDate()).padStart(2, "0")}`;
-  return adapter.all(`SELECT dateKey, data FROM usageDaily WHERE dateKey >= ?`, [cutoffKey]);
+  return adapter.all(`SELECT dateKey, data FROM usageDaily WHERE dateKey >= ? ORDER BY dateKey ASC`, [cutoffKey]);
 }
 
 const STATS_CACHE_TTL_SHORT_MS = 30_000; // 30s for volatile short periods
@@ -529,23 +569,29 @@ async function _computeUsageStats(period = "all") {
       }
 
       for (const [akKey, ak] of Object.entries(day.byApiKey || {})) {
-        const rawModel = ak.rawModel || "";
-        const provider = ak.provider || "";
+        // akKey format from aggregateEntryToDay: "${apiKeyVal}|${model}|${provider}"
+        // Split on | — raw keys never contain | so this is safe
+        const akParts = akKey.split("|");
+        const rawKeyFromBlob = akParts[0];
+        const rawModel = ak.rawModel || akParts[1] || "";
+        const provider = ak.provider || akParts[2] || "";
         const providerDisplayName = providerNodeNameMap[provider] || provider;
-        const apiKeyVal = ak.apiKey;
+        const apiKeyVal = rawKeyFromBlob !== "local-no-key" ? rawKeyFromBlob : null;
         const keyInfo = apiKeyVal ? apiKeyMap[apiKeyVal] : null;
-        const keyName = keyInfo?.name || (apiKeyVal ? apiKeyVal.slice(0, 8) + "..." : "Local (No API Key)");
+        const keyName = keyInfo?.name || (apiKeyVal ? maskApiKey(apiKeyVal) : "Local (No API Key)");
         const apiKeyMasked = maskApiKey(apiKeyVal);
-        const apiKeyKey = apiKeyMasked || "local-no-key";
-        if (!stats.byApiKey[akKey]) {
-          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey, lastUsed: dateKey };
+        const akGroupId = apiKeyGroupId(apiKeyVal || "local-no-key", apiKeyMap);
+        // Use group id as the stats key to prevent same-machine keys from colliding
+        const statsKey = `${akGroupId}|${rawModel}|${provider}`;
+        if (!stats.byApiKey[statsKey]) {
+          stats.byApiKey[statsKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey: akGroupId, lastUsed: dateKey };
         }
-        stats.byApiKey[akKey].requests += ak.requests || 0;
-        stats.byApiKey[akKey].promptTokens += ak.promptTokens || 0;
-        stats.byApiKey[akKey].completionTokens += ak.completionTokens || 0;
-        stats.byApiKey[akKey].cachedTokens += ak.cachedTokens || 0;
-        stats.byApiKey[akKey].cost += ak.cost || 0;
-        if (dateKey > (stats.byApiKey[akKey].lastUsed || "")) stats.byApiKey[akKey].lastUsed = dateKey;
+        stats.byApiKey[statsKey].requests += ak.requests || 0;
+        stats.byApiKey[statsKey].promptTokens += ak.promptTokens || 0;
+        stats.byApiKey[statsKey].completionTokens += ak.completionTokens || 0;
+        stats.byApiKey[statsKey].cachedTokens += ak.cachedTokens || 0;
+        stats.byApiKey[statsKey].cost += ak.cost || 0;
+        if (dateKey > (stats.byApiKey[statsKey].lastUsed || "")) stats.byApiKey[statsKey].lastUsed = dateKey;
       }
 
       for (const [epKey, ep] of Object.entries(day.byEndpoint || {})) {
@@ -582,10 +628,11 @@ async function _computeUsageStats(period = "all") {
         if (stats.byAccount[accountKey] && new Date(ts) > new Date(stats.byAccount[accountKey].lastUsed)) stats.byAccount[accountKey].lastUsed = ts;
       }
 
-      const apiKeyKey = (e.apiKey && typeof e.apiKey === "string")
-        ? `${e.apiKey}|${e.model}|${e.provider || "unknown"}`
+      const akGroupId = (e.apiKey && typeof e.apiKey === "string")
+        ? apiKeyGroupId(e.apiKey, apiKeyMap)
         : "local-no-key";
-      if (stats.byApiKey[apiKeyKey] && new Date(ts) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) stats.byApiKey[apiKeyKey].lastUsed = ts;
+      const apiKeyStatsKey = `${akGroupId}|${e.model}|${e.provider || "unknown"}`;
+      if (stats.byApiKey[apiKeyStatsKey] && new Date(ts) > new Date(stats.byApiKey[apiKeyStatsKey].lastUsed)) stats.byApiKey[apiKeyStatsKey].lastUsed = ts;
 
       const endpoint = e.endpoint || "Unknown";
       const endpointKey = `${endpoint}|${e.model}|${e.provider || "unknown"}`;
@@ -653,11 +700,12 @@ async function _computeUsageStats(period = "all") {
 
       if (r.apiKey && typeof r.apiKey === "string") {
         const keyInfo = apiKeyMap[r.apiKey];
-        const keyName = keyInfo?.name || r.apiKey.slice(0, 8) + "...";
+        const keyName = keyInfo?.name || maskApiKey(r.apiKey);
         const apiKeyMasked = maskApiKey(r.apiKey);
-        const akKey = `${apiKeyMasked}|${r.model}|${r.provider || "unknown"}`;
+        const akGroupId = apiKeyGroupId(r.apiKey, apiKeyMap);
+        const akKey = `${akGroupId}|${r.model}|${r.provider || "unknown"}`;
         if (!stats.byApiKey[akKey]) {
-          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey: apiKeyMasked, lastUsed: r.timestamp };
+          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey: akGroupId, lastUsed: r.timestamp };
         }
         const ake = stats.byApiKey[akKey];
         ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cachedTokens += cachedTokens; ake.cost += entryCost;

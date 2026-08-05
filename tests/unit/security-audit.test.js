@@ -46,24 +46,28 @@ describe("AUDIT-002: API key masking", () => {
     expect(maskedCount).toBeGreaterThanOrEqual(4); // function def + 3 usage sites
 
     // The byApiKey stats entries should use apiKeyMasked, not raw apiKey
-    // Check the daily summary path
-    const dailyPath = source.match(/stats\.byApiKey\[akKey\] = \{[^}]*apiKeyMasked[^}]*\}/);
+    // Check the daily summary path (uses statsKey as the object key)
+    const dailyPath = source.match(/stats\.byApiKey\[statsKey\] = \{[^}]*apiKeyMasked[^}]*\}/);
     expect(dailyPath).not.toBeNull();
-    // Check the 24h live path
+    // Check the 24h live path (uses akKey as the object key)
     const livePath = source.match(/stats\.byApiKey\[akKey\] = \{[^}]*apiKeyMasked[^}]*\}/g);
     expect(livePath).not.toBeNull();
     expect(livePath.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("byApiKey object keys should use masked key, not raw key", () => {
+  it("byApiKey object keys should use group id, not raw or masked key", () => {
     const source = fs.readFileSync(
       srcPath("lib/db/repos/usageRepo.js"),
       "utf-8"
     );
-    // The 24h path should use apiKeyMasked in the akKey template
-    expect(source).toContain("${apiKeyMasked}|${r.model}|${r.provider");
+    // The 24h live path should use akGroupId in the akKey template
+    expect(source).toContain("${akGroupId}|${r.model}|${r.provider");
     // Should NOT use raw r.apiKey in the key
     expect(source).not.toContain("${r.apiKey}|${r.model}|${r.provider");
+    // apiKeyGroupId function must exist
+    expect(source).toContain("function apiKeyGroupId");
+    // The daily path must not reuse the raw blob key verbatim — it rebuilds via statsKey
+    expect(source).toContain("const statsKey = `${akGroupId}|");
   });
 });
 
