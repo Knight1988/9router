@@ -18,6 +18,10 @@ export default defineConfig({
       // etc.), which makes provider imports fail during collection.
       "**/.claude/**",
       "**/dist/**",
+      // These files use node:test (not vitest) — they're run separately by the
+      // CI pipeline's node:test step and must be excluded from vitest collection.
+      "**/kimchi.test.js",
+      "**/kimchi-strip-reasoning.test.js",
     ],
     // Allow many it.concurrent cases (real provider smoke runs ~50 providers in parallel)
     maxConcurrency: 60,
