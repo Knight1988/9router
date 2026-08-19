@@ -67,6 +67,8 @@ if (!global._connectionMapCache) global._connectionMapCache = { map: {}, ts: 0 }
 if (!global._statsEmitTimers) global._statsEmitTimers = { pending: null, update: null };
 if (!global._usageStatsCache) global._usageStatsCache = new Map();
 if (!global._chartDataCache) global._chartDataCache = new Map();
+if (!global._usageStatsInflight) global._usageStatsInflight = new Map();
+if (!global._chartDataInflight) global._chartDataInflight = new Map();
 
 // Invalidate stats/chart caches when new data is written
 global._statsEmitter.on("update", () => {
@@ -80,6 +82,8 @@ const pendingTimers = global._pendingTimers;
 const recentRing = global._recentRing;
 const connCache = global._connectionMapCache;
 const statsEmitTimers = global._statsEmitTimers;
+const usageStatsInflight = global._usageStatsInflight;
+const chartDataInflight = global._chartDataInflight;
 
 export const statsEmitter = global._statsEmitter;
 
@@ -406,9 +410,17 @@ export async function getUsageStats(period = "all") {
     return cached.data;
   }
 
-  const data = await _computeUsageStats(period);
-  statsCache.set(period, { data, ts: Date.now() });
-  return data;
+  const pending = usageStatsInflight.get(period);
+  if (pending) return pending;
+
+  const computation = _computeUsageStats(period)
+    .then((data) => {
+      statsCache.set(period, { data, ts: Date.now() });
+      return data;
+    })
+    .finally(() => usageStatsInflight.delete(period));
+  usageStatsInflight.set(period, computation);
+  return computation;
 }
 
 async function _computeUsageStats(period = "all") {
@@ -744,9 +756,17 @@ export async function getChartData(period = "7d") {
     return cached.data;
   }
 
-  const data = await _computeChartData(period);
-  chartCache.set(period, { data, ts: Date.now() });
-  return data;
+  const pending = chartDataInflight.get(period);
+  if (pending) return pending;
+
+  const computation = _computeChartData(period)
+    .then((data) => {
+      chartCache.set(period, { data, ts: Date.now() });
+      return data;
+    })
+    .finally(() => chartDataInflight.delete(period));
+  chartDataInflight.set(period, computation);
+  return computation;
 }
 
 async function _computeChartData(period = "7d") {
