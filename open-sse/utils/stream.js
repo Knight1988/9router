@@ -283,6 +283,12 @@ export function createSSEStream(options = {}) {
             reqLogger?.appendConvertedChunk?.(doneOutput);
             controller.enqueue(sharedEncoder.encode(doneOutput));
           }
+          // OpenAI source format: forward the [DONE] sentinel — strict clients (pi
+          // openai-completions, OpenClaw) require it to terminate the stream.
+          if (sourceFormat === FORMATS.OPENAI && !streamDoneSent) {
+            reqLogger?.appendConvertedChunk?.(SSE_DONE);
+            controller.enqueue(sharedEncoder.encode(SSE_DONE));
+          }
           streamDoneSent = true;
           if (keepsOpenAIResponsesFormat) openAIResponsesDoneSent = true;
           continue;
@@ -365,8 +371,11 @@ export function createSSEStream(options = {}) {
         if (translated?.length > 0) {
           for (const item of translated) {
             if (item === null || item === undefined) continue;
-            // Filter empty chunks
-            if (!hasValuableContent(item, sourceFormat, counters)) {
+            // Filter empty chunks — but always forward terminal finish chunks:
+            // strict clients (pi openai-completions) throw "Stream ended without
+            // finish_reason" if the finish_reason chunk is swallowed.
+            const carriesFinishReason = !!item.choices?.[0]?.finish_reason;
+            if (!carriesFinishReason && !hasValuableContent(item, sourceFormat, counters)) {
               continue; // Skip this empty chunk
             }
 
@@ -573,6 +582,14 @@ export function createSSEStream(options = {}) {
           reqLogger?.appendConvertedChunk?.(doneOutput);
           controller.enqueue(sharedEncoder.encode(doneOutput));
           openAIResponsesDoneSent = true;
+          streamDoneSent = true;
+        }
+
+        // OpenAI source: ensure the stream terminates with [DONE] even when the
+        // upstream ended without the sentinel (strict clients hang or error).
+        if (sourceFormat === FORMATS.OPENAI && !streamDoneSent) {
+          reqLogger?.appendConvertedChunk?.(SSE_DONE);
+          controller.enqueue(sharedEncoder.encode(SSE_DONE));
           streamDoneSent = true;
         }
 
