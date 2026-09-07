@@ -1,11 +1,12 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
+# CN mirror for apk (used by builder and runner stages)
+RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' /etc/apk/repositories
 
 RUN apk update && apk --no-cache upgrade && apk --no-cache add python3 make g++ linux-headers
 
 COPY package.json ./
-RUN --mount=type=cache,target=/root/.npm \
-  npm install
+RUN npm install --registry=https://registry.npmmirror.com
 
 COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -55,6 +56,11 @@ COPY --from=builder /app/node_modules/pvutils ./node_modules/pvutils
 COPY --from=builder /app/node_modules/tslib ./node_modules/tslib
 COPY --from=builder /app/node_modules/tsyringe ./node_modules/tsyringe
 COPY --from=builder /app/node_modules/reflect-metadata ./node_modules/reflect-metadata
+# sql.js loads dist/sql-wasm.wasm by path at runtime; tracing only follows JS imports,
+# so the last-resort DB driver would abort with ENOENT on the missing binary.
+COPY --from=builder /app/node_modules/sql.js ./node_modules/sql.js
+# node-machine-id is createRequire-loaded at runtime; tracing omits it.
+COPY --from=builder /app/node_modules/node-machine-id ./node_modules/node-machine-id
 
 RUN mkdir -p /app/data && chown -R node:node /app && \
   mkdir -p /app/data-home && chown node:node /app/data-home && \

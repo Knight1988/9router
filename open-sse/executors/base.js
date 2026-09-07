@@ -6,6 +6,7 @@ import { dbg } from "../utils/debugLog.js";
 import { decompressResponse } from "../utils/decompress.js";
 import { mergeForwardedHeaders } from "../utils/clientDetector.js";
 import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
+import { resolveOpenAICompatibleApiType } from "../services/provider.js";
 
 /**
  * BaseExecutor - Base class for provider executors
@@ -33,7 +34,7 @@ export class BaseExecutor {
     if (this.provider?.startsWith?.("openai-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || OPENAI_COMPAT_BASE;
       const normalized = baseUrl.replace(/\/$/, "");
-      const path = this.provider.includes("responses") ? "/responses" : "/chat/completions";
+      const path = resolveOpenAICompatibleApiType(this.provider, credentials) === "responses" ? "/responses" : "/chat/completions";
       return `${normalized}${path}`;
     }
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
@@ -153,7 +154,7 @@ export class BaseExecutor {
       if (stream !== undefined && transformedBody.stream === undefined) {
         transformedBody.stream = stream;
       }
-      const headers = this.buildHeaders(credentials, stream);
+      const headers = this.buildHeaders(credentials, stream, url, model);
       // Merge forwarded client headers under provider headers case-insensitively.
       // Client headers arrive lowercase (request.headers.entries()); provider headers are
       // mixed-case. A naive spread would leave duplicate-cased keys (e.g. "accept-encoding"

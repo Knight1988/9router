@@ -126,6 +126,7 @@ export async function GET(request, { params }) {
   try {
     const { connectionId } = await params;
     const queryMonitorToken = request.nextUrl.searchParams.get("monitorToken")?.trim();
+    const force = new URL(request.url).searchParams.get("force") === "1";
 
     // Get connection from database
     connection = await getProviderConnectionById(connectionId);
@@ -207,7 +208,7 @@ export async function GET(request, { params }) {
     };
 
     // Fetch usage from provider API
-    let usage = await getUsageForProvider(effectiveConnection, { onSessionRefreshed, ...proxyOptions });
+    let usage = await getUsageForProvider(effectiveConnection, proxyOptions, { force, onSessionRefreshed });
 
     // If provider returned an auth-expired message instead of throwing,
     // force-refresh token and retry once (only for OAuth)
@@ -215,7 +216,7 @@ export async function GET(request, { params }) {
       try {
         const retryResult = await refreshAndUpdateCredentials(connection, true, proxyOptions);
         connection = retryResult.connection;
-        usage = await getUsageForProvider(connection, { onSessionRefreshed, ...proxyOptions });
+        usage = await getUsageForProvider(connection, proxyOptions, { force, onSessionRefreshed });
       } catch (retryError) {
         console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
       }

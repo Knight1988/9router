@@ -249,7 +249,7 @@ export default function ProviderLimits() {
   );
 
   // Fetch quota for a specific connection
-  const fetchQuota = useCallback(async (connectionId, provider, monitorToken) => {
+  const fetchQuota = useCallback(async (connectionId, provider, { monitorToken, force = false } = {}) => {
     setLoading((prev) => ({ ...prev, [connectionId]: true }));
     setErrors((prev) => ({ ...prev, [connectionId]: null }));
 
@@ -257,9 +257,10 @@ export default function ProviderLimits() {
       console.log(
         `[ProviderLimits] Fetching quota for ${provider} (${connectionId})`,
       );
-      const query = monitorToken
-        ? `?monitorToken=${encodeURIComponent(monitorToken)}`
-        : "";
+      const params = new URLSearchParams();
+      if (monitorToken) params.set("monitorToken", monitorToken);
+      if (force) params.set("force", "1");
+      const query = params.size > 0 ? `?${params.toString()}` : "";
       const response = await fetch(`/api/usage/${connectionId}${query}`);
 
       if (!response.ok) {
@@ -382,8 +383,8 @@ export default function ProviderLimits() {
   useEffect(() => { applySnapshotRef.current = applySnapshotToState; }, [applySnapshotToState]);
   const refreshProvider = useCallback(
     async (connectionId, provider) => {
-      const token = monitorTokens[connectionId];
-      await fetchQuota(connectionId, provider, token);
+      const monitorToken = monitorTokens[connectionId];
+      await fetchQuota(connectionId, provider, { monitorToken, force: true });
       setLastUpdated(new Date());
     },
     [fetchQuota, monitorTokens],
@@ -835,6 +836,17 @@ export default function ProviderLimits() {
     const providerVisibility = previous[provider] || {};
     const hidden = new Set(providerVisibility.hidden || []);
     hidden.add(key);
+    if (provider === "antigravity") {
+      if (key === "gemini") {
+        for (const k of hidden) {
+          if (k.startsWith("gemini-") && !k.includes("image")) hidden.delete(k);
+        }
+      } else if (key === "claude") {
+        for (const k of hidden) {
+          if (k.startsWith("claude-")) hidden.delete(k);
+        }
+      }
+    }
     const next = {
       ...previous,
       [provider]: {
@@ -853,6 +865,17 @@ export default function ProviderLimits() {
     const providerVisibility = previous[provider] || {};
     const hidden = new Set(providerVisibility.hidden || []);
     hidden.delete(key);
+    if (provider === "antigravity") {
+      if (key === "gemini") {
+        for (const k of hidden) {
+          if (k.startsWith("gemini-") && !k.includes("image")) hidden.delete(k);
+        }
+      } else if (key === "claude") {
+        for (const k of hidden) {
+          if (k.startsWith("claude-")) hidden.delete(k);
+        }
+      }
+    }
     const next = {
       ...previous,
       [provider]: {
@@ -1617,13 +1640,18 @@ export default function ProviderLimits() {
                     onHideQuota={(quotaRow) => handleHideQuota(conn.provider, quotaRow)}
                   />
                 )}
+                {quota?.message && !error && !isLoading && (
+                  <p className="mt-2 px-1 text-[10px] leading-relaxed text-text-muted">
+                    {quota.message}
+                  </p>
+                )}
                 {hiddenQuotaRows.length > 0 && (
                   <div className="mt-2 flex min-w-0 items-center gap-1 border-t border-black/5 pt-2 text-[10px] text-text-muted dark:border-white/5">
                     <span className="material-symbols-outlined shrink-0 text-[14px]">
                       visibility_off
                     </span>
                     <span className="shrink-0">Hidden:</span>
-                    <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap">
+                    <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap pb-2">
                       {hiddenQuotaRows.map((quotaRow) => (
                         <button
                           key={getQuotaVisibilityKey(quotaRow)}
