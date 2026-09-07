@@ -95,6 +95,11 @@ const USAGE_HANDLERS = {
 };
 
 export async function getUsageForProvider(connection, proxyOptions = null, options = {}) {
+  // Backward compatibility for callers that passed options as the second argument.
+  if (proxyOptions && ("onSessionRefreshed" in proxyOptions || "force" in proxyOptions) && !("host" in proxyOptions)) {
+    options = proxyOptions;
+    proxyOptions = null;
+  }
   const { provider, accessToken, apiKey, providerSpecificData, projectId } = connection;
   const providerDataWithProjectId = {
     ...(providerSpecificData || {}),
