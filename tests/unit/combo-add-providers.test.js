@@ -144,12 +144,13 @@ describe("hardcoded model lists", () => {
     expect(value).toMatch(/^[^/]+\/[^/]+/);
   });
 
-  it("techopenclaw includes Claude Opus 4.8 Thinking", () => {
+  it("techopenclaw includes the current flagship models", () => {
     const models = getModelsByProviderId("techopenclaw");
-    expect(models).toContainEqual({
-      id: "claude-opus-4-8-thinking",
-      name: "Claude Opus 4.8 Thinking",
-    });
+    expect(models).toEqual(expect.arrayContaining([
+      { id: "claude-opus-5-rq", name: "Claude Opus 5 RQ" },
+      { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash" },
+      { id: "gpt-6-astra", name: "GPT-6 Astra" },
+    ]));
   });
 
 });
