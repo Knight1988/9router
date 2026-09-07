@@ -29,10 +29,9 @@ stages:
               export PATH="$(dirname "$(nvm which current 2>/dev/null || command -v node)"):$PATH"
               echo "Using node: $(which node) ($(node -v))"
               echo "Using npm:  $(which npm) ($(npm -v))"
-              npm install
-              cd tests
-              npm install
-              npm test
+              npm ci
+              npm --prefix tests ci
+              npm --prefix tests test
             displayName: Run Vitest unit tests
 
       - job: Test
