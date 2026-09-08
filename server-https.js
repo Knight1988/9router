@@ -82,6 +82,7 @@ if (nextConfig) {
 }
 
 const https = require("https");
+const { wrapTrustedPeerHandler } = require("./custom-server");
 const next = require("next");
 const { startServer } = require("next/dist/server/lib/start-server");
 
@@ -113,7 +114,7 @@ if (httpsEnabled) {
         await app.prepare();
 
         const handler = app.getRequestHandler();
-        httpsServer.on("request", handler);
+        httpsServer.on("request", wrapTrustedPeerHandler(handler));
 
         if (keepAliveTimeout) {
           httpsServer.keepAliveTimeout = keepAliveTimeout;

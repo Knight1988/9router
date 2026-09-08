@@ -46,14 +46,8 @@ function startBackgroundTokenRefreshFromCustomServer() {
     });
 }
 
-// Wrap Next standalone HTTP server: derive client IP from the TCP socket
-// (unspoofable) and strip client-supplied forwarding headers so downstream
-// rate-limiting keys on the real peer address instead of attacker-controlled XFF.
-http.createServer = (...args) => {
-  const handler = args.find((a) => typeof a === "function");
-  const rest = args.filter((a) => typeof a !== "function");
-  if (!handler) return origCreate(...args);
-  const wrapped = (req, res) => {
+function wrapTrustedPeerHandler(handler) {
+  return (req, res) => {
     const socketIp = req.socket && req.socket.remoteAddress ? req.socket.remoteAddress : "";
     const xff = req.headers["x-forwarded-for"];
     const xRealIp = req.headers["x-real-ip"];
@@ -72,6 +66,18 @@ http.createServer = (...args) => {
     if (viaProxy) req.headers["x-9r-via-proxy"] = "1";
     return handler(req, res);
   };
+}
+
+module.exports = { wrapTrustedPeerHandler };
+
+// Wrap Next standalone HTTP server: derive client IP from the TCP socket
+// (unspoofable) and strip client-supplied forwarding headers so downstream
+// rate-limiting keys on the real peer address instead of attacker-controlled XFF.
+http.createServer = (...args) => {
+  const handler = args.find((a) => typeof a === "function");
+  const rest = args.filter((a) => typeof a !== "function");
+  if (!handler) return origCreate(...args);
+  const wrapped = wrapTrustedPeerHandler(handler);
   const server = origCreate(...rest, wrapped);
   server.once("listening", () => {
     startBackgroundTokenRefreshFromCustomServer();
