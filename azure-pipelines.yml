@@ -44,17 +44,39 @@ stages:
             displayName: Checkout source
 
           - script: |
+              set -euo pipefail
               docker compose -f docker-compose.yml -f docker-compose.ci.yml down
-              docker compose -f docker-compose.yml -f docker-compose.ci.yml up --build -d
+
+              build_ok=0
+              for attempt in 1 2 3; do
+                if docker compose -f docker-compose.yml -f docker-compose.ci.yml build; then
+                  build_ok=1
+                  break
+                fi
+                echo "Docker build attempt $attempt failed; retrying in 10s..."
+                sleep 10
+              done
+              if [ "$build_ok" -ne 1 ]; then
+                echo "Docker build failed after 3 attempts"
+                exit 1
+              fi
+              docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
 
               echo "Waiting for server to be ready..."
+              server_ready=0
               for i in $(seq 1 30); do
                 if curl -sk --max-time 10 https://localhost:21129/v1/models > /dev/null 2>&1; then
                   echo "Server ready."
+                  server_ready=1
                   break
                 fi
                 sleep 2
               done
+              if [ "$server_ready" -ne 1 ]; then
+                echo "Server failed to become ready"
+                docker compose -f docker-compose.yml -f docker-compose.ci.yml logs
+                exit 1
+              fi
 
               PASS=0
               FAIL=0
