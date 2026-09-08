@@ -107,7 +107,7 @@ stages:
                   echo "=== $label (attempt $attempt/$MAX_RETRIES) ==="
 
                   response=$(docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T app \
-                    wget -qO- --no-check-certificate \
+                    wget -qO- --content-on-error --no-check-certificate \
                     --header="Content-Type: application/json" \
                     --header="x-api-key: $TEST_API_KEY" \
                     --header="anthropic-version: 2023-06-01" \
@@ -151,7 +151,7 @@ stages:
               }
 
               for model in planning coding; do
-                run_test "$model" "$model"
+                run_test "$model" "$model" || true
               done
 
               echo "Results: $PASS passed, $FAIL failed"
