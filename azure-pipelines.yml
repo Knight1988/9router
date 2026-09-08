@@ -94,6 +94,11 @@ stages:
                 exit 1
               fi
 
+              # The persistent CI volume may retain requireApiKey=true. Seed a
+              # disposable key so the smoke test exercises the authenticated path.
+              docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T app \
+                node -e 'const Database=require("better-sqlite3"); const db=new Database("/var/lib/9router/db/data.sqlite"); db.prepare("INSERT OR REPLACE INTO apiKeys(id,key,name,machineId,isActive,createdAt,createdBy) VALUES(?,?,?,?,?,?,?)").run("ci-smoke","ci-smoke-key","CI smoke","ci",1,new Date().toISOString(),null); db.close()'
+
               PASS=0
               FAIL=0
               MAX_RETRIES=3
@@ -108,7 +113,7 @@ stages:
 
                   response=$(docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T \
                     -e NODE_TLS_REJECT_UNAUTHORIZED=0 -e SMOKE_MODEL="$model" app \
-                    node -e 'fetch("https://localhost:20129/v1/messages", {method:"POST", headers:{"content-type":"application/json","anthropic-version":"2023-06-01"}, body:JSON.stringify({model:process.env.SMOKE_MODEL,messages:[{role:"user",content:"say hi"}],max_tokens:50})}).then(async r=>{process.stdout.write(await r.text()); if(!r.ok) process.exitCode=1}).catch(e=>{console.error(e);process.exitCode=1})' \
+                    node -e 'fetch("https://localhost:20129/v1/messages", {method:"POST", headers:{"content-type":"application/json","x-api-key":"ci-smoke-key","anthropic-version":"2023-06-01"}, body:JSON.stringify({model:process.env.SMOKE_MODEL,messages:[{role:"user",content:"say hi"}],max_tokens:50})}).then(async r=>{process.stdout.write(await r.text()); if(!r.ok) process.exitCode=1}).catch(e=>{console.error(e);process.exitCode=1})' \
                     2>&1 || true)
 
                   echo "$response"
