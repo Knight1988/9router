@@ -54,6 +54,14 @@ stages:
               printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' | sudo tee /etc/resolv.conf > /dev/null
               trap 'sudo cp "$resolv_backup" /etc/resolv.conf; rm -f "$resolv_backup"' EXIT
               getent hosts public.ecr.aws > /dev/null
+              # BuildKit resolves base-image registries in the Docker daemon, not
+              # the agent shell. Restart it after replacing the inherited resolver.
+              sudo systemctl restart docker
+              for i in $(seq 1 30); do
+                docker info > /dev/null 2>&1 && break
+                sleep 1
+              done
+              docker info > /dev/null
 
               build_ok=0
               for attempt in 1 2 3; do
