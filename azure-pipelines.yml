@@ -49,14 +49,11 @@ stages:
 
               # The self-hosted WSL runner can inherit an unavailable Tailscale DNS
               # server (100.100.100.100), which prevents Docker from resolving registries.
-              resolv_backup=""
-              if ! getent hosts public.ecr.aws > /dev/null 2>&1; then
-                resolv_backup=$(mktemp)
-                cat /etc/resolv.conf > "$resolv_backup"
-                printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' | sudo tee /etc/resolv.conf > /dev/null
-                trap 'sudo cp "$resolv_backup" /etc/resolv.conf; rm -f "$resolv_backup"' EXIT
-                getent hosts public.ecr.aws > /dev/null
-              fi
+              resolv_backup=$(mktemp)
+              cat /etc/resolv.conf > "$resolv_backup"
+              printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' | sudo tee /etc/resolv.conf > /dev/null
+              trap 'sudo cp "$resolv_backup" /etc/resolv.conf; rm -f "$resolv_backup"' EXIT
+              getent hosts public.ecr.aws > /dev/null
 
               build_ok=0
               for attempt in 1 2 3; do
