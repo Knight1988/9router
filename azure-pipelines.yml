@@ -70,7 +70,7 @@ stages:
 
                   response=$(curl -sk --max-time 300 https://localhost:21129/v1/messages \
                     -H "Content-Type: application/json" \
-                    -H "x-api-key: $(TEST_API_KEY)" \
+                    -H "x-api-key: $TEST_API_KEY" \
                     -H "anthropic-version: 2023-06-01" \
                     -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"say hi\"}],\"max_tokens\":50}" 2>&1)
 
@@ -122,6 +122,8 @@ stages:
                 exit 1
               fi
             displayName: Run tests
+            env:
+              TEST_API_KEY: $(TEST_API_KEY)
 
   - stage: Build
     displayName: Build and Push Docker Image
