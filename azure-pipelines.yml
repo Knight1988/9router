@@ -106,13 +106,10 @@ stages:
                 for attempt in $(seq 1 $MAX_RETRIES); do
                   echo "=== $label (attempt $attempt/$MAX_RETRIES) ==="
 
-                  response=$(docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T app \
-                    wget -qO- --content-on-error --no-check-certificate \
-                    --header="Content-Type: application/json" \
-                    --header="x-api-key: $TEST_API_KEY" \
-                    --header="anthropic-version: 2023-06-01" \
-                    --post-data="{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"say hi\"}],\"max_tokens\":50}" \
-                    https://localhost:20129/v1/messages 2>&1 || true)
+                  response=$(docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T \
+                    -e SMOKE_MODEL="$model" -e SMOKE_API_KEY="$TEST_API_KEY" app \
+                    node -e 'fetch("https://localhost:20129/v1/messages", {method:"POST", headers:{"content-type":"application/json","x-api-key":process.env.SMOKE_API_KEY,"anthropic-version":"2023-06-01"}, body:JSON.stringify({model:process.env.SMOKE_MODEL,messages:[{role:"user",content:"say hi"}],max_tokens:50})}).then(async r=>{process.stdout.write(await r.text()); if(!r.ok) process.exitCode=1}).catch(e=>{console.error(e);process.exitCode=1})' \
+                    2>&1 || true)
 
                   echo "$response"
 
