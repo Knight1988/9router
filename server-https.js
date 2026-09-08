@@ -193,7 +193,7 @@ if (httpsEnabled) {
         });
         await app.prepare();
         const handler = app.getRequestHandler();
-        httpsServer.on("request", handler);
+        httpsServer.on("request", wrapTrustedPeerHandler(handler));
         if (keepAliveTimeout) httpsServer.keepAliveTimeout = keepAliveTimeout;
         httpsServer.listen(httpsPort, hostname, () => {
           // Disable Node.js per-request timeouts for long-running SSE connections
