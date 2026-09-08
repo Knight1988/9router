@@ -106,11 +106,13 @@ stages:
                 for attempt in $(seq 1 $MAX_RETRIES); do
                   echo "=== $label (attempt $attempt/$MAX_RETRIES) ==="
 
-                  response=$(curl -sk --max-time 300 https://localhost:21129/v1/messages \
-                    -H "Content-Type: application/json" \
-                    -H "x-api-key: $TEST_API_KEY" \
-                    -H "anthropic-version: 2023-06-01" \
-                    -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"say hi\"}],\"max_tokens\":50}" 2>&1)
+                  response=$(docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T app \
+                    wget -qO- --no-check-certificate \
+                    --header="Content-Type: application/json" \
+                    --header="x-api-key: $TEST_API_KEY" \
+                    --header="anthropic-version: 2023-06-01" \
+                    --post-data="{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"say hi\"}],\"max_tokens\":50}" \
+                    https://localhost:20129/v1/messages 2>&1 || true)
 
                   echo "$response"
 
@@ -122,10 +124,10 @@ stages:
                   fi
 
                   # Try SSE streaming format first (content_block_delta events)
-                  content=$(echo "$response" | grep "content_block_delta" | grep -oE '"text"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/"text"[[:space:]]*:[[:space:]]*"//g' | sed 's/"//g' | tr -d '\n')
+                  content=$(echo "$response" | grep "content_block_delta" | grep -oE '"text"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/"text"[[:space:]]*:[[:space:]]*"//g' | sed 's/"//g' | tr -d '\n' || true)
                   # Fall back to non-streaming JSON response format
                   if [ -z "$content" ]; then
-                    content=$(echo "$response" | grep -oE '"text"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/"text"[[:space:]]*:[[:space:]]*"//g' | sed 's/"//g')
+                    content=$(echo "$response" | grep -oE '"text"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/"text"[[:space:]]*:[[:space:]]*"//g' | sed 's/"//g' || true)
                   fi
 
                   if [ -n "$content" ]; then
