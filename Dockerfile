@@ -1,4 +1,5 @@
-FROM node:22-alpine AS builder
+ARG NODE_IMAGE=public.ecr.aws/docker/library/node:22-alpine
+FROM ${NODE_IMAGE} AS builder
 WORKDIR /app
 # CN mirror for apk (used by builder and runner stages)
 RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' /etc/apk/repositories
@@ -12,7 +13,7 @@ COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-FROM node:22-alpine AS runner
+FROM ${NODE_IMAGE} AS runner
 WORKDIR /app
 
 RUN apk update && apk --no-cache upgrade && apk --no-cache add su-exec tzdata
