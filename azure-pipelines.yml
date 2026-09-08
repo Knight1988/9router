@@ -107,8 +107,8 @@ stages:
                   echo "=== $label (attempt $attempt/$MAX_RETRIES) ==="
 
                   response=$(docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T \
-                    -e NODE_TLS_REJECT_UNAUTHORIZED=0 -e SMOKE_MODEL="$model" -e SMOKE_API_KEY="$TEST_API_KEY" app \
-                    node -e 'fetch("https://localhost:20129/v1/messages", {method:"POST", headers:{"content-type":"application/json","x-api-key":process.env.SMOKE_API_KEY,"anthropic-version":"2023-06-01"}, body:JSON.stringify({model:process.env.SMOKE_MODEL,messages:[{role:"user",content:"say hi"}],max_tokens:50})}).then(async r=>{process.stdout.write(await r.text()); if(!r.ok) process.exitCode=1}).catch(e=>{console.error(e);process.exitCode=1})' \
+                    -e NODE_TLS_REJECT_UNAUTHORIZED=0 -e SMOKE_MODEL="$model" app \
+                    node -e 'fetch("https://localhost:20129/v1/messages", {method:"POST", headers:{"content-type":"application/json","anthropic-version":"2023-06-01"}, body:JSON.stringify({model:process.env.SMOKE_MODEL,messages:[{role:"user",content:"say hi"}],max_tokens:50})}).then(async r=>{process.stdout.write(await r.text()); if(!r.ok) process.exitCode=1}).catch(e=>{console.error(e);process.exitCode=1})' \
                     2>&1 || true)
 
                   echo "$response"
@@ -159,8 +159,6 @@ stages:
                 exit 1
               fi
             displayName: Run tests
-            env:
-              TEST_API_KEY: $(TEST_API_KEY)
 
   - stage: Build
     displayName: Build and Push Docker Image
