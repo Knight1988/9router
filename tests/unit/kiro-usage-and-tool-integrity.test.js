@@ -44,7 +44,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const fetchMock = vi.fn();
 
 vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
-  proxyAwareFetch: (...args) => fetchMock(...args)
+  proxyAwareFetch: (...args) => fetchMock(...args),
+  proxyAwareRawFetch: (...args) => fetchMock(...args)
 }));
 
 const { KiroExecutor } = await import("../../open-sse/executors/kiro.js");

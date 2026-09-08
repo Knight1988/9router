@@ -49,6 +49,7 @@ vi.mock("../../open-sse/utils/requestLogger.js", () => ({
 vi.mock("../../open-sse/utils/clientDetector.js", () => ({
   detectClientTool: vi.fn(() => null),
   isNativePassthrough: vi.fn(() => false),
+  isSameApiFamily: vi.fn(() => false),
 }));
 
 vi.mock("../../open-sse/utils/bypassHandler.js", () => ({
@@ -70,6 +71,7 @@ vi.mock("../../open-sse/services/tokenRefresh.js", () => ({
 vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
   default: vi.fn(),
   proxyAwareFetch: vi.fn(),
+  proxyAwareRawFetch: vi.fn(),
 }));
 
 vi.mock("../../open-sse/translator/formats/claude.js", () => ({
