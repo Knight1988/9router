@@ -3,3 +3,5 @@ services:
     ports: !override
       - "21128:20128"
       - "21129:20129"
+    environment:
+      REQUIRE_API_KEY: "false"
