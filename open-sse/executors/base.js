@@ -154,7 +154,7 @@ export class BaseExecutor {
       if (stream !== undefined && transformedBody.stream === undefined) {
         transformedBody.stream = stream;
       }
-      const headers = this.buildHeaders(credentials, stream, url, model);
+      const headers = this.buildHeaders(credentials, stream, url, model, transformedBody);
       // Merge forwarded client headers under provider headers case-insensitively.
       // Client headers arrive lowercase (request.headers.entries()); provider headers are
       // mixed-case. A naive spread would leave duplicate-cased keys (e.g. "accept-encoding"

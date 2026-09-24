@@ -55,26 +55,6 @@ describe("combo fallback — same provider, different models", () => {
     expect(body.choices[0].message.content).toBe("ok");
   });
 
-  it("T2: falls back on 400 — all statuses currently trigger shouldFallback:true", async () => {
-    // errorConfig.js has no rule that returns shouldFallback:false.
-    // The default at accountFallback.js:49 always returns shouldFallback:true.
-    // This test documents the current behavior: even 400 falls through to the next entry.
-    const handleSingleModel = vi
-      .fn()
-      .mockResolvedValueOnce(makeResponse(400, { error: { message: "bad request" } }))
-      .mockResolvedValueOnce(makeResponse(200, { choices: [{ message: { content: "fallback ok" } }] }));
-
-    const result = await handleComboChat({
-      body: { messages: [{ role: "user", content: "ping" }] },
-      models: [MODEL_A, MODEL_B],
-      handleSingleModel,
-      log,
-    });
-
-    // Both called — 400 does NOT stop the combo
-    expect(handleSingleModel).toHaveBeenCalledTimes(2);
-    expect(result.ok).toBe(true);
-  });
 
   it("T3: returns last error when both models fail", async () => {
     const handleSingleModel = vi

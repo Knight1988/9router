@@ -366,7 +366,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > claude → headers (
     "Anthropic-Dangerous-Direct-Browser-Access": "true",
     "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
-    "User-Agent": "claude-cli/2.1.258 (external, sdk-cli)",
+    "User-Agent": "claude-cli/2.1.280 (external, sdk-cli)",
     "X-App": "cli",
     "X-Stainless-Arch": "arm64",
     "X-Stainless-Helper-Method": "stream",
@@ -385,7 +385,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > claude → headers (
     "Anthropic-Dangerous-Direct-Browser-Access": "true",
     "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
-    "User-Agent": "claude-cli/2.1.258 (external, sdk-cli)",
+    "User-Agent": "claude-cli/2.1.280 (external, sdk-cli)",
     "X-App": "cli",
     "X-Stainless-Arch": "arm64",
     "X-Stainless-Helper-Method": "stream",
@@ -406,7 +406,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > claude → headers (
     "Anthropic-Version": "2023-06-01",
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
-    "User-Agent": "claude-cli/2.1.258 (external, sdk-cli)",
+    "User-Agent": "claude-cli/2.1.280 (external, sdk-cli)",
     "X-App": "cli",
     "X-Stainless-Arch": "arm64",
     "X-Stainless-Helper-Method": "stream",
@@ -466,10 +466,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.5.69",
+    "User-Agent": "9Router/0.5.86",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.5.69",
-    "X-CORE-VERSION": "0.5.69",
+    "X-CLIENT-VERSION": "0.5.86",
+    "X-CORE-VERSION": "0.5.86",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "linux",
     "X-PLATFORM-VERSION": "v22.23.1",
@@ -480,10 +480,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.5.69",
+    "User-Agent": "9Router/0.5.86",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.5.69",
-    "X-CORE-VERSION": "0.5.69",
+    "X-CLIENT-VERSION": "0.5.86",
+    "X-CORE-VERSION": "0.5.86",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "linux",
     "X-PLATFORM-VERSION": "v22.23.1",
@@ -495,10 +495,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.5.69",
+    "User-Agent": "9Router/0.5.86",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.5.69",
-    "X-CORE-VERSION": "0.5.69",
+    "X-CLIENT-VERSION": "0.5.86",
+    "X-CORE-VERSION": "0.5.86",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "linux",
     "X-PLATFORM-VERSION": "v22.23.1",
@@ -515,10 +515,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > clinepass → header
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.5.69",
+    "User-Agent": "9Router/0.5.86",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.5.69",
-    "X-CORE-VERSION": "0.5.69",
+    "X-CLIENT-VERSION": "0.5.86",
+    "X-CORE-VERSION": "0.5.86",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "linux",
     "X-PLATFORM-VERSION": "v22.23.1",
@@ -529,10 +529,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > clinepass → header
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.5.69",
+    "User-Agent": "9Router/0.5.86",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.5.69",
-    "X-CORE-VERSION": "0.5.69",
+    "X-CLIENT-VERSION": "0.5.86",
+    "X-CORE-VERSION": "0.5.86",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "linux",
     "X-PLATFORM-VERSION": "v22.23.1",
@@ -544,10 +544,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > clinepass → header
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.5.69",
+    "User-Agent": "9Router/0.5.86",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.5.69",
-    "X-CORE-VERSION": "0.5.69",
+    "X-CLIENT-VERSION": "0.5.86",
+    "X-CORE-VERSION": "0.5.86",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "linux",
     "X-PLATFORM-VERSION": "v22.23.1",
@@ -1062,7 +1062,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi → headers (ap
     "X-Msh-Device-Model": "Linux x64",
     "X-Msh-Device-Name": "DK-PC",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "0.5.69",
+    "X-Msh-Version": "0.5.86",
     "x-api-key": "<CRED>",
   },
   "nonStream": {
@@ -1074,7 +1074,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi → headers (ap
     "X-Msh-Device-Model": "Linux x64",
     "X-Msh-Device-Name": "DK-PC",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "0.5.69",
+    "X-Msh-Version": "0.5.86",
     "x-api-key": "<CRED>",
   },
   "oauth": {
@@ -1087,7 +1087,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi → headers (ap
     "X-Msh-Device-Model": "Linux x64",
     "X-Msh-Device-Name": "DK-PC",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "0.5.69",
+    "X-Msh-Version": "0.5.86",
     "x-api-key": "<CRED>",
   },
 }
@@ -1406,6 +1406,28 @@ exports[`GOLDEN buildHeaders (default executor providers) > openai → headers (
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > opencode-zen → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > openrouter → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -1479,6 +1501,28 @@ exports[`GOLDEN buildHeaders (default executor providers) > perplexity-agent →
 `;
 
 exports[`GOLDEN buildHeaders (default executor providers) > poolside → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > qoder-cn → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
     "Accept": "text/event-stream",
@@ -2221,6 +2265,13 @@ exports[`GOLDEN buildUrl (default executor providers) > openai → url (stream +
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > opencode-zen → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://opencode.ai/zen/v1/chat/completions",
+  "stream": "https://opencode.ai/zen/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > openrouter → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://openrouter.ai/api/v1/chat/completions",
@@ -2246,6 +2297,13 @@ exports[`GOLDEN buildUrl (default executor providers) > poolside → url (stream
 {
   "nonStream": "https://inference.poolside.ai/v1/chat/completions",
   "stream": "https://inference.poolside.ai/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > qoder-cn → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://gateway.qoder.com.cn/algo/api/v2/service/pro/sse/agent_chat_generation",
+  "stream": "https://gateway.qoder.com.cn/algo/api/v2/service/pro/sse/agent_chat_generation",
 }
 `;
 

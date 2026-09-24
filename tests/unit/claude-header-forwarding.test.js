@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mergeForwardedHeaders, getForwardableClientHeaders, HEADER_FORWARD_BLOCKLIST } from "open-sse/utils/clientDetector.js";
+import { mergeForwardedHeaders, getForwardableClientHeaders, HEADER_FORWARD_BLOCKLIST } from "../../open-sse/utils/clientDetector.js";
 
 // ─── DefaultExecutor.buildHeaders() ──────────────────────────────────────────
 
@@ -19,7 +19,7 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
 
   beforeEach(async () => {
     vi.resetModules();
-    const mod = await import("open-sse/executors/default.js");
+    const mod = await import("../../open-sse/executors/default.js");
     DefaultExecutor = mod.DefaultExecutor || mod.default;
   });
 
@@ -31,7 +31,7 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
       headers["Anthropic-Version"] === "2023-06-01" ||
       headers["anthropic-version"] === "2023-06-01";
     expect(hasVersion).toBe(true);
-    expect(headers["User-Agent"]).toBe("claude-cli/2.1.258 (external, sdk-cli)");
+    expect(headers["User-Agent"]).toBe("claude-cli/2.1.280 (external, sdk-cli)");
   });
 
   it("includes heavy-agent beta flags for claude-opus-5", () => {
@@ -106,7 +106,7 @@ describe("DefaultExecutor.buildHeaders() — anthropic-compatible stripping", ()
 
   beforeEach(async () => {
     vi.resetModules();
-    const mod = await import("open-sse/executors/default.js");
+    const mod = await import("../../open-sse/executors/default.js");
     DefaultExecutor = mod.DefaultExecutor || mod.default;
   });
 
@@ -253,7 +253,7 @@ describe("proxyAwareFetch — api.anthropic.com routing", () => {
     vi.resetModules();
     // Patch the fetch that proxyFetch.js will capture on import
     globalThis.fetch = mockFetch;
-    const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
+    const { proxyAwareFetch } = await import("../../open-sse/utils/proxyFetch.js");
 
     const res = await proxyAwareFetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -286,7 +286,7 @@ describe("proxyAwareFetch — api.anthropic.com routing", () => {
     });
 
     vi.resetModules();
-    const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
+    const { proxyAwareFetch } = await import("../../open-sse/utils/proxyFetch.js");
 
     const res = await proxyAwareFetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -313,7 +313,7 @@ describe("proxyAwareFetch — api.anthropic.com routing", () => {
     });
 
     vi.resetModules();
-    const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
+    const { proxyAwareFetch } = await import("../../open-sse/utils/proxyFetch.js");
 
     await proxyAwareFetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
