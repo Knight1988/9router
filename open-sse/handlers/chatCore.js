@@ -9,6 +9,7 @@ import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelSupportedFormats, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
+import { upstreamResponseHeaders } from "../utils/upstreamHeaders.js";
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
@@ -40,12 +41,12 @@ import { resolveSessionId } from "../utils/sessionManager.js";
  * If parsing fails, re-executes the request up to maxRetries times.
  *
  * @param {Response} response - The Response to parse
- * @param {object} retryContext - Context needed for retry: { executor, model, body, stream, credentials, signal, log, proxyOptions, clientHeaders, provider }
+ * @param {object} retryContext - Context needed for retry: { executor, model, body, stream, credentials, signal, log, proxyOptions, clientHeaders, providerOverrides }
  * @param {number} maxRetries - Maximum retry attempts (default 2)
  * @returns {Promise<{success: boolean, body?: object, error?: Error}>}
  */
 export async function parseJsonWithRetry(response, retryContext, maxRetries = 2) {
-  const { executor, model, body, stream, credentials, signal, log, proxyOptions, clientHeaders, provider, providerSessionId, clientTool } = retryContext;
+  const { executor, model, body, stream, credentials, signal, log, proxyOptions, clientHeaders, providerOverrides, providerSessionId, clientTool } = retryContext;
 
   // Try parsing the current response
   try {
@@ -70,7 +71,7 @@ export async function parseJsonWithRetry(response, retryContext, maxRetries = 2)
 
       // Re-execute the request
       try {
-        const result = await executor.execute({ model, body, stream, credentials, providerSessionId, clientTool, signal, log, proxyOptions, clientHeaders });
+        const result = await executor.execute({ model, body, stream, credentials, providerSessionId, clientTool, signal, log, proxyOptions, clientHeaders, providerOverrides });
         if (!result.response.ok) {
           // Provider returned error on retry — give up
           return { success: false, error: new Error(`Retry ${attempt} got HTTP ${result.response.status}`) };
@@ -131,7 +132,7 @@ export function stripContinuityFields(body) {
   return body;
 }
 
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, providerOverrides }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -294,9 +295,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     stripContinuityFields(translatedBody);
   }
 
-  // Dedupe duplicate built-in tools when equivalent MCP tools are present (Claude clients only).
-  if (clientTool === "claude" && Array.isArray(translatedBody.tools)) {
-    const { tools: deduped, stripped } = dedupeTools(translatedBody.tools);
+  // Tool normalization: MCP-equivalent built-in dedup (Claude clients) + same-name
+  // dedup for DeepSeek models (upstream rejects duplicate tool names on all endpoints).
+  if (Array.isArray(translatedBody.tools)) {
+    const { tools: deduped, stripped } = dedupeTools(translatedBody.tools, { clientTool, model });
     if (stripped.length > 0) {
       translatedBody.tools = deduped;
       log?.debug?.("TOOLDEDUP", `stripped ${stripped.length}: ${stripped.slice(0, 3).join(", ")}${stripped.length > 3 ? "..." : ""}`);
@@ -461,6 +463,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       log,
       proxyOptions,
       clientHeaders,
+      providerOverrides,
     });
     providerResponse = result.response;
     providerUrl = result.url;
@@ -543,6 +546,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
             log,
             proxyOptions,
             clientHeaders,
+            providerOverrides,
           });
           if (retryResult.response.ok) {
             providerResponse = retryResult.response;
@@ -595,7 +599,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       log.errorLine(reqTag, "✗", `ERROR ${statusCode} · ${provider}/${model} · ${Date.now() - requestStartTime}ms${urlStr}\n    ${errMsg}`);
     }
     reqLogger.logError(new Error(message), finalBody || translatedBody);
-    return createErrorResult(statusCode, errMsg, resetsAtMs);
+    return createErrorResult(statusCode, errMsg, resetsAtMs, upstreamResponseHeaders(providerResponse.headers));
   }
 
   const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
@@ -639,7 +643,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       // Parse JSON with retry on failure
       const parseResult = await parseJsonWithRetry(providerResponse, {
         executor, model, body: translatedBody, stream, credentials,
-        signal: streamController.signal, log, proxyOptions, clientHeaders, provider,
+        signal: streamController.signal, log, proxyOptions, clientHeaders, providerOverrides,
         providerSessionId: sessionSeed, clientTool
       });
 
@@ -695,7 +699,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     } else {
       const retryContext = {
         executor, model, body: translatedBody, stream, credentials,
-        signal: streamController.signal, log, proxyOptions, clientHeaders, provider,
+        signal: streamController.signal, log, proxyOptions, clientHeaders, providerOverrides,
         providerSessionId: sessionSeed, clientTool
       };
       const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, retryContext });

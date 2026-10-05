@@ -12,6 +12,7 @@ import { createErrorResult } from "../../utils/error.js";
 import { logAbnormal, ABNORMAL_SIGNALS, isAbnormalFinishReason } from "../../utils/abnormalLogger.js";
 import { recordRequestResult } from "@/lib/smartRouting/healthTracker.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
+import { upstreamResponseHeaders } from "../../utils/upstreamHeaders.js";
 
 // Codex returns Responses API SSE → which client format to translate INTO, by request sourceFormat.
 // Gemini-family all map to ANTIGRAVITY decoder; unknown sources fall back to OPENAI.
@@ -388,7 +389,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 
   return {
     success: true,
-    response: new Response(clientStream, { headers: SSE_HEADERS })
+    response: new Response(clientStream, { headers: { ...SSE_HEADERS, ...upstreamResponseHeaders(providerResponse.headers) } })
   };
 }
 

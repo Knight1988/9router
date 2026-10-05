@@ -15,6 +15,7 @@ import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
+import { upstreamResponseHeaders } from "open-sse/utils/upstreamHeaders.js";
 import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "open-sse/services/combo.js";
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
@@ -194,7 +195,7 @@ export async function handleChat(request, clientRawRequest = null) {
     });
   }
 
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, { requestedModel: contextMarker ? `${modelStr.slice(modelStr.indexOf("/") + 1)}[${contextMarker}]` : null });
 }
 
 /**
@@ -249,7 +250,7 @@ function wrapComboWithHeartbeat(comboPromise) {
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, { skipHeartbeat = false } = {}) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, { skipHeartbeat = false, requestedModel = null } = {}) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, the model string is not a provider/model pair.
@@ -326,14 +327,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Non-streaming path: unchanged — account fallback returns JSON synchronously.
     // skipHeartbeat=true is used by combo cycling so handleComboChat can observe
     // the real error status and cycle to the next model.
-    return _runAccountFallback({ provider, model, body, userAgent, request, clientRawRequest, apiKey });
+    return _runAccountFallback({ provider, model, body, userAgent, request, clientRawRequest, apiKey, requestedModel });
   }
 
   // Streaming path: wrap the account fallback loop in a ReadableStream that emits
-  // SSE heartbeat comments (": heartbeat\n\n") every HEARTBEAT_INTERVAL_MS while
-  // waiting for detectContent() to resolve. When content is found, the heartbeat
-  // stream is replaced by the real SSE content. When all accounts are exhausted,
-  // an SSE error event is sent before closing.
+  // SSE heartbeat comments every HEARTBEAT_INTERVAL_MS while waiting for detectContent().
+  // When content is found, the heartbeat stream is replaced by real SSE content.
+  // When all accounts are exhausted, an SSE error event is sent before closing.
   const encoder = new TextEncoder();
   const heartbeatStream = new ReadableStream({
     start(controller) {
@@ -345,11 +345,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
       // Run the account fallback loop in the background. We don't await this so
       // the Response can be returned immediately with the heartbeat stream.
-      _runAccountFallback({ provider, model, body, userAgent, request, clientRawRequest, apiKey })
+      _runAccountFallback({ provider, model, body, userAgent, request, clientRawRequest, apiKey, requestedModel })
         .then(async (finalResponse) => {
           clearInterval(timer);
           if (finalResponse.ok) {
-            // Pipe successful SSE response body into the heartbeat stream.
             try {
               const reader = finalResponse.body.getReader();
               while (true) {
@@ -385,13 +384,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
  * first successful Response or the last error Response when all accounts are exhausted.
  * Used by both the streaming heartbeat wrapper and the non-streaming path.
  */
-async function _runAccountFallback({ provider, model, body, userAgent, request, clientRawRequest, apiKey }) {
+async function _runAccountFallback({ provider, model, body, userAgent, request, clientRawRequest, apiKey, requestedModel }) {
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { requestedModel: requestedModel || model });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -399,14 +398,14 @@ async function _runAccountFallback({ provider, model, body, userAgent, request, 
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = HTTP_STATUS.SERVICE_UNAVAILABLE;
         log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
-        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman, lastHeaders);
       }
       if (excludeConnectionIds.size === 0) {
         log.warn("AUTH", `No active credentials for provider: ${provider}`);
         return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
       }
       log.warn("CHAT", "No more accounts available", { provider });
-      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
+      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable", lastHeaders);
     }
 
     // Account selection shown in the unified "▶" line (acc:...)
@@ -451,6 +450,8 @@ async function _runAccountFallback({ provider, model, body, userAgent, request, 
       pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
       onPxpipeEvent: appendPxpipeEvent,
       providerThinking,
+      // Per-provider user overrides (custom headers / connect timeout) from settings
+      providerOverrides: (chatSettings.providerOverrides || {})[provider] || null,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
       onCredentialsRefreshed: async (newCreds) => {
@@ -500,6 +501,7 @@ async function _runAccountFallback({ provider, model, body, userAgent, request, 
       excludeConnectionIds.add(credentials.connectionId);
       lastError = result.error;
       lastStatus = result.status;
+      lastHeaders = upstreamResponseHeaders(result.response?.headers);
       continue;
     }
 

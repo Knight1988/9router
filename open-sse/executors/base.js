@@ -110,7 +110,7 @@ export class BaseExecutor {
     return { status: response.status, message: bodyText || `HTTP ${response.status}` };
   }
 
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, clientHeaders = {} }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, clientHeaders = {}, providerOverrides = null }) {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
     let lastStatus = 0;
@@ -155,11 +155,14 @@ export class BaseExecutor {
         transformedBody.stream = stream;
       }
       const headers = this.buildHeaders(credentials, stream, url, model, transformedBody);
-      // Merge forwarded client headers under provider headers case-insensitively.
-      // Client headers arrive lowercase (request.headers.entries()); provider headers are
-      // mixed-case. A naive spread would leave duplicate-cased keys (e.g. "accept-encoding"
-      // + "Accept-Encoding") that undici emits as two lines, breaking Cloudflare upstreams.
-      const mergedHeaders = mergeForwardedHeaders(clientHeaders, headers);
+      // Provider headers beat forwarded client headers; user overrides beat both.
+      // Merge case-insensitively to avoid duplicate-cased HTTP headers.
+      const mergedHeaders = mergeForwardedHeaders(
+        clientHeaders,
+        providerOverrides?.headers
+          ? mergeForwardedHeaders(headers, providerOverrides.headers)
+          : headers
+      );
 
       if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
 
