@@ -105,6 +105,8 @@ Object.assign(PROVIDER_MODELS, {
     { id: "grok-4.7", name: "Grok 4.7" },
     { id: "gpt-6-sol", name: "GPT-6 Sol" },
     { id: "gpt-6-luna", name: "GPT-6 Luna" },
+    { id: "claude-opus-5-5", name: "Claude Opus 5.5" },
+    { id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5" },
   ],
   "vip-claudible": [
     { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
