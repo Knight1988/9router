@@ -155,7 +155,7 @@ export default function ProviderDetailPage() {
   const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId] || authModes.includes("oauth");
   const supportsApiKeyAuth = !!APIKEY_PROVIDERS[providerId] || authModes.includes("apikey");
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
-  const staticModels = getModelsByProviderId(providerId);
+  const staticModels = providerId === "techopenclaw" ? [] : getModelsByProviderId(providerId);
   const fallbackModels = providerId === "troll-llm"
     ? [
         { id: "claude-opus-4-6",   name: "Claude Opus 4.6"   },
@@ -165,7 +165,7 @@ export default function ProviderDetailPage() {
         { id: "gpt-5.4",           name: "GPT-5.4"           },
       ]
     : [];
-  const liveCatalogModels = (providerId === "cursor" || providerId === "zed") && liveModels.length > 0
+  const liveCatalogModels = providerId === "techopenclaw" || ((providerId === "cursor" || providerId === "zed") && liveModels.length > 0)
     ? liveModels
     : [];
   const models = liveCatalogModels.length > 0
@@ -482,11 +482,16 @@ export default function ProviderDetailPage() {
     fetchDisabledModels();
   }, [fetchConnections, fetchAliases, fetchCustomModels, fetchDisabledModels]);
 
-  // Live per-connection catalogs (cursor, zed): the static registry carries
-  // no usable list, so resolve from the active connection. Fires only when
-  // the provider id or connection list changes — no polling, no loop.
-  // Cursor path is statement-identical to before; zed adds error surfacing.
+  // Fetch the stored Techopenclaw catalog, or the live Cursor/Zed catalog.
   useEffect(() => {
+    if (providerId === "techopenclaw") {
+      let cancelled = false;
+      fetch("/api/providers/techopenclaw/models", { cache: "no-store" })
+        .then((res) => res.ok ? res.json() : null)
+        .then((data) => { if (!cancelled) setLiveModels(data?.models || []); })
+        .catch(() => { if (!cancelled) setLiveModels([]); });
+      return () => { cancelled = true; };
+    }
     const isLiveCatalog = providerId === "cursor" || providerId === "zed";
     if (!isLiveCatalog) {
       setLiveModels([]);

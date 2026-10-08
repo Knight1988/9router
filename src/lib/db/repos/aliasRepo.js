@@ -4,7 +4,32 @@ import { makeKv } from "../helpers/kvStore.js";
 
 const aliasKv = makeKv("modelAliases");
 const customKv = makeKv("customModels");
+const techopenclawKv = makeKv("providerModels");
 const mitmKv = makeKv("mitmAlias");
+
+// Seed once from the shipped catalog. A stored empty list is intentional.
+export async function getTechopenclawModels() {
+  const { PROVIDER_MODELS } = await import("../../../../open-sse/providers/index.js");
+  const db = await getAdapter();
+  let row = db.get(`SELECT value FROM kv WHERE scope = 'providerModels' AND key = 'techopenclaw'`);
+  if (!row) {
+    db.run(`INSERT OR IGNORE INTO kv(scope, key, value) VALUES('providerModels', 'techopenclaw', ?)`, [stringifyJson(PROVIDER_MODELS.techopenclaw)]);
+    row = db.get(`SELECT value FROM kv WHERE scope = 'providerModels' AND key = 'techopenclaw'`);
+  }
+  const models = parseJson(row.value, []);
+  PROVIDER_MODELS.techopenclaw = models;
+  return models;
+}
+
+export async function replaceTechopenclawModels(models) {
+  await techopenclawKv.set("techopenclaw", models);
+  const { PROVIDER_MODELS } = await import("../../../../open-sse/providers/index.js");
+  PROVIDER_MODELS.techopenclaw = models;
+}
+
+export async function loadTechopenclawModels() {
+  return await getTechopenclawModels();
+}
 
 // modelAliases: key=alias, value=modelString
 export async function getModelAliases() {

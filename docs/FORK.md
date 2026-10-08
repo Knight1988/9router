@@ -51,6 +51,22 @@ Claudible family (vip-claudible, cn-claudible, minimax-claudible, cc-claudible, 
 
 Files: `open-sse/config/providers.js`, `src/shared/constants/providers.js`, `src/mitm/handlers/copilot.js`, `open-sse/services/openClaudeQuota.js`.
 
+#### Updating Techopenclaw models
+
+The Techopenclaw model list is seeded from the shipped catalog on first database use, then stored in SQLite. Read the current list with `GET /api/providers/techopenclaw/models`. To replace **the entire list** in one operation, send `PUT /api/providers/techopenclaw/models` with a JSON `models` array:
+
+```sh
+curl 'http://localhost:20128/api/providers/techopenclaw/models'
+```
+
+```sh
+curl -X PUT 'http://localhost:20128/api/providers/techopenclaw/models' \
+  -H 'Content-Type: application/json' \
+  -d '{"models":[{"id":"claude-opus-4-8","name":"Claude Opus 4.8"},{"id":"claude-sonnet-4-6","name":"Claude Sonnet 4.6"}]}'
+```
+
+Each entry can be a model ID string or an object with `id` and optional `name`. A missing name uses the ID. IDs must be unique, nonempty, at most 200 characters, and contain no `/`; names must be nonempty and at most 200 characters. Up to 500 models are accepted. Invalid or duplicate entries reject the whole request with HTTP 400; `{"models":[]}` intentionally clears the list. The response includes `success`, `count`, and the stored `models`. To append models, first GET the list, add the new entries, then PUT the full list. This is a dashboard API: when dashboard login is enabled, authenticate with a dashboard session; a `/v1` API key does not authorize it. The stored list feeds the provider page, `/api/providers/{connectionId}/models`, and `/v1/models`.
+
 ### 6. Usage tracking
 Cached-tokens column in request details, dedicated **API Key Usage** tab, **Provider Health** tab with 24h / 7d / 30d / 90d filtering and weighted aggregates.
 

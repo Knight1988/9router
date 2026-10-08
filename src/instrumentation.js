@@ -1,5 +1,7 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { loadTechopenclawModels } = await import("@/lib/db/index.js");
+    await loadTechopenclawModels();
     const { initializeApp } = await import("./shared/services/initializeApp.js");
     await initializeApp();
     const { initConsoleLogCapture } = await import("@/lib/consoleLogBuffer");

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getProviderConnectionById } from "@/models";
+import { getTechopenclawModels } from "@/lib/localDb";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { GEMINI_CONFIG, ZED_HOSTED_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, refreshCodexToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
@@ -537,6 +538,9 @@ export async function GET(request, { params }) {
 
     if (!connection) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+    }
+    if (connection.provider === "techopenclaw") {
+      return NextResponse.json({ provider: connection.provider, connectionId: id, models: await getTechopenclawModels() });
     }
 
     if (isOpenAICompatibleProvider(connection.provider)) {

@@ -45,10 +45,11 @@ export {
   createCombo, updateCombo, deleteCombo,
 } from "./repos/combosRepo.js";
 
-// Aliases (model + custom + mitm)
+// Model aliases, custom models, provider catalogs, and MITM mappings
 export {
   getModelAliases, setModelAlias, deleteModelAlias,
   getCustomModels, addCustomModel, deleteCustomModel,
+  getTechopenclawModels, replaceTechopenclawModels, loadTechopenclawModels,
   getMitmAlias, setMitmAliasAll,
 } from "./repos/aliasRepo.js";
 
@@ -98,12 +99,15 @@ export async function exportDb() {
     combos: db.all(`SELECT * FROM combos`).map((r) => ({ id: r.id, name: r.name, kind: r.kind, models: parseJson(r.models, []), createdAt: r.createdAt, updatedAt: r.updatedAt })),
     modelAliases: {},
     customModels: [],
+    techopenclawModels: [],
     mitmAlias: {},
     pricing: {},
   };
 
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'modelAliases'`)) out.modelAliases[r.key] = parseJson(r.value);
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'customModels'`)) out.customModels.push(parseJson(r.value));
+  const storedTechopenclaw = db.get(`SELECT value FROM kv WHERE scope = 'providerModels' AND key = 'techopenclaw'`);
+  if (storedTechopenclaw) out.techopenclawModels = parseJson(storedTechopenclaw.value, []);
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'mitmAlias'`)) out.mitmAlias[r.key] = parseJson(r.value);
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'pricing'`)) out.pricing[r.key] = parseJson(r.value);
 
@@ -124,7 +128,7 @@ export async function importDb(payload) {
     db.run(`DELETE FROM proxyPools`);
     db.run(`DELETE FROM apiKeys`);
     db.run(`DELETE FROM combos`);
-    db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing')`);
+    db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing', 'providerModels')`);
 
     // Settings
     if (payload.settings) {
@@ -171,6 +175,9 @@ export async function importDb(payload) {
       const k = `${m.providerAlias}|${m.id}|${m.type || "llm"}`;
       db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('customModels', ?, ?)`, [k, stringifyJson(m)]);
     }
+    if (Array.isArray(payload.techopenclawModels)) {
+      db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('providerModels', 'techopenclaw', ?)`, [stringifyJson(payload.techopenclawModels)]);
+    }
     for (const [tool, mappings] of Object.entries(payload.mitmAlias || {})) {
       db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('mitmAlias', ?, ?)`, [tool, stringifyJson(mappings || {})]);
     }
@@ -178,6 +185,8 @@ export async function importDb(payload) {
       db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('pricing', ?, ?)`, [provider, stringifyJson(models || {})]);
     }
   });
+  const { loadTechopenclawModels } = await import("./repos/aliasRepo.js");
+  await loadTechopenclawModels();
 
   return await exportDb();
 }

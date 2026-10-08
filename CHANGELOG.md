@@ -1,3 +1,8 @@
+# Unreleased
+
+## Features
+- **Techopenclaw**: persist the model catalog in SQLite, seed it from the shipped list on first use, and expose `GET`/`PUT /api/providers/techopenclaw/models` for reading and atomically replacing it. `PUT` accepts `{ "models": [{ "id": "model-id", "name": "Display name" }] }` (or string IDs), rejects invalid/duplicate entries, and accepts an empty array to clear the catalog. Dashboard model chips, per-connection model listing, and `/v1/models` use the stored list.
+
 # v0.5.95 (2026-10-01)
 
 ## Features
