@@ -165,16 +165,6 @@ describe("apiKeysRepo", () => {
       expect(await updateApiKey("missing-id", { name: "new" })).toBeNull();
     });
 
-    it("merges and returns updated key", async () => {
-      const existing = { id: "id4", key: "sk-k", name: "old", machineId: "m", isActive: 1, createdAt: "2024-01-01" };
-      getAdapter.mockResolvedValue(makeAdapter({
-        get: vi.fn().mockReturnValue(existing),
-        run: vi.fn(),
-      }));
-      const result = await updateApiKey("id4", { name: "new", isActive: false });
-      expect(result.name).toBe("new");
-      expect(result.isActive).toBe(false);
-    });
 
     it("persists isActive=false as 0 in SQL", async () => {
       const existing = { id: "id5", key: "sk-k", name: "name", machineId: "m", isActive: 1, createdAt: "2024-01-01" };

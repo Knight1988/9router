@@ -1,5 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
+import { keyAccessFromColumns, keyAccessToColumns } from "@/shared/utils/keyAccess.js";
+import { KEY_ACCESS_UNRESTRICTED } from "@/shared/constants/keyAccess.js";
 
 function rowToKey(row) {
   if (!row) return null;
@@ -11,6 +13,7 @@ function rowToKey(row) {
     isActive: row.isActive === 1 || row.isActive === true,
     createdAt: row.createdAt,
     createdBy: row.createdBy || null,
+    access: keyAccessFromColumns(row.accessRestricted, row.accessAllow),
   };
 }
 
@@ -34,6 +37,14 @@ export async function getApiKeyById(id, filter) {
   return rowToKey(row);
 }
 
+// Used by the /v1 handlers to read the presented key's access settings.
+export async function getApiKeyByKey(key) {
+  if (!key) return null;
+  const db = await getAdapter();
+  const row = db.get(`SELECT * FROM apiKeys WHERE key = ?`, [key]);
+  return rowToKey(row);
+}
+
 export async function createApiKey(name, machineId, createdBy) {
   if (!machineId) throw new Error("machineId is required");
   const db = await getAdapter();
@@ -47,10 +58,12 @@ export async function createApiKey(name, machineId, createdBy) {
     isActive: true,
     createdAt: new Date().toISOString(),
     createdBy: createdBy || null,
+    access: { restricted: false, allow: [] },
   };
+  const cols = keyAccessToColumns(KEY_ACCESS_UNRESTRICTED);
   db.run(
-    `INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt, createdBy) VALUES(?, ?, ?, ?, ?, ?, ?)`,
-    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.createdAt, apiKey.createdBy]
+    `INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt, createdBy, accessRestricted, accessAllow) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.createdAt, apiKey.createdBy, cols.accessRestricted, cols.accessAllow]
   );
   return apiKey;
 }
@@ -64,11 +77,12 @@ export async function updateApiKey(id, data, filter) {
       : db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]);
     if (!row) return;
     const merged = { ...rowToKey(row), ...data };
+    const cols = keyAccessToColumns(merged.access);
     db.run(
-      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ? WHERE id = ?`,
-      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, id]
+      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, accessRestricted = ?, accessAllow = ? WHERE id = ?`,
+      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, cols.accessRestricted, cols.accessAllow, id]
     );
-    result = merged;
+    result = rowToKey(db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]));
   });
   return result;
 }

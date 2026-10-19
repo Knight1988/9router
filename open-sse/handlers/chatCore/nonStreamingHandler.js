@@ -1,6 +1,6 @@
 import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
-import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
+import { openAICompletionToClaudeMessage } from "../../translator/concerns/claudeMessage.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
@@ -16,56 +16,6 @@ import { recordRequestResult } from "@/lib/smartRouting/healthTracker.js";
 import { parseJsonWithRetry } from "../chatCore.js";
 import { restoreToolNames } from "../../utils/opencodeFingerprint.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
-
-function parseToolArguments(value) {
-  if (!value) return {};
-  if (typeof value === "object") return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return {};
-  }
-}
-
-function openAICompletionToClaudeMessage(responseBody) {
-  if (!responseBody?.choices?.[0]) return responseBody;
-  const choice = responseBody.choices[0];
-  const message = choice.message || {};
-  const content = [];
-
-  const reasoning = message.reasoning_content || message.provider_specific_fields?.reasoning_content || "";
-  if (reasoning) {
-    content.push({ type: "thinking", thinking: reasoning });
-  }
-  if (typeof message.content === "string" && message.content.length > 0) {
-    content.push({ type: "text", text: message.content });
-  }
-  for (const toolCall of message.tool_calls || []) {
-    const fn = toolCall.function || {};
-    content.push({
-      type: "tool_use",
-      id: toolCall.id || `toolu_${Date.now()}_${content.length}`,
-      name: fn.name || toolCall.name || "",
-      input: parseToolArguments(fn.arguments || toolCall.arguments),
-    });
-  }
-  if (content.length === 0) content.push({ type: "text", text: "" });
-
-  const usage = responseBody.usage || {};
-  return {
-    id: String(responseBody.id || `msg_${Date.now()}`).replace(/^chatcmpl-/, ""),
-    type: "message",
-    role: "assistant",
-    model: responseBody.model || "unknown",
-    content,
-    stop_reason: fromOpenAIFinish(choice.finish_reason, FORMATS.CLAUDE),
-    stop_sequence: null,
-    usage: {
-      input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
-      output_tokens: usage.completion_tokens || usage.output_tokens || 0,
-    },
-  };
-}
 
 /**
  * Convert an OpenAI Chat Completions non-streaming response body into the
@@ -363,8 +313,16 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   const msg = choice?.message;
   const finishReason = choice?.finish_reason;
   const outTokens = usage?.completion_tokens ?? usage?.output_tokens ?? 0;
-  const hasContent = msg?.content && typeof msg.content === "string" && msg.content.trim().length > 0;
-  const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
+  const hasContent = isResponsesResponse
+    ? translatedResponse.output?.some((item) => item.type === RESPONSES_ITEM.MESSAGE && item.content?.some((part) => typeof part.text === "string" && part.text.trim().length > 0))
+    : isClaudeMessageResponse
+      ? translatedResponse.content?.some((part) => part.type === "text" && typeof part.text === "string" && part.text.trim().length > 0)
+      : typeof msg?.content === "string" && msg.content.trim().length > 0;
+  const hasToolCalls = isResponsesResponse
+    ? translatedResponse.output?.some((item) => item.type === RESPONSES_ITEM.FUNCTION_CALL || item.type === RESPONSES_ITEM.CUSTOM_TOOL_CALL)
+    : isClaudeMessageResponse
+      ? translatedResponse.content?.some((part) => part.type === "tool_use")
+      : Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
 
   // Empty completion — return error so combo falls through to next model
   if (outTokens === 0 && !hasContent && !hasToolCalls) {
@@ -405,10 +363,10 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }
 
   // Format mismatch: missing choices or malformed tool_calls
-  const hasMalformedToolCalls = hasToolCalls && msg.tool_calls.some(tc => 
+  const hasMalformedToolCalls = !isClaudeMessageResponse && !isResponsesResponse && hasToolCalls && msg.tool_calls.some(tc =>
     !tc.function?.name || typeof tc.function?.arguments !== "string"
   );
-  const missingChoices = !translatedResponse?.choices || translatedResponse.choices.length === 0;
+  const missingChoices = !isClaudeMessageResponse && !isResponsesResponse && (!translatedResponse?.choices || translatedResponse.choices.length === 0);
   const missingMessage = choice && !msg;
   if (missingChoices || missingMessage || hasMalformedToolCalls) {
     logAbnormal({

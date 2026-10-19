@@ -20,7 +20,7 @@ const SPECIALIZED = new Set([
   "antigravity", "azure", "gemini-cli", "github", "iflow", "qoder", "kiro",
   "codex", "cursor", "vertex", "vertex-partner", "opencode",
   "opencode-go", "grok-web", "perplexity-web", "ollama-local", "commandcode",
-  "xiaomi-tokenplan", "mimo-free",
+  "xiaomi-tokenplan", "mimo-free", "bedrock", "bedrock-xai", "minimax-code", "minimax-code-global", "nous",
 ]);
 
 // Sanitize header: khử token + field thời gian động (kimi X-Msh-Device-Id) để snapshot ổn định.
@@ -28,10 +28,11 @@ function sanitize(headers) {
   const out = {};
   for (const [k, v] of Object.entries(headers)) {
     out[k] = typeof v === "string"
-      ? (k === "X-PLATFORM-VERSION" ? "<NODE_VERSION>" : v)
+      ? (["X-PLATFORM-VERSION", "X-Msh-Version"].includes(k) ? "<VERSION>" : k === "X-Msh-Device-Name" ? "<HOSTNAME>" : v)
           .replace(/Bearer .+/, "Bearer <TOK>")
           .replace(/sk-test-APIKEY|tok-test-ACCESS/g, "<CRED>")
           .replace(/kimi-\d{10,}/g, "kimi-<TS>")
+          .replace(/9Router\/\d+\.\d+\.\d+/g, "9Router/<VERSION>")
       : v;
   }
   return out;

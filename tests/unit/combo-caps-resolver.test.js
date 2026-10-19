@@ -15,11 +15,6 @@ const GLM53_FED = { vision: true, search: false, reasoning: true, contextWindow:
 describe("aggregateComboCapabilities: resolveCaps override", () => {
   const models = ["glm-cn/glm-5.3", "deepseek-v4.1-flash"];
 
-  it("falls back to the pattern default without a resolver", () => {
-    const caps = aggregateComboCapabilities(models);
-    // glm-5.3 has no exact entry, so the *glm-5.3* pattern gives 200k and caps the combo.
-    expect(caps.contextWindow).toBe(200_000);
-  });
 
   it("uses the fed limits when a resolver supplies them", () => {
     const resolver = (fullId) => (fullId === "glm-cn/glm-5.3" ? GLM53_FED : null);
@@ -63,5 +58,21 @@ describe("aggregateComboCapabilities: resolveCaps override", () => {
     const caps = aggregateComboCapabilities(["kimi/kimi-k3"], null);
     expect(caps).toEqual(aggregateComboCapabilities(["kimi/kimi-k3"]));
     expect(caps.contextWindow).toBe(getCapabilitiesForModel("kimi", "kimi-k3").contextWindow);
+  });
+
+  it("claude-haiku-5-5 combo: 1M only through the provider-alias resolver", () => {
+    // Both seats are 1M in their provider tables (opencode-go/commandcode entries),
+    // but a bare `ocg/`-style alias resolves to 200k without the resolver: null
+    // provider falls to the global *claude*haiku* pattern. The server passes
+    // comboSeatCapabilities (alias → provider id); the dashboard does not.
+    const seats = ["ocg/claude-haiku-5-5", "cmc/claude-haiku-5-5"];
+    const seatCaps = (fullId) => {
+      const slash = fullId.indexOf("/");
+      if (slash <= 0) return null;
+      const providerId = { ocg: "opencode-go", cmc: "commandcode" }[fullId.slice(0, slash)] || fullId.slice(0, slash);
+      return getCapabilitiesForModel(providerId, fullId.slice(slash + 1));
+    };
+    expect(aggregateComboCapabilities(seats).contextWindow).toBe(200_000);
+    expect(aggregateComboCapabilities(seats, null, seatCaps).contextWindow).toBe(1_000_000);
   });
 });

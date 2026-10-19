@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
 import { getSessionUser } from "@/lib/auth/requireRole";
+import { validateKeyAccessInput } from "@/shared/utils/keyAccess.js";
 
 // GET /api/keys/[id] - Get single key
 export async function GET(request, { params }) {
@@ -24,7 +25,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive, name } = body;
+    const { isActive, name, access } = body;
 
     const session = await getSessionUser();
     const filter = session?.role === "admin" ? null : session?.userId ? { userId: session.userId } : null;
@@ -42,6 +43,11 @@ export async function PUT(request, { params }) {
         return NextResponse.json({ error: "Name is required" }, { status: 400 });
       }
       updateData.name = trimmedName;
+    }
+    if (access !== undefined) {
+      const checked = validateKeyAccessInput(access);
+      if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
+      updateData.access = checked.value;
     }
 
     const updated = await updateApiKey(id, updateData, filter);
