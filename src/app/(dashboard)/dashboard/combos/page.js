@@ -410,9 +410,6 @@ export default function CombosPage() {
             </Button>
           </div>
         </div>
-        <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto whitespace-nowrap" disabled={!canWrite} title={!canWrite ? "Admin only" : undefined}>
-          Create Combo
-        </Button>
       </div>
 
       {/* Combos List */}
