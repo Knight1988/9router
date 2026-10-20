@@ -44,7 +44,10 @@ describe("techopenclaw DB catalog", () => {
       { id: "model-a", name: "Model A" }, { id: "model-b", name: "model-b" },
     ]);
     expect((await route.GET()).status).toBe(200);
-    expect((await (await route.GET()).json()).models).toEqual(catalog.PROVIDER_MODELS.techopenclaw);
+    // Compare with an immutable fixture, not the registry mutated by DB reads.
+    expect((await (await route.GET()).json()).models).toEqual([
+      { id: "model-a", name: "Model A" }, { id: "model-b", name: "model-b" },
+    ]);
     expect(seeded.length).toBeGreaterThan(2);
   });
 

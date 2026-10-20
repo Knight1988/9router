@@ -23,38 +23,41 @@ const PROVIDER_ORDER = [
 const NO_AUTH_PROVIDER_IDS = Object.keys(FREE_PROVIDERS).filter(id => FREE_PROVIDERS[id].noAuth);
 
 // Providers with per-account live catalogs via /api/providers/[id]/models.
-// Static registry stays as fallback when live fetch fails or is empty.
+// Static registry is a failure fallback. TechOpenClaw preserves an intentional empty DB catalog.
 // zed added in #4244: its backend customResolver already returns live models
 // but the frontend omitted it, hiding Zed entirely from the Combo picker.
-const LIVE_CATALOG_PROVIDERS = ["cursor", "cline", "clinepass", "zed"];
+const LIVE_CATALOG_PROVIDERS = ["cursor", "cline", "clinepass", "zed", "techopenclaw"];
 
 // Fetch a provider's account-scoped catalog for every active connection and merge
 // the results. Entries collapse by model id on purpose: two connections of the
 // same provider produce the same picker value (`alias/id`), so keeping the first
 // avoids duplicate rows. There is no per-connection metadata to preserve beyond
-// {id,name}. Empty array means "nothing live" so callers keep the static fallback.
-function useLiveProviderModels(isOpen, connectionIds, label) {
-  const [models, setModels] = useState([]);
+// {id,name}. null means unavailable; preserveEmpty distinguishes an empty saved
+// catalog from a failed request without changing other providers' fallback behavior.
+function useLiveProviderModels(isOpen, connectionIds, label, preserveEmpty = false) {
+  const [models, setModels] = useState(null);
   const idsKey = (connectionIds ?? []).join("|");
 
   useEffect(() => {
     const ids = idsKey ? idsKey.split("|") : [];
     if (!isOpen || ids.length === 0) {
-      setModels([]);
+      setModels(null);
       return undefined;
     }
 
     let cancelled = false;
     Promise.all(ids.map(async (connectionId) => {
       const response = await fetch(`/api/providers/${connectionId}/models`, { cache: "no-store" });
-      if (!response.ok) return [];
+      if (!response.ok) return null;
       const data = await response.json();
-      return Array.isArray(data.models) ? data.models : [];
+      return Array.isArray(data.models) ? data.models : null;
     }))
       .then((modelLists) => {
         if (cancelled) return;
+        const validLists = modelLists.filter(Array.isArray);
+        if (validLists.length === 0) { setModels(null); return; }
         const seen = new Set();
-        setModels(modelLists.flat().filter((model) => {
+        setModels(validLists.flat().filter((model) => {
           if (!model?.id || seen.has(model.id)) return false;
           seen.add(model.id);
           return true;
@@ -63,13 +66,13 @@ function useLiveProviderModels(isOpen, connectionIds, label) {
       .catch((error) => {
         // Do not hide the static fallback when the account catalog is unavailable.
         console.warn(`Unable to load ${label} models for selector:`, error);
-        if (!cancelled) setModels([]);
+        if (!cancelled) setModels(null);
       });
 
     return () => { cancelled = true; };
   }, [isOpen, idsKey, label]);
 
-  return models;
+  return preserveEmpty ? models : (models || []);
 }
 
 export default function ModelSelectModal({
@@ -156,6 +159,7 @@ export default function ModelSelectModal({
   const clineModels = useLiveProviderModels(isOpen, clineConnectionIds, "Cline");
   const clinepassModels = useLiveProviderModels(isOpen, clinepassConnectionIds, "ClinePass");
   const zedModels = useLiveProviderModels(isOpen, zedConnectionIds, "Zed");
+  const techopenclawModels = useLiveProviderModels(isOpen, liveConnectionIdsByProvider.techopenclaw, "TechOpenClaw", true);
 
   const fetchCombos = async () => {
     try {
@@ -414,8 +418,8 @@ export default function ModelSelectModal({
           hasModels: mergedModels.length > 0,
         };
       } else {
-        const liveModels = providerId === "cursor" ? cursorModels : providerId === "cline" ? clineModels : providerId === "clinepass" ? clinepassModels : providerId === "zed" ? zedModels : [];
-        const hardcodedModels = liveModels.length > 0
+        const liveModels = providerId === "cursor" ? cursorModels : providerId === "cline" ? clineModels : providerId === "clinepass" ? clinepassModels : providerId === "zed" ? zedModels : providerId === "techopenclaw" ? techopenclawModels : [];
+        const hardcodedModels = (providerId === "techopenclaw" && liveModels !== null) || liveModels?.length > 0
           ? liveModels
           : getModelsByProviderId(providerId);
         const hardcodedIds = new Set(hardcodedModels.map((m) => m.id));
@@ -508,7 +512,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, effectiveConnections, deactivatedProviderIds, cursorModels, clineModels, clinepassModels, zedModels]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, effectiveConnections, deactivatedProviderIds, cursorModels, clineModels, clinepassModels, zedModels, techopenclawModels]);
 
   // Parse search query into structured query (regex, positive tokens, negative tokens)
   const parsedQuery = useMemo(() => parseSearchQuery(searchQuery), [searchQuery]);
