@@ -1069,6 +1069,31 @@ exports[`GOLDEN buildHeaders (default executor providers) > hyperbolic → heade
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > infinityrouter → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Content-Type": "application/json",
+    "anthropic-version": "2023-06-01",
+    "x-api-key": "<CRED>",
+  },
+  "nonStream": {
+    "Accept-Encoding": "gzip, deflate, br",
+    "Content-Type": "application/json",
+    "anthropic-version": "2023-06-01",
+    "x-api-key": "<CRED>",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Content-Type": "application/json",
+    "anthropic-version": "2023-06-01",
+    "x-api-key": "<CRED>",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > kilo-gateway → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -2304,6 +2329,13 @@ exports[`GOLDEN buildUrl (default executor providers) > hyperbolic → url (stre
 {
   "nonStream": "https://api.hyperbolic.xyz/v1/chat/completions",
   "stream": "https://api.hyperbolic.xyz/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > infinityrouter → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://infinityrouter.dev/v1/messages",
+  "stream": "https://infinityrouter.dev/v1/messages",
 }
 `;
 

@@ -635,6 +635,13 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
 
   try {
     switch (connection.provider) {
+      case "infinityrouter": {
+        const res = await fetchWithConnectionProxy(PROVIDERS.infinityrouter.validateUrl, {
+          headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01" },
+          signal: AbortSignal.timeout(10000),
+        }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : `Model discovery failed (${res.status})` };
+      }
       case "cloudflare-ai": {
         const psd = connection.providerSpecificData || {};
         const accountId = psd.accountId;

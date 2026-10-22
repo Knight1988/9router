@@ -270,6 +270,15 @@ export async function POST(request) {
       }
 
       switch (provider) {
+        case "infinityrouter": {
+          const res = await fetch(PROVIDERS.infinityrouter.validateUrl, {
+            headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+            signal: AbortSignal.timeout(10000),
+          });
+          isValid = res.ok;
+          error = res.ok ? null : `Model discovery failed (${res.status})`;
+          break;
+        }
         case "openai":
           const openaiRes = await fetch("https://api.openai.com/v1/models", {
             headers: { "Authorization": `Bearer ${apiKey}` },

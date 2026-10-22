@@ -16,6 +16,7 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { resolveClineModels, resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { NOUS_MODELS_URL, normalizeNousModels } from "open-sse/services/nous.js";
 import codexProvider from "open-sse/providers/registry/codex.js";
+import infinityrouterProvider from "open-sse/providers/registry/infinityrouter.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -180,6 +181,13 @@ function buildQoderModelsResolver(providerId) {
 
 // Provider models endpoints configuration
 const PROVIDER_MODELS_CONFIG = {
+  infinityrouter: {
+    url: infinityrouterProvider.transport.validateUrl,
+    method: "GET",
+    headers: { "Content-Type": "application/json", "anthropic-version": "2023-06-01" },
+    authHeader: "x-api-key",
+    parseResponse: parseOpenAIStyleModels,
+  },
   "muse": {
     url: "https://api.meta.ai/v1/models",
     method: "GET",
