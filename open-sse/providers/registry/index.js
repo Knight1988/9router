@@ -139,7 +139,9 @@ import p136 from "./bedrock.js";
 import p137 from "./bedrock-xai.js";
 import p138 from "./nous.js";
 import infinityrouter from "./infinityrouter.js";
+import provider_experiential from "./experiential.js";
 export default [
+  provider_experiential,
   infinityrouter,
   p0,
   p1,

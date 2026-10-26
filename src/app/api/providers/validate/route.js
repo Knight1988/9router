@@ -522,6 +522,7 @@ export async function POST(request) {
           break;
         }
 
+        case "experiential":
         case "deepseek":
         case "groq":
         case "xai":
