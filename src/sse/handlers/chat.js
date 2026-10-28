@@ -399,6 +399,7 @@ async function _runAccountFallback({ provider, model, body, userAgent, request, 
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
+  let lastHeaders = null;
 
   while (true) {
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { requestedModel: requestedModel || model });
