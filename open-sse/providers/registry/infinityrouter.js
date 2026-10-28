@@ -20,6 +20,7 @@ export default {
     baseUrl: "https://infinityrouter.dev/v1/messages",
     validateUrl: "https://infinityrouter.dev/v1/models",
     stallTimeoutMs: 300_000,
+    firstContentTimeoutMs: 300_000,
   },
   // Seed only models advertised on the provider website; discovery supplies account-specific models.
   models: [

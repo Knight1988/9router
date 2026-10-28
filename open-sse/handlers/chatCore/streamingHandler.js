@@ -301,7 +301,9 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     : (message) => buildStreamErrorBytes(HTTP_STATUS.GATEWAY_TIMEOUT, message, sourceFormat);
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
   const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs, streamDiagnostics);
-  const timeoutMs = NO_TIMEOUT_PROVIDERS.has(provider) ? null : EMPTY_STREAM_TIMEOUT_MS;
+  const timeoutMs = NO_TIMEOUT_PROVIDERS.has(provider)
+    ? null
+    : (PROVIDERS[provider]?.firstContentTimeoutMs ?? EMPTY_STREAM_TIMEOUT_MS);
   const { result: guardResult, reader, buffered } = await detectContent(transformedBody, timeoutMs, onFirstContentSignal, onProviderErrorSignal);
 
   // Upstream sent event: error — surface as a proper error so account fallback / combo cycling retries
