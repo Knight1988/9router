@@ -1,4 +1,5 @@
-import { test, expect } from "vitest";
+import { test } from "vitest";
+import assert from "node:assert/strict";
 import {
   formatX509Certificate,
   isSamlConfigured,

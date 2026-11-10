@@ -13,39 +13,20 @@ services:
       - "20128:20128"
       - "20129:20129"
     environment:
-      - NODE_ENV=production
-      - PORT=20128
-      - HOSTNAME=0.0.0.0
-      - JWT_SECRET=88084f2fbe5bea55fe057fb7c17dffa94af315f4161d0456792e52c8055d6a20
-      - INITIAL_PASSWORD=${INITIAL_PASSWORD:-123456}
-      - DATA_DIR=/var/lib/9router
-      - API_KEY_SECRET=a2adf9a4ca38d8a983c126d6883886b8661045b8fb293dd8fab99c4ed035741e
-      - MACHINE_ID_SALT=962b2d19cf9b3ccffa99b82d7a716ad37bfe34855d49a3a05b3cc046ab2a6eca
-      - ENABLE_REQUEST_LOGS=${ENABLE_REQUEST_LOGS:-false}
-      - OBSERVABILITY_ENABLED=${OBSERVABILITY_ENABLED:-true}
-      - AUTH_COOKIE_SECURE=${AUTH_COOKIE_SECURE:-false}
-      - REQUIRE_API_KEY=${REQUIRE_API_KEY:-false}
-      - BASE_URL=http://localhost:20128
-      - CLOUD_URL=${CLOUD_URL:-https://9router.com}
-      - NEXT_PUBLIC_BASE_URL=http://localhost:20128
-      - NEXT_PUBLIC_CLOUD_URL=${NEXT_PUBLIC_CLOUD_URL:-https://9router.com}
-      - TZ=${TZ:-UTC}
-      # HTTPS support (optional)
-      - HTTPS_ENABLED=true
-      - HTTPS_PORT=20129
-      # - AUTO_REDIRECT=${AUTO_REDIRECT:-true}
-      # - SSL_CERT_PATH=/var/lib/9router/ssl/server.crt
-      # - SSL_KEY_PATH=/var/lib/9router/ssl/server.key
-    volumes:
-      - 9router_data:/var/lib/9router
-      - /etc/localtime:/etc/localtime:ro
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "--no-check-certificate", "https://localhost:20129/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      DATA_DIR: /app/data
+      PORT: "20128"
+      HOSTNAME: "0.0.0.0"
+      NODE_ENV: production
+      HEADROOM_URL: http://headroom:8787
+    depends_on:
+      - headroom
+
+  headroom:
+    image: ghcr.io/chopratejas/headroom:latest
+    container_name: headroom
+    restart: always
+    ports:
+      - "127.0.0.1:8787:8787"
 
 volumes:
   9router_data:

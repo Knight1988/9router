@@ -62,11 +62,11 @@ vi.mock("../../open-sse/translator/concerns/image.js", () => ({
 
 const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
 
-const BASE = "https://opencode.ai/zen/go/v1";
+const BASE = "https://opencode.ai/inference/go";
 const ENDPOINTS = {
-  openai: `${BASE}/chat/completions`,
-  claude: `${BASE}/messages`,
-  "openai-responses": `${BASE}/responses`,
+  openai: `${BASE}/openai/v1/chat/completions`,
+  claude: `${BASE}/anthropic/v1/messages`,
+  "openai-responses": `${BASE}/openai/v1/responses`,
 };
 
 // Minimal non-stream provider JSON per target format — the mocked executor's response.
@@ -92,9 +92,7 @@ const RESPONSE_BY_FORMAT = {
   },
 };
 
-async function route(model, sourceFormat) {
-  const supportsSource = !["kimi-k2.6", "minimax-m3"].includes(model.replace(/\([^()]+\)$/, "")) || sourceFormat !== "openai-responses";
-  const responseFormat = supportsSource ? sourceFormat : "openai";
+async function route(model, sourceFormat, bodyOverrides = {}) {
   executeMock.mockResolvedValueOnce({
     response: new Response(JSON.stringify(RESPONSE_BY_FORMAT[responseFormat]), {
       status: 200,
@@ -117,6 +115,7 @@ async function route(model, sourceFormat) {
       stream: false,
       max_tokens: 16,
       messages: [{ role: "user", content: "hi" }],
+      ...bodyOverrides,
     },
     modelInfo: { provider: "opencode-go", model },
     credentials,
@@ -125,9 +124,8 @@ async function route(model, sourceFormat) {
     log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
   });
 
-  if (!result.success) console.error("DEEPSEEK RESPONSES FAILED:", result);
-  const { credentials: creds } = executeMock.mock.calls.at(-1)[0];
-  return { result, runtimeTransport: creds.runtimeTransport ?? null };
+  const { credentials: creds, body: sentBody } = executeMock.mock.calls.at(-1)[0];
+  return { result, runtimeTransport: creds.runtimeTransport ?? null, sentBody };
 }
 
 describe("opencode-go DeepSeek endpoint matrix (via real handleChatCore)", () => {
@@ -135,7 +133,7 @@ describe("opencode-go DeepSeek endpoint matrix (via real handleChatCore)", () =>
     vi.clearAllMocks();
   });
 
-  for (const model of ["deepseek-v4-flash", "deepseek-v4-pro"]) {
+  for (const model of ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-v4.1-flash"]) {
     for (const suffix of ["", "(max)"]) {
       const id = model + suffix;
       for (const [fmt, expectedUrl] of Object.entries(ENDPOINTS)) {
@@ -147,6 +145,55 @@ describe("opencode-go DeepSeek endpoint matrix (via real handleChatCore)", () =>
       }
     }
   }
+});
+
+describe("opencode-go DeepSeek reasoning follows the selected protocol", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it.each(["low", "high", "max"])("uses Claude adaptive thinking for %s effort on /messages", async (effort) => {
+    const { result, runtimeTransport, sentBody } = await route(`deepseek-v4.1-flash(${effort})`, "claude", {
+      max_tokens: 4096,
+      thinking: { type: "enabled", budget_tokens: 1024 },
+    });
+    expect(result.success).toBe(true);
+    expect(runtimeTransport.baseUrl).toBe(ENDPOINTS.claude);
+    expect(sentBody.thinking).toEqual({ type: "adaptive" });
+    expect(sentBody.output_config).toEqual({ effort });
+    expect(sentBody.reasoning_effort).toBeUndefined();
+    expect(sentBody.reasoning).toBeUndefined();
+  });
+
+  it("keeps thinking disabled when requested", async () => {
+    const { sentBody } = await route("deepseek-v4.1-flash", "claude", {
+      thinking: { type: "disabled" },
+    });
+    expect(sentBody.thinking).toEqual({ type: "disabled" });
+    expect(sentBody.output_config).toBeUndefined();
+    expect(sentBody.reasoning_effort).toBeUndefined();
+  });
+
+  it("preserves a Claude client's explicit effort without a model suffix", async () => {
+    const { sentBody } = await route("deepseek-v4.1-flash", "claude", {
+      thinking: { type: "adaptive" }, output_config: { effort: "max" },
+    });
+    expect(sentBody.thinking).toEqual({ type: "adaptive" });
+    expect(sentBody.output_config).toEqual({ effort: "max" });
+    expect(sentBody.reasoning_effort).toBeUndefined();
+  });
+
+  it("keeps Chat Completions reasoning on its original wire", async () => {
+    const { sentBody } = await route("deepseek-v4.1-flash(high)", "openai");
+    expect(sentBody.thinking).toEqual({ type: "enabled" });
+    expect(sentBody.reasoning_effort).toBe("high");
+    expect(sentBody.output_config).toBeUndefined();
+  });
+
+  it("keeps Responses reasoning on its original wire", async () => {
+    const { sentBody } = await route("deepseek-v4.1-flash(max)", "openai-responses");
+    expect(sentBody.reasoning).toMatchObject({ effort: "max" });
+    expect(sentBody.reasoning_effort).toBeUndefined();
+    expect(sentBody.output_config).toBeUndefined();
+  });
 });
 
 describe("opencode-go thinking-suffix guard (regression)", () => {

@@ -15,11 +15,20 @@ const GLM53_FED = { vision: true, search: false, reasoning: true, contextWindow:
 describe("aggregateComboCapabilities: resolveCaps override", () => {
   const models = ["glm-cn/glm-5.3", "deepseek-v4.1-flash"];
 
+  it("falls back to the pattern default without a resolver", () => {
+    const caps = aggregateComboCapabilities(models);
+    // glm-5.3 has no exact glm-cn entry, so the *glm-5.3* pattern applies: 1M since
+    // 0f7f6e72 (#4544, "GLM-5.2/5.3 context is 1M, not the stale 200k pin").
+    expect(caps.contextWindow).toBe(1_000_000);
+  });
 
   it("uses the fed limits when a resolver supplies them", () => {
-    const resolver = (fullId) => (fullId === "glm-cn/glm-5.3" ? GLM53_FED : null);
+    // Feed a value the local tables don't have, so the assertion proves the override.
+    const fed = { ...GLM53_FED, contextWindow: 640_000 };
+    const resolver = (fullId) => (fullId === "glm-cn/glm-5.3" ? fed : null);
     const caps = aggregateComboCapabilities(models, null, resolver);
-    expect(caps.contextWindow).toBe(1_000_000);
+    expect(aggregateComboCapabilities(models).contextWindow).not.toBe(640_000);
+    expect(caps.contextWindow).toBe(640_000);
   });
 
   it("keeps the fields the override does not carry", () => {

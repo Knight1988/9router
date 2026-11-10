@@ -22,6 +22,7 @@ import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS, HEARTBEAT_INTERVAL_MS } from "open-sse/config/runtimeConfig.js";
 import { SSE_HEARTBEAT_COMMENT, SSE_HEADERS_CORS } from "open-sse/utils/sseConstants.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
+import { resolveSessionIdentity } from "open-sse/utils/sessionManager.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
@@ -31,6 +32,7 @@ import { checkRateLimit } from "../utils/rateLimiter.js";
 import { getEffectiveSmartPriority } from "@/lib/smartRouting/getEffectivePriority.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 import { getKeyAccessContext, enforceKeyAccess, filterAdapterModels } from "../services/keyAccess.js";
+import { resolveSmartChoice } from "../services/systemoneRouter.js";
 
 /**
  * Handle chat completion request
@@ -60,6 +62,9 @@ export async function handleChat(request, clientRawRequest = null) {
   // The capability travels in the anthropic-beta header, forwarded as-is.
   const { model: modelStr, contextMarker } = stripModelContextMarker(body.model);
   if (contextMarker) body.model = modelStr;
+
+  const session = resolveSessionIdentity({ headers: clientRawRequest?.headers, body });
+  const sessionId = session?.sessionId || null;
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
 
@@ -159,7 +164,7 @@ export async function handleChat(request, clientRawRequest = null) {
     }
 
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    const smartPriority = getEffectiveSmartPriority(comboStrategies, modelStr, { intervalMinutes: settings.smartRoutingIntervalMinutes });
+    const comboCfg = comboStrategies[modelStr] || {};
     log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     // For streaming combo requests, wrap handleComboChat in a heartbeat stream so
     // the client sees activity immediately while model cycling + detectContent() runs.
@@ -177,9 +182,18 @@ export async function handleChat(request, clientRawRequest = null) {
       comboName: modelStr,
       comboStrategy,
       comboStickyLimit,
-      smartPriority,
-      keepCycling: true,
-      signal: request?.signal,
+      sessionId,
+      smartPolicy: comboCfg.smartPolicy || "smart",
+      sessionSticky: comboCfg.sessionSticky !== false,
+      confidenceThreshold: typeof comboCfg.confidenceThreshold === "number" ? comboCfg.confidenceThreshold : 0.8,
+      resolveSmartChoice: comboStrategy === "smart"
+        ? (b, m) => resolveSmartChoice({
+            body: b,
+            models: m,
+            routerModel: comboCfg.routerModel,
+            log,
+          })
+        : null,
     });
     return isStreaming ? wrapComboWithHeartbeat(comboResult) : comboResult;
   }
@@ -301,6 +315,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
 
       const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
+      const comboCfg = comboStrategies[modelStr] || {};
+      const nestedSession = resolveSessionIdentity({ headers: clientRawRequest?.headers, body });
+      const nestedSessionId = nestedSession?.sessionId || null;
       log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
       const isStreaming2 = body.stream !== false;
       const comboResult2 = handleComboChat({
@@ -313,7 +330,19 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         log,
         comboName: modelStr,
         comboStrategy,
-        comboStickyLimit
+        comboStickyLimit,
+        sessionId: nestedSessionId,
+        smartPolicy: comboCfg.smartPolicy || "smart",
+        sessionSticky: comboCfg.sessionSticky !== false,
+        confidenceThreshold: typeof comboCfg.confidenceThreshold === "number" ? comboCfg.confidenceThreshold : 0.8,
+        resolveSmartChoice: comboStrategy === "smart"
+          ? (b, m) => resolveSmartChoice({
+              body: b,
+              models: m,
+              routerModel: comboCfg.routerModel,
+              log,
+            })
+          : null,
       });
       return isStreaming2 ? wrapComboWithHeartbeat(comboResult2) : comboResult2;
     }
@@ -455,6 +484,8 @@ async function _runAccountFallback({ provider, model, body, userAgent, request, 
       cavemanLevel: chatSettings.cavemanLevel || "full",
       ponytailEnabled: !!chatSettings.ponytailEnabled,
       ponytailLevel: chatSettings.ponytailLevel || "full",
+      customPromptEnabled: !!chatSettings.customPromptEnabled,
+      customPrompt: chatSettings.customPrompt || "",
       pxpipeEnabled: !!chatSettings.pxpipeEnabled,
       pxpipeMinChars: chatSettings.pxpipeMinChars,
       pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
