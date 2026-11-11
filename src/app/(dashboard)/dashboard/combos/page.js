@@ -13,7 +13,6 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/sha
 import { useAuthStore } from "@/store/authStore";
 import { aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
 import { resolveProviderId, AI_PROVIDERS } from "@/shared/constants/providers";
-import ComboAssistant from "./ComboAssistant";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -580,9 +579,6 @@ export default function CombosPage() {
         activeProviders={activeProviders}
         getCaps={getCaps}
       />
-
-      {/* Combo Assistant: model-driven CRUD via chat */}
-      <ComboAssistant canWrite={canWrite} onCombosChanged={fetchData} />
 
       {/* Create Modal - Use key to force remount and reset state */}
       {showCreateModal && (
