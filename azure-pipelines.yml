@@ -104,7 +104,7 @@ stages:
               # The persistent CI volume may retain requireApiKey=true. Seed a
               # disposable key so the smoke test exercises the authenticated path.
               docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T app \
-                node -e 'const Database=require("better-sqlite3"); const db=new Database("/var/lib/9router/db/data.sqlite"); db.prepare("INSERT OR REPLACE INTO apiKeys(id,key,name,machineId,isActive,createdAt,createdBy) VALUES(?,?,?,?,?,?,?)").run("ci-smoke","ci-smoke-key","CI smoke","ci",1,new Date().toISOString(),null); db.close()'
+                node -e 'const path=require("node:path"); const Database=require("better-sqlite3"); const db=new Database(path.join(process.env.DATA_DIR, "db", "data.sqlite")); db.prepare("INSERT OR REPLACE INTO apiKeys(id,key,name,machineId,isActive,createdAt,createdBy) VALUES(?,?,?,?,?,?,?)").run("ci-smoke","ci-smoke-key","CI smoke","ci",1,new Date().toISOString(),null); db.close()'
 
               PASS=0
               FAIL=0
