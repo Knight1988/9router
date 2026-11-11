@@ -59,7 +59,7 @@ stages:
               resolv_backup=$(mktemp)
               cat /etc/resolv.conf > "$resolv_backup"
               printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' | sudo tee /etc/resolv.conf > /dev/null
-              trap 'sudo cp "$resolv_backup" /etc/resolv.conf; rm -f "$resolv_backup"' EXIT
+              trap 'docker compose -f docker-compose.yml -f docker-compose.ci.yml down || true; sudo cp "$resolv_backup" /etc/resolv.conf; rm -f "$resolv_backup"' EXIT
               getent hosts public.ecr.aws > /dev/null
               # BuildKit resolves base-image registries in the Docker daemon, not
               # the agent shell. Restart it after replacing the inherited resolver.
@@ -88,7 +88,7 @@ stages:
               echo "Waiting for server to be ready..."
               server_ready=0
               for i in $(seq 1 30); do
-                if curl -sk --max-time 10 https://localhost:21129/v1/models > /dev/null 2>&1; then
+                if curl -fsS --max-time 10 http://127.0.0.1:21128/api/settings/require-login > /dev/null 2>&1; then
                   echo "Server ready."
                   server_ready=1
                   break
@@ -105,6 +105,22 @@ stages:
               # disposable key so the smoke test exercises the authenticated path.
               docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T app \
                 node -e 'const path=require("node:path"); const Database=require("better-sqlite3"); const db=new Database(path.join(process.env.DATA_DIR, "db", "data.sqlite")); db.prepare("INSERT OR REPLACE INTO apiKeys(id,key,name,machineId,isActive,createdAt,createdBy) VALUES(?,?,?,?,?,?,?)").run("ci-smoke","ci-smoke-key","CI smoke","ci",1,new Date().toISOString(),null); db.close()'
+
+              # Mandatory dashboard browser smoke: only the disposable CI container
+              # is modified, and a populated combo response exercises render paths.
+              docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T app \
+                node -e 'const path=require("node:path"), Database=require("better-sqlite3"), db=new Database(path.join(process.env.DATA_DIR,"db","data.sqlite")); const row=db.prepare("SELECT data FROM settings WHERE id=1").get(); const settings=row ? JSON.parse(row.data) : {}; settings.requireLogin=false; db.prepare("INSERT INTO settings(id,data) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data").run(JSON.stringify(settings)); db.close()'
+              export NVM_DIR="$HOME/.nvm"
+              [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+              npm ci
+              npm --prefix tests ci
+              CHROME_PATH=$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)
+              if [ -z "$CHROME_PATH" ]; then
+                echo "Chrome/Chromium is required for the dashboard smoke gate"
+                exit 1
+              fi
+              export CHROME_PATH
+              DASHBOARD_SMOKE_URL=http://127.0.0.1:21128 npm --prefix tests test -- unit/dashboard-pages-browser.test.js
 
               PASS=0
               FAIL=0

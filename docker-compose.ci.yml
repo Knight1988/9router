@@ -1,8 +1,8 @@
 services:
   app:
     ports: !override
-      - "21128:20128"
-      - "21129:20129"
+      - "127.0.0.1:21128:20128"
+      - "127.0.0.1:21129:20129"
     environment:
       REQUIRE_API_KEY: "false"
       HTTPS_ENABLED: "true"
