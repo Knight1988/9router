@@ -187,13 +187,13 @@ describe("Claude → Kiro (direct route)", () => {
     });
   });
 
-  it("sends Claude system in the first user turn, never as a top-level systemPrompt", () => {
+  it("sends Claude system in the first user turn and sets the top-level systemPrompt", () => {
     const out = C2K({
       system: "system-only instruction",
       messages: [{ role: "user", content: "hello" }],
     });
 
-    expect(out).not.toHaveProperty("systemPrompt");
+    expect(out.systemPrompt).toContain("system-only instruction");
     expect(kiroPromptOf(out)).toBe("system-only instruction");
     expect(out.conversationState.currentMessage.userInputMessage.content).toContain("system-only instruction");
   });

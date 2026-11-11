@@ -178,13 +178,18 @@ describe("DB Concurrency — atomic safety", () => {
   });
 
   it("records an identical write saved twice in parallel only once", async () => {
+    const duplicateTimestamp = tsFor(3000);
     const entry = () => ({
-      timestamp: tsFor(3000), provider: "mistral", model: "dup-model", connectionId: "cD",
+      timestamp: duplicateTimestamp, provider: "mistral", model: "dup-model", connectionId: "cD",
       tokens: { prompt_tokens: 7, completion_tokens: 3 }, status: "ok",
     });
     await Promise.all([db.saveRequestUsage(entry()), db.saveRequestUsage(entry())]);
 
-    const stats = await db.getUsageStats("24h");
-    expect(stats.byProvider.mistral.requests).toBe(1);
+    // Read persisted history directly: getUsageStats("24h") may legitimately
+    // reuse the short-lived dashboard cache populated by preceding tests.
+    const history = await db.getUsageHistory({ provider: "mistral" });
+    const duplicates = history.filter((row) => row.model === "dup-model");
+    expect(duplicates).toHaveLength(1);
+    expect(duplicates[0].tokens).toEqual({ prompt_tokens: 7, completion_tokens: 3 });
   });
 });

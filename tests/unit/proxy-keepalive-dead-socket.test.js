@@ -19,6 +19,7 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
   afterEach(() => {
     process.env = { ...savedEnv };
     vi.doUnmock("undici");
+    vi.doUnmock("../../open-sse/utils/proxyFetch.js");
   });
 
   it("keeps the existing 4s default, clamps keepAliveMaxTimeout, and honors FETCH_KEEPALIVE_TIMEOUT_MS", async () => {
@@ -194,9 +195,9 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
     expect(fetchMock.mock.calls[0][1].dispatcher).toBe(freshDispatcher);
   });
 
-  it("BaseExecutor.execute sets forceFreshSocket=true when retrying after connect timeout or 502", async () => {
+  it.each(["connect timeout", "HTTP 502"])("BaseExecutor.execute retries %s on a fresh socket", async (failure) => {
     const fetchMock = vi.fn();
-    vi.doMock("../../open-sse/utils/proxyFetch.js", () => ({ proxyAwareFetch: (...args) => fetchMock(...args) }));
+    vi.doMock("../../open-sse/utils/proxyFetch.js", () => ({ proxyAwareRawFetch: (...args) => fetchMock(...args) }));
 
     const { BaseExecutor } = await import("../../open-sse/executors/base.js");
     const ex = new BaseExecutor("nvidia", {
@@ -205,15 +206,20 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
       retry: { 502: { attempts: 2, delayMs: 0 } },
     });
 
-    fetchMock
-      .mockImplementationOnce((_url, opts) => new Promise((_resolve, reject) => {
+    if (failure === "connect timeout") {
+      fetchMock.mockImplementationOnce((_url, opts) => new Promise((_resolve, reject) => {
         opts.signal.addEventListener("abort", () => {
           const err = new Error("fetch connect timeout");
           err.name = "AbortError";
           reject(err);
         });
-      }))
-      .mockResolvedValueOnce({ status: 200, headers: { get: () => "application/json" } });
+      }));
+    } else {
+      fetchMock.mockResolvedValueOnce(new Response("Bad gateway", { status: 502 }));
+    }
+    fetchMock.mockResolvedValueOnce(new Response("{}", {
+      headers: { "content-type": "application/json" },
+    }));
 
     const out = await ex.execute({
       model: "deepseek-ai/deepseek-v4-flash",

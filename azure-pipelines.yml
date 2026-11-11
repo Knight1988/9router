@@ -24,11 +24,18 @@ stages:
             displayName: Checkout source
 
           - script: |
+              set -euo pipefail
               export NVM_DIR="$HOME/.nvm"
               [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
               export PATH="$(dirname "$(nvm which current 2>/dev/null || command -v node)"):$PATH"
               echo "Using node: $(which node) ($(node -v))"
               echo "Using npm:  $(which npm) ($(npm -v))"
+              # Audio transport tests invoke the real ffmpeg binary.
+              if ! command -v ffmpeg > /dev/null 2>&1; then
+                sudo apt-get update
+                sudo apt-get install -y --no-install-recommends ffmpeg
+              fi
+              ffmpeg -version
               npm ci
               npm --prefix tests ci
               npm --prefix tests test

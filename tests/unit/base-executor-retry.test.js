@@ -23,6 +23,29 @@ const creds = { apiKey: "k" };
 
 beforeEach(() => fetchMock.mockReset());
 
+describe("BaseExecutor.execute — merged transport options", () => {
+  it("preserves forwarded headers, case-insensitive overrides, and directFetch", async () => {
+    const ex = makeExec({ baseUrl: "https://x/api" });
+    ex.buildHeaders = () => ({ "X-Shared": "provider", "X-Provider": "kept" });
+    const directFetch = vi.fn();
+    fetchMock.mockResolvedValueOnce(res(200));
+
+    const out = await ex.execute({
+      model: "m", body: {}, stream: false, credentials: creds,
+      clientHeaders: { "x-shared": "client", "X-Client": "forwarded" },
+      providerOverrides: { headers: { "X-SHARED": "override" } },
+      directFetch,
+    });
+
+    const [, options] = fetchMock.mock.calls[0];
+    const headers = Object.fromEntries(Object.entries(options.headers).map(([key, value]) => [key.toLowerCase(), value]));
+    expect(headers).toEqual({ "x-shared": "override", "x-provider": "kept", "x-client": "forwarded" });
+    expect(Object.keys(options.headers)).toHaveLength(3);
+    expect(out.headers).toEqual(options.headers);
+    expect(options.directFetch).toBe(directFetch);
+  });
+});
+
 describe("BaseExecutor.execute — retry by status (config-driven)", () => {
   it("retries 502 `attempts` times then succeeds", async () => {
     const ex = makeExec({ baseUrl: "https://x/api", retry: { 502: { attempts: 3, delayMs: 0 } } });

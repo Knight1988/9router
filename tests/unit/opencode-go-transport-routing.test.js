@@ -93,6 +93,8 @@ const RESPONSE_BY_FORMAT = {
 };
 
 async function route(model, sourceFormat, bodyOverrides = {}) {
+  const supportsSource = !["kimi-k2.6", "minimax-m3"].includes(model.replace(/\([^()]+\)$/, "")) || sourceFormat !== "openai-responses";
+  const responseFormat = supportsSource ? sourceFormat : "openai";
   executeMock.mockResolvedValueOnce({
     response: new Response(JSON.stringify(RESPONSE_BY_FORMAT[responseFormat]), {
       status: 200,

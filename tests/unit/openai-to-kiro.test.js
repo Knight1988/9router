@@ -593,7 +593,7 @@ describe("openaiToKiroRequest", () => {
         {}
       );
 
-      expect(first).not.toHaveProperty("systemPrompt");
+      expect(first.systemPrompt).toContain("<thinking_mode>enabled</thinking_mode>");
       expect(kiroPromptOf(first)).toContain("<thinking_mode>enabled</thinking_mode>");
       expect(kiroPromptOf(first)).toBe(kiroPromptOf(second));
       expect(kiroPromptOf(first)).not.toContain("Current time");

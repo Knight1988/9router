@@ -1,37 +1,34 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+const cursorConfig = vi.hoisted(() => ({
+  agentEndpoint: "https://agent.api5.cursor.sh",
+  modelsEndpoint: "/agent.v1.AgentService/GetUsableModels",
+}));
+vi.mock("../../open-sse/providers/index.js", () => ({
+  PROVIDER_OAUTH: { cursor: cursorConfig },
+}));
+const cursorFetch = vi.hoisted(() => ({ status: 200, body: new Uint8Array(), calls: [] }));
+vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
+  proxyAwareFetch: (url, options) => {
+    if (options?.directFetch) return global.fetch(url, options);
+    cursorFetch.calls.push({ url, options });
+    return Promise.resolve({
+      ok: cursorFetch.status >= 200 && cursorFetch.status < 300,
+      status: cursorFetch.status,
+      arrayBuffer: async () => cursorFetch.body.buffer.slice(
+        cursorFetch.body.byteOffset,
+        cursorFetch.body.byteOffset + cursorFetch.body.byteLength,
+      ),
+    });
+  },
+}));
 import {
   clearCursorModelCache,
   parseCursorUsableModels,
   resolveCursorModels,
 } from "../../open-sse/services/cursorModels.js";
 
-// GetUsableModels goes over node:http2 (agent.api5.cursor.sh is HTTP/2-only; fetch
-// cannot speak h2, see 6994cd1f). These tests used to mock global.fetch, which the
-// code never calls: the success case could not pass and the 403 case passed because
-// a real connection failed. Fake the http2 client instead.
-const h2 = vi.hoisted(() => ({ status: 200, body: new Uint8Array(), calls: [] }));
-vi.mock("http2", async () => {
-  const { EventEmitter } = await import("node:events");
-  const connect = (origin) => {
-    const client = new EventEmitter();
-    client.close = () => {};
-    client.request = (headers) => {
-      const req = new EventEmitter();
-      req.end = (body) => {
-        h2.calls.push({ origin, headers, body });
-        queueMicrotask(() => {
-          req.emit("response", { ":status": h2.status });
-          if (h2.body.length) req.emit("data", Buffer.from(h2.body));
-          req.emit("end");
-        });
-      };
-      return req;
-    };
-    return client;
-  };
-  return { default: { connect }, connect };
-});
-
+// GetUsableModels uses the proxy-aware fetch boundary; keep the account-specific
+// model request in this test fully isolated from the network.
 function varint(value) {
   const bytes = [];
   while (value >= 0x80) {
@@ -68,7 +65,7 @@ function model(id, name) {
 describe("Cursor live model catalog", () => {
   beforeEach(() => {
     clearCursorModelCache();
-    h2.calls.length = 0;
+    cursorFetch.calls.length = 0;
   });
 
   afterEach(() => {
@@ -89,38 +86,54 @@ describe("Cursor live model catalog", () => {
   });
 
   it("fetches the account-specific catalog and caches it", async () => {
-    h2.status = 200;
-    h2.body = concat(model("claude-4.6-opus", "Claude 4.6 Opus"));
+    cursorFetch.status = 200;
+    const available = field(2, field(1, text("claude-4.6-opus")));
+    cursorFetch.body = concat(model("claude-4.6-opus", "Claude 4.6 Opus"), available);
     const credentials = {
       accessToken: "cursor-token",
       providerSpecificData: { machineId: "machine-id" },
     };
 
     await expect(resolveCursorModels(credentials)).resolves.toEqual({
-      models: [{ id: "claude-4.6-opus", name: "Claude 4.6 Opus" }],
+      models: [{
+        id: "claude-4.6-opus",
+        name: "Claude 4.6 Opus",
+        defaultOn: false,
+        isChatOnly: false,
+        supportsAgent: false,
+        isHidden: false,
+      }],
     });
     await expect(resolveCursorModels(credentials)).resolves.toEqual({
-      models: [{ id: "claude-4.6-opus", name: "Claude 4.6 Opus" }],
+      models: [{
+        id: "claude-4.6-opus",
+        name: "Claude 4.6 Opus",
+        defaultOn: false,
+        isChatOnly: false,
+        supportsAgent: false,
+        isHidden: false,
+      }],
     });
 
-    expect(h2.calls).toHaveLength(1);
-    expect(h2.calls[0].origin).toBe("https://agent.api5.cursor.sh");
-    expect(h2.calls[0].headers).toEqual(expect.objectContaining({
-      ":method": "POST",
-      ":path": "/agent.v1.AgentService/GetUsableModels",
-      "content-type": "application/proto",
-      accept: "application/proto",
+    expect(cursorFetch.calls).toHaveLength(1);
+    expect(cursorFetch.calls[0].url).toBe("https://agent.api5.cursor.sh/agent.v1.AgentService/GetUsableModels");
+    expect(cursorFetch.calls[0].options).toEqual(expect.objectContaining({
+      method: "POST",
+      headers: expect.objectContaining({
+        "content-type": "application/proto",
+        accept: "application/proto",
+      }),
     }));
   });
 
   it("fails open when the Cursor catalog request fails", async () => {
-    h2.status = 403;
-    h2.body = new TextEncoder().encode("no");
+    cursorFetch.status = 403;
+    cursorFetch.body = new TextEncoder().encode("no");
 
     await expect(resolveCursorModels({
       accessToken: "cursor-token",
       providerSpecificData: { machineId: "machine-id" },
     })).resolves.toBeNull();
-    expect(h2.calls).toHaveLength(1);
+    expect(cursorFetch.calls).toHaveLength(1);
   });
 });

@@ -3,7 +3,7 @@ import { FORMATS } from "../translator/formats.js";
 import { PROVIDERS } from "../config/providers.js";
 import { liftReasoningAliases } from "../translator/concerns/reasoning.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
-import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
+import { extractUsage, mergeUsage, hasValidUsage, needsInputEstimation, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE, ensureStreamToolCallIds } from "./streamHelpers.js";
 import { restoreToolNames } from "./opencodeFingerprint.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
@@ -295,7 +295,10 @@ export function createSSEStream(options = {}) {
                 }
               }
 
-              const hasValuable = hasValuableContent(parsed, FORMATS.OPENAI, counters);
+              // Terminal reasons carry routing semantics even without a text delta
+              // (notably content_filter, which must never trigger combo retry).
+              const hasValuable = !!parsed.choices?.[0]?.finish_reason ||
+                hasValuableContent(parsed, FORMATS.OPENAI, counters);
               if (process.env.DEBUG === "1") {
                 console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] 🔍 [DEBUG-passthrough] hasValuable=${hasValuable} chunk=${JSON.stringify(parsed).slice(0, 200)}`);
               }
@@ -750,7 +753,7 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, toolNameMap = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, toolNameMap = null, onFirstContent = null, sourceFormat = null, onProviderError = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,

@@ -347,6 +347,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
         Accept: "application/json",
       },
       body: refreshRequest.body,
+      directFetch: true,
     }, proxyOptions);
 
     if (!response.ok) {

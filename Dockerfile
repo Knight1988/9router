@@ -33,12 +33,7 @@ COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-# https://github.com/decolua/9router/issues/5245
-# wreq-js and playwright-core are lazy runtime dependencies (loaded by
-# lazyRuntime.js via createRequire). Next standalone tracing does not include
-# them, so OpenCode Free fails with HTTP 502 ("resolve is undefined").
-# Install them (with their native bindings/transitive deps) in an isolated dir
-# so the runner stage can copy them into /app/node_modules.
+# Install lazy runtime dependencies omitted by standalone tracing.
 RUN --mount=type=cache,target=/root/.npm \
     mkdir -p /opt/lazy-runtime && cd /opt/lazy-runtime && \
     npm init -y >/dev/null && \
@@ -49,7 +44,7 @@ RUN --mount=type=cache,target=/root/.npm \
       --fetch-retry-mintimeout=10000 \
       --fetch-retry-maxtimeout=120000 \
       --fetch-timeout=300000 \
-      wreq-js playwright-core
+      wreq-js playwright-core selfsigned
 
 FROM ${NODE_IMAGE} AS runner
 ARG ALPINE_MIRROR
@@ -88,18 +83,8 @@ COPY --from=builder /app/node_modules/react-dom ./node_modules/react-dom
 COPY --from=builder /app/node_modules/styled-jsx ./node_modules/styled-jsx
 COPY --from=builder /app/node_modules/scheduler ./node_modules/scheduler
 COPY --from=builder /app/node_modules/material-symbols ./node_modules/material-symbols
-# Self-signed cert generation (selfsigned + transitive deps)
-COPY --from=builder /app/node_modules/selfsigned ./node_modules/selfsigned
-COPY --from=builder /app/node_modules/@peculiar ./node_modules/@peculiar
-COPY --from=builder /app/node_modules/@noble ./node_modules/@noble
-COPY --from=builder /app/node_modules/pkijs ./node_modules/pkijs
-COPY --from=builder /app/node_modules/asn1js ./node_modules/asn1js
-COPY --from=builder /app/node_modules/bytestreamjs ./node_modules/bytestreamjs
-COPY --from=builder /app/node_modules/pvtsutils ./node_modules/pvtsutils
-COPY --from=builder /app/node_modules/pvutils ./node_modules/pvutils
-COPY --from=builder /app/node_modules/tslib ./node_modules/tslib
-COPY --from=builder /app/node_modules/tsyringe ./node_modules/tsyringe
-COPY --from=builder /app/node_modules/reflect-metadata ./node_modules/reflect-metadata
+# HTTPS server certificate generation dependency.
+COPY --from=builder /opt/lazy-runtime/node_modules/selfsigned ./node_modules/selfsigned
 # sql.js loads dist/sql-wasm.wasm by path at runtime; tracing only follows JS imports,
 # so the last-resort DB driver would abort with ENOENT on the missing binary.
 COPY --from=builder /app/node_modules/sql.js ./node_modules/sql.js

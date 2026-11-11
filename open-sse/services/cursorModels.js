@@ -10,6 +10,7 @@ import crypto from "crypto";
 import { PROVIDER_OAUTH } from "../providers/index.js";
 import { buildCursorHeaders } from "../utils/cursorChecksum.js";
 import { decodeMessage } from "../utils/cursorProtobuf.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 const FETCH_TIMEOUT_MS = 10_000;
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -112,7 +113,7 @@ async function fetchCursorCatalog(credentials, signal) {
 
   let response;
   try {
-    response = await fetch(url, {
+    response = await proxyAwareFetch(url, {
       method: "POST",
       headers,
       body: new Uint8Array(),
@@ -144,7 +145,13 @@ export function mergeCursorModelFlags(models, payload) {
   const flagsById = new Map(available.map((model) => [model.id, model]));
   return models.map((model) => {
     const flags = flagsById.get(model.id);
-    return flags ? { ...model, ...flags } : model;
+    return flags ? {
+      ...model,
+      defaultOn: flags.defaultOn,
+      isChatOnly: flags.isChatOnly,
+      supportsAgent: flags.supportsAgent,
+      isHidden: flags.isHidden,
+    } : model;
   });
 }
 

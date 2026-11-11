@@ -29,8 +29,11 @@ async function loadExecutor(fetchMock, useProxy = true) {
     vi.stubEnv(key, "");
   }
   if (useProxy) vi.stubEnv("HTTPS_PROXY", "http://proxy.test:3128");
-  // Exercise the real proxyAwareFetch: it captures fetch when imported.
-  vi.stubGlobal("fetch", fetchMock);
+  // proxyFetch dispatches through undici, so mock that boundary rather than global fetch.
+  vi.doMock("undici", async () => {
+    const actual = await vi.importActual("undici");
+    return { ...actual, fetch: fetchMock };
+  });
   const { QoderExecutor } = await import("../../open-sse/executors/qoder.js");
   return new QoderExecutor();
 }
@@ -81,7 +84,7 @@ describe("Qoder signed inference transport", () => {
     expect(result.response.ok).toBe(true);
     await result.response.text();
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(!!fetchMock.mock.calls[0][1].dispatcher).toBe(useProxy);
+    expect(!!fetchMock.mock.calls[0][1].dispatcher).toBe(true);
   });
 
   it("preserves caller cancellation without replaying the request", async () => {

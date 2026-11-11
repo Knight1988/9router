@@ -5,3 +5,4 @@ services:
       - "21129:20129"
     environment:
       REQUIRE_API_KEY: "false"
+      HTTPS_ENABLED: "true"

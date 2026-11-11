@@ -32,8 +32,14 @@ export function isStaleSocketError(error) {
 // bundled-in-Node global fetch), so originalFetch/globalThis.fetch is not an
 // option once we build our own Agents.
 let undiciFetch = null;
+let undiciRequest = null;
+async function loadUndici() {
+  const undici = await import("undici");
+  undiciFetch ??= undici.fetch;
+  undiciRequest ??= undici.request;
+}
 async function rawFetch(url, options) {
-  undiciFetch ??= (await import("undici")).fetch;
+  await loadUndici();
   return undiciFetch(url, options);
 }
 
@@ -498,9 +504,17 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
     try {
       return await fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket);
     } catch (proxyError) {
-      // If strictProxy is enabled, fail hard instead of falling back to direct
+      // Preserve the native fetch failure shape while retaining the cause.
       if (proxyOptions?.strictProxy === true) {
-        throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
+        const explicitProxy = proxyOptions?.enabled === true
+          || !!normalizeString(proxyOptions?.url ?? proxyOptions?.connectionProxyUrl);
+        if (explicitProxy) {
+          const wrapped = new TypeError("fetch failed", { cause: proxyError });
+          wrapped.strictProxy = true;
+          wrapped.message = "[ProxyFetch] Proxy required but failed (strictProxy=true): fetch failed";
+          throw wrapped;
+        }
+        throw proxyError;
       }
       console.warn(`[ProxyFetch] Proxy failed, falling back to direct: ${proxyError.message}`);
       return fetchWithTlsFallback(url, options, null, forceFreshSocket);
@@ -554,7 +568,15 @@ async function undiciRawDispatch(targetUrl, options, dispatcher) {
   };
   if (dispatcher) undiciOptions.dispatcher = dispatcher;
 
-  const res = await undiciRequest(targetUrl, undiciOptions);
+  // Ensure the package-local undici request function is initialized for raw dispatch.
+  await loadUndici();
+  let res;
+  try {
+    res = await undiciRequest(targetUrl, undiciOptions);
+  } catch (error) {
+    if (error?.name === "AbortError") throw error;
+    throw new TypeError("fetch failed", { cause: error });
+  }
 
   // Build web-compatible Headers — undici lowercases keys, handle array values
   const webHeaders = new Headers();

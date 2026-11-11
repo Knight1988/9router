@@ -43,6 +43,7 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "recharts": "^3.7.0",
+    "selfsigned": "^5.5.0",
     "socks-proxy-agent": "^8.0.5",
     "sql.js": "^1.14.1",
     "undici": "^8.12.3",
@@ -58,6 +59,9 @@
   "comment_better_sqlite3": "kept in optionalDependencies so npm install doesn't fail on systems without build tools — sql.js is used as fallback at runtime",
   "comment_aws_sdk_credential_providers": "kept in optionalDependencies (npm still installs these by default) and imported lazily in shared/awsCredentials.js — only AWS Bedrock connections using profile/SSO mode need it; static accessKeyId/secretAccessKey connections never load it",
   "comment_playwright_core": "devDependency only (keeps end-user installs small); open-sse/services/lazyRuntime.js downloads it + wreq-js on first use into <DATA_DIR>/runtime. playwright-core ships no browser binaries (run `npx playwright-core install chromium` or point OBSCURA_CDP_ENDPOINT/cloakbrowser at a stealth engine)",
+  "imports": {
+    "#open-sse/*": "./open-sse/*"
+  },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
     "cross-env": "^7.0.3",
@@ -71,5 +75,8 @@
   "overrides": {
     "dompurify": "^3.4.17",
     "ip-address": "^10.7.4"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true
   }
 }

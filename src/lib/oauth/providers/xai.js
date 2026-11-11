@@ -79,9 +79,9 @@ const xai = {
   },
   mapTokens: (tokens) => {
     const mapped = {
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiresIn: tokens.expires_in,
+      accessToken: tokens.access_token ?? tokens.accessToken,
+      refreshToken: tokens.refresh_token ?? tokens.refreshToken,
+      expiresIn: tokens.expires_in ?? tokens.expiresIn,
       scope: tokens.scope,
     };
     const email = decodeXaiIdTokenEmail(tokens.id_token);

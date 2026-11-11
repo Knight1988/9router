@@ -1,6 +1,6 @@
 import { HTTP_STATUS, DEFAULT_RETRY_CONFIG, resolveRetryEntry, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { shouldRefreshCredentials } from "../services/oauthCredentialManager.js";
-import { proxyAwareRawFetch } from "../utils/proxyFetch.js";
+import { proxyAwareRawFetch as proxyAwareFetch } from "../utils/proxyFetch.js";
 import { addJitter, abortableSleep } from "../utils/retry.js";
 import { dbg } from "../utils/debugLog.js";
 import { decompressResponse } from "../utils/decompress.js";
@@ -110,7 +110,7 @@ export class BaseExecutor {
     return { status: response.status, message: bodyText || `HTTP ${response.status}` };
   }
 
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, providerOverrides = null, directFetch = null }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, clientHeaders = {}, providerOverrides = null, directFetch = null }) {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
     let lastStatus = 0;

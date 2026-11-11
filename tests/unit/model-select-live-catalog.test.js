@@ -43,7 +43,10 @@ async function openPicker(catalogResponse, options = {}) {
 
 function buttonFor(label) {
   const text = (node) => typeof node === "string" ? node : (node?.children || []).map(text).join("");
-  return renderer.root.findAllByType("button").find((button) => text(button).includes(label));
+  // No-auth providers also advertise Claude models. Only inspect the account
+  // provider's group, otherwise an unrelated free model makes emptiness fail.
+  const header = renderer.root.findAllByType("span").find((span) => text(span).toLowerCase() === "techopenclaw");
+  return header?.parent.parent.findAllByType("button").find((button) => text(button).includes(label));
 }
 
 describe("combo picker account catalog", () => {

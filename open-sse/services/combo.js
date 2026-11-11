@@ -432,7 +432,10 @@ export function isZeroContentResponse(data) {
  * @param {Function} options.handleSingleModel - Function to handle single model: (body, modelStr) => Promise<Response>
  * @param {Object} options.log - Logger object
  * @param {string} [options.comboName] - Name of the combo (for round-robin tracking)
- * @param {string} [options.comboStrategy] - Strategy: "fallback", "round-robin", or "smart"
+ * @param {string} [options.comboStrategy] - Strategy: "fallback", "round-robin", "smart-routing" (cached priority), or "smart"
+ * @param {string[]} [options.smartPriority] - Cached smart-routing priority order
+ * @param {boolean} [options.keepCycling=false] - Restart from first model after exhausting all models
+ * @param {AbortSignal} [options.signal] - Stop cycling on client disconnect
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @param {boolean} [options.autoSwitch=true] - Capability auto-switching
  * @param {string|null} [options.sessionId=null] - Client session identifier for prompt cache retention
@@ -450,6 +453,9 @@ export async function handleComboChat({
   comboName,
   comboStrategy,
   comboStickyLimit = 1,
+  smartPriority,
+  keepCycling = false,
+  signal,
   autoSwitch = true,
   sessionId = null,
   smartPolicy = "smart",
@@ -537,6 +543,9 @@ export async function handleComboChat({
         log.warn("COMBO", `smart-router error, fallback to order: [${models.join(", ")}]`, { error: err?.message || String(err) });
       }
     }
+  } else if (comboStrategy === "smart-routing") {
+    rotatedModels = applySmartPriority(models, smartPriority);
+    log.info("COMBO", `Smart routing order: [${rotatedModels.join(", ")}]`);
   } else {
     // Apply rotation strategy if enabled
     rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
@@ -557,6 +566,7 @@ export async function handleComboChat({
   let lastError = null;
   let lastStatus = null;
   let requestScopedResult = null;
+  let earliestRetryAfter = null;
 
   const SAFETY_CAP = 200;
   // Exponential backoff between cycles: 1.5s → 3s → 6s → 12s → 24s → cap at 60s
@@ -564,149 +574,169 @@ export async function handleComboChat({
   const CYCLE_DELAY_MAX_MS = 60_000;
   let cycle = 0;
 
-    try {
-      const result = await handleSingleModel(body, modelStr);
-      
-      // Success (2xx). A 2xx is necessary but NOT sufficient: Gemini aborts (e.g.
-      // MALFORMED_FUNCTION_CALL) still return 200 and stream empty content, which would
-      // otherwise be delivered as a successful empty answer with no failover.
-      // Peek the stream for real content before committing to this candidate.
-      if (result.ok) {
-        let peeked = null;
-        try {
-          peeked = await peekComboResponse(result, log);
-        } catch (peekErr) {
-          // peekStreamForContent is written not to throw; if reconstruction/Response
-          // construction ever does, result.body is already locked by getReader() and can no
-          // longer be streamed. Returning `result` would hand the client a locked, unreadable
-          // body. Degrade to a clean, valid (empty) SSE stream instead.
-          log.warn("COMBO", `empty-peek error on ${modelStr}, returning empty SSE: ${peekErr?.message || peekErr}`);
-          return new Response("data: [DONE]\n\n", {
-            status: 200,
-            headers: { "Content-Type": "text/event-stream" },
-          });
-        }
+  while (true) {
+    cycle++;
+    earliestRetryAfter = null; // Reset each cycle for freshness
 
-        if (!peeked) {
-          // Non-streaming (or non-SSE) response — not this peek's job. The zero-content
-          // JSON check still applies on a non-final seat.
-          const isLastModel = i === rotatedModels.length - 1;
-          if (!isLastModel) {
-            const contentType = result.headers?.get?.("content-type") || "";
-            if (contentType.includes("application/json")) {
-              try {
-                const peekBody = await result.clone().json();
-                if (isZeroContentResponse(peekBody)) {
-                  log.warn("COMBO", `Model ${modelStr} returned HTTP 200 with zero usable content, falling back to next model`);
-                  if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
-                    clearStickyComboSession(comboName, sessionId);
-                  }
-                  lastError = "Zero usable content";
-                  lastStatus = 200;
-                  continue;
-                }
-              } catch {
-                // Ignore JSON parse errors
-              }
-            }
+    for (let i = 0; i < rotatedModels.length; i++) {
+      const modelStr = rotatedModels[i];
+      log.info("COMBO", `Cycle ${cycle} | Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
+
+      try {
+        const result = await handleSingleModel(body, modelStr);
+
+        // Success (2xx). A 2xx is necessary but NOT sufficient: Gemini aborts (e.g.
+        // MALFORMED_FUNCTION_CALL) still return 200 and stream empty content, which would
+        // otherwise be delivered as a successful empty answer with no failover.
+        // Peek the stream for real content before committing to this candidate.
+        if (result.ok) {
+          let peeked = null;
+          try {
+            peeked = await peekComboResponse(result, log);
+          } catch (peekErr) {
+            // peekStreamForContent is written not to throw; if reconstruction/Response
+            // construction ever does, result.body is already locked by getReader() and can no
+            // longer be streamed. Returning `result` would hand the client a locked, unreadable
+            // body. Degrade to a clean, valid (empty) SSE stream instead.
+            log.warn("COMBO", `empty-peek error on ${modelStr}, returning empty SSE: ${peekErr?.message || peekErr}`);
+            return new Response("data: [DONE]\n\n", {
+              status: 200,
+              headers: { "Content-Type": "text/event-stream" },
+            });
           }
 
-          log.info("COMBO", `Model ${modelStr} succeeded`);
-          return result;
+          if (!peeked) {
+            // Non-streaming (or non-SSE) response — not this peek's job. The zero-content
+            // JSON check still applies on a non-final seat.
+            const isLastModel = i === rotatedModels.length - 1;
+            if (!isLastModel) {
+              const contentType = result.headers?.get?.("content-type") || "";
+              if (contentType.includes("application/json")) {
+                try {
+                  const peekBody = await result.clone().json();
+                  if (isZeroContentResponse(peekBody)) {
+                    log.warn("COMBO", `Model ${modelStr} returned HTTP 200 with zero usable content, falling back to next model`);
+                    if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
+                      clearStickyComboSession(comboName, sessionId);
+                    }
+                    lastError = "Zero usable content";
+                    lastStatus = 200;
+                    continue;
+                  }
+                } catch {
+                  // Ignore JSON parse errors
+                }
+              }
+            }
+
+            log.info("COMBO", `Model ${modelStr} succeeded`);
+            return result;
+          }
+
+          if (peeked.outcome === "content") {
+            log.info("COMBO", `Model ${modelStr} succeeded${peeked.timedOut ? " (peek deadline; committed)" : ""}`);
+            return peeked.response;
+          }
+
+          // Empty generation. Fall through to the next candidate unless this is a legitimately
+          // empty class (content filter) or the last candidate — in which case return the
+          // (empty) response as-is, preserving prior behaviour rather than manufacturing a 5xx.
+          const reasonLabel = peeked.finishReason || "no-content";
+          const isLast = i === rotatedModels.length - 1;
+          if (isNoRetryFinish(peeked.finishReason) || isLast) {
+            log.warn("COMBO", `Model ${modelStr} returned empty (${reasonLabel}) — ${isNoRetryFinish(peeked.finishReason) ? "no-retry class" : "last candidate"}, returning as-is`);
+            return peeked.response;
+          }
+
+          log.warn("COMBO", `Model ${modelStr} returned empty (${reasonLabel}) — falling through to next candidate`);
+          if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
+            clearStickyComboSession(comboName, sessionId);
+          }
+          // Drain/close the discarded stream in the background so its usage logging still runs.
+          peeked.response.body?.cancel?.().catch(() => {});
+          lastError = `empty generation (${reasonLabel})`;
+          if (!lastStatus) lastStatus = 502;
+          continue;
         }
 
-        if (peeked.outcome === "content") {
-          log.info("COMBO", `Model ${modelStr} succeeded${peeked.timedOut ? " (peek deadline; committed)" : ""}`);
-          return peeked.response;
-        }
-
-        // Empty generation. Fall through to the next candidate unless this is a legitimately
-        // empty class (content filter) or the last candidate — in which case return the
-        // (empty) response as-is, preserving prior behaviour rather than manufacturing a 5xx.
-        const reasonLabel = peeked.finishReason || "no-content";
-        const isLast = i === rotatedModels.length - 1;
-        if (isNoRetryFinish(peeked.finishReason) || isLast) {
-          log.warn("COMBO", `Model ${modelStr} returned empty (${reasonLabel}) — ${isNoRetryFinish(peeked.finishReason) ? "no-retry class" : "last candidate"}, returning as-is`);
-          return peeked.response;
-        }
-
-        log.warn("COMBO", `Model ${modelStr} returned empty (${reasonLabel}) — falling through to next candidate`);
+        // If the model that failed was the session-sticky model, clear it so next turns re-evaluate
         if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
           clearStickyComboSession(comboName, sessionId);
         }
-        // Drain/close the discarded stream in the background so its usage logging still runs.
-        peeked.response.body?.cancel?.().catch(() => {});
-        lastError = `empty generation (${reasonLabel})`;
-        if (!lastStatus) lastStatus = 502;
-        continue;
+
+        // Extract error info from response
+        let errorText = result.statusText || "";
+        let retryAfter = null;
+        try {
+          const errorBody = await result.clone().json();
+          errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
+          retryAfter = errorBody?.retryAfter || null;
+        } catch {
+          // Ignore JSON parse errors
+        }
+
+        // Track earliest retryAfter across all combo models
+        if (retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
+          earliestRetryAfter = retryAfter;
+        }
+
+        // Normalize error text to string (Worker-safe)
+        if (typeof errorText !== "string") {
+          try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
+        }
+
+        // Check if should fallback to next model
+        const { provider } = parseModel(modelStr);
+        const { shouldFallback, cooldownMs, requestScoped } = checkFallbackError(result.status, errorText, 0, provider);
+
+        if (!shouldFallback && !requestScoped) {
+          log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
+          return result;
+        }
+
+        // A request-scoped 4xx (validation failure, unsupported parameter, context
+        // overflow) says this member cannot serve THIS request — not that the
+        // credential is unhealthy. Members run on different providers with
+        // different validation, so the next member may well serve it. Advance
+        // without a cooldown, and without waiting: there is nothing to recover.
+        // checkFallbackError() reports no account fallback here on purpose (a
+        // request-scoped fault must not evict a healthy account from rotation).
+        if (requestScoped) {
+          log.warn("COMBO", `Model ${modelStr} rejected the request (${result.status}), trying next`, { status: result.status });
+          lastError = errorText || String(result.status);
+          if (!lastStatus) lastStatus = result.status;
+          if (!requestScopedResult) requestScopedResult = result;
+          continue;
+        }
+
+        // For transient errors (503/502/504), wait for cooldown before falling through
+        // so a briefly-overloaded provider gets a chance to recover rather than being
+        // skipped immediately (fixes: combo falls through on transient 503)
+        if (cooldownMs && cooldownMs > 0 && cooldownMs <= 5000 &&
+            (result.status === 503 || result.status === 502 || result.status === 504)) {
+          log.info("COMBO", `Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`);
+          await new Promise(r => setTimeout(r, cooldownMs));
+        }
+
+        // Fallback to next model
+        lastError = errorText || String(result.status);
+        if (!lastStatus) lastStatus = result.status;
+        log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
+      } catch (error) {
+        // Catch unexpected exceptions to ensure fallback continues
+        if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
+          clearStickyComboSession(comboName, sessionId);
+        }
+        lastError = error.message || String(error);
+        if (!lastStatus) lastStatus = 500;
+        log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
       }
 
-      // If the model that failed was the session-sticky model, clear it so next turns re-evaluate
-      if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
-        clearStickyComboSession(comboName, sessionId);
-      }
-
-      // Check for abort mid-cycle
+      // Check for abort mid-cycle, including after unexpected exceptions
       if (signal?.aborted) {
         log.info("COMBO", `Cycle ${cycle} | Client disconnected, stopping`);
         break;
       }
-
-      // Track earliest retryAfter across all combo models
-      if (retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
-        earliestRetryAfter = retryAfter;
-      }
-
-      // Normalize error text to string (Worker-safe)
-      if (typeof errorText !== "string") {
-        try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
-      }
-
-      // Check if should fallback to next model
-      const { provider } = parseModel(modelStr);
-      const { shouldFallback, cooldownMs, requestScoped } = checkFallbackError(result.status, errorText, 0, provider);
-
-      if (!shouldFallback && !requestScoped) {
-        log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
-        return result;
-      }
-
-      // A request-scoped 4xx (validation failure, unsupported parameter, context
-      // overflow) says this member cannot serve THIS request — not that the
-      // credential is unhealthy. Members run on different providers with
-      // different validation, so the next member may well serve it. Advance
-      // without a cooldown, and without waiting: there is nothing to recover.
-      // checkFallbackError() reports no account fallback here on purpose (a
-      // request-scoped fault must not evict a healthy account from rotation).
-      if (requestScoped) {
-        log.warn("COMBO", `Model ${modelStr} rejected the request (${result.status}), trying next`, { status: result.status });
-        lastError = errorText || String(result.status);
-        if (!lastStatus) lastStatus = result.status;
-        if (!requestScopedResult) requestScopedResult = result;
-        continue;
-      }
-
-      // For transient errors (503/502/504), wait for cooldown before falling through
-      // so a briefly-overloaded provider gets a chance to recover rather than being
-      // skipped immediately (fixes: combo falls through on transient 503)
-      if (cooldownMs && cooldownMs > 0 && cooldownMs <= 5000 &&
-          (result.status === 503 || result.status === 502 || result.status === 504)) {
-        log.info("COMBO", `Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`);
-        await new Promise(r => setTimeout(r, cooldownMs));
-      }
-
-      // Fallback to next model
-      lastError = errorText || String(result.status);
-      if (!lastStatus) lastStatus = result.status;
-      log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
-    } catch (error) {
-      // Catch unexpected exceptions to ensure fallback continues
-      if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
-        clearStickyComboSession(comboName, sessionId);
-      }
-      lastError = error.message || String(error);
-      if (!lastStatus) lastStatus = 500;
-      log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     }
 
     // After full pass through all models

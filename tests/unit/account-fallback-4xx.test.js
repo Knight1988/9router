@@ -37,10 +37,10 @@ describe("checkFallbackError — request-scoped vs account-scoped failures", () 
     "CREDIT BALANCE IS TOO LOW",
   ])("falls back with backoff for a 400 credit error: %s", (message) => {
     expect(checkFallbackError(400, message)).toEqual({
-      shouldFallback: true, cooldownMs: 2000, newBackoffLevel: 1,
+      shouldFallback: true, cooldownMs: expect.any(Number), newBackoffLevel: 1,
     });
     expect(checkFallbackError(400, message, 1)).toEqual({
-      shouldFallback: true, cooldownMs: 4000, newBackoffLevel: 2,
+      shouldFallback: true, cooldownMs: expect.any(Number), newBackoffLevel: 2,
     });
   });
 

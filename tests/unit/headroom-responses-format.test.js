@@ -48,7 +48,7 @@ describe("compressWithHeadroom openai-responses format (#1998)", () => {
     expect(typeof body.input[0].content).not.toBe("string");
   });
 
-  it("skips Responses tool/reasoning history instead of collapsing it into a message (#2132)", async () => {
+  it("rejects compressed tool output with invalid IDs or roles without changing Responses history (#2132)", async () => {
     global.fetch = vi.fn(async () => ({
       ok: true,
       json: async () => ({
@@ -100,8 +100,14 @@ describe("compressWithHeadroom openai-responses format (#1998)", () => {
     });
 
     expect(data).toBeNull();
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://headroom.test/v1/compress",
+      expect.objectContaining({
+        body: JSON.stringify({ messages: [{ role: "tool", tool_call_id: "headroom-tool-0", content: "ok" }], model: "gpt-5" }),
+      }),
+    );
     expect(body.input).toEqual(input);
-    expect(diagnostics.reason).toBe("skipped: openai-responses tool/reasoning input is not safe to compress");
+    expect(diagnostics.reason).toBe("proxy response did not preserve tool-output IDs, order, roles or text");
   });
 });
