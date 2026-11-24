@@ -39,7 +39,7 @@ function createSilentWavFile() {
   return new Blob([buffer], { type: "audio/wav" });
 }
 
-async function getInternalHeaders() {
+export async function getInternalHeaders() {
   let apiKey = null;
   try {
     const keys = await getApiKeys();

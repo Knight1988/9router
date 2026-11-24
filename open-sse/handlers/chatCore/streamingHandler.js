@@ -429,8 +429,9 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     // Suppress onRequestSuccess so the account cooldown is NOT cleared — combo cycling will skip it.
     const outTokens = usage?.completion_tokens ?? usage?.output_tokens ?? 0;
     const hasContent = safeContent && safeContent !== "[Empty streaming response]" && safeContent.trim().length > 0;
+    const hasThinking = safeThinking && safeThinking.trim().length > 0;
     const hasToolCalls = contentObj?.toolCalls?.length > 0 || contentObj?.tool_calls?.length > 0;
-    if (outTokens === 0 && !hasContent && !hasToolCalls) {
+    if (outTokens === 0 && !hasContent && !hasThinking && !hasToolCalls) {
       const promptTokens = usage?.prompt_tokens ?? usage?.input_tokens ?? 0;
       const totalTokens = usage?.total_tokens ?? (promptTokens + outTokens);
       const thinkingLen = safeThinking ? safeThinking.length : 0;
