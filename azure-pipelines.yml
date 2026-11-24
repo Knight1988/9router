@@ -38,6 +38,7 @@ stages:
               ffmpeg -version
               npm ci
               npm --prefix tests ci
+              export CI=true
               npm --prefix tests test
             displayName: Run Vitest unit tests
 
